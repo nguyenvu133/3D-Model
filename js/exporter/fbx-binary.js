@@ -15,8 +15,10 @@
  *   footer 16-byte magic
  *
  * Quy ước toạ độ: hình học được BAKE ra world tại bind pose, mọi Model geometry
- * đặt identity, TransformLink = bone.matrixWorld tại bind → công thức skinning
- * chuẩn FBX cho ra đúng rest pose.
+ * đặt identity, TransformLink = xform * bone.matrixWorld tại bind → công thức skinning
+ * chuẩn FBX cho ra đúng rest pose. xform (xoay trục dọc lên +Y, dịch đáy về y=0,
+ * scale về cao ~1.8) PHẢI áp cho cả xương / TransformLink / BindPose, không chỉ
+ * geometry — nếu không xương sẽ nhỏ/lệch hẳn so với mesh (xem boneWorldX bên dưới).
  */
 (function () {
   'use strict';
@@ -318,22 +320,27 @@
       sc.meshes.forEach(function (m) { bb.expandByObject(m); });
       if (!bb.isEmpty()) srcBox = bb.clone();
     }
-    let upY = false, upAxisName = 'keep';
+    let upAxisName = 'keep', origAxis = 1;
     if (opts.upAxis !== 'keep' && srcBox) {
       const size = srcBox.getSize(new THREE.Vector3());
       const dims = [size.x, size.y, size.z];
       let axis = 1;
       if (opts.upAxis === 'X') axis = 0; else if (opts.upAxis === 'Z') axis = 2;
-      else if (opts.upAxis === 'Y' || !opts.upAxis) axis = 1;
+      /* 'Y' hoặc không truyền = TỰ NHẬN trục dài nhất làm trục dọc (theo đúng
+         comment ở đầu khối này). Trước đây nhánh này ép axis = 1 nên model
+         Z-up/X-up từ GLB Tripo/Meshy được xuất ra vẫn NẰM NGANG, Mixamo
+         không auto-rig được. */
       else axis = dims.indexOf(Math.max.apply(null, dims));
-      if (axis !== 1) upY = true;   /* đã đứng rồi thì không xoay */
+      origAxis = axis;
       upAxisName = 'XYZ'[axis];
       if (axis === 1) {
         xform.identity();
       } else if (axis === 2) {
-        xform.makeRotationX(-Math.PI / 2);                     /* Z lên Y, mặt vẫn +Z */
+        xform.makeRotationX(-Math.PI / 2);                     /* Z lên Y (+Z → +Y) */
       } else {
-        xform.makeRotationZ(-Math.PI / 2);                     /* X lên Y, mặt giữ +Z */
+        /* +90° về Z: +X → +Y. Dấu cũ -90° đưa +X → -Y, nhân vật LỘN NGƯỢC
+           (đầu ở y=0, chân ở y=1.8) rồi mới dịch đáy về 0. */
+        xform.makeRotationZ(Math.PI / 2);
       }
       /* Dịch để đáy chạm y=0 và tâm footprint về gốc — đo SAU khi xoay
        * (nếu xoay, trục "đứng" của vật đổi chỗ nên phải dùng bbox đã biến đổi). */
@@ -353,6 +360,39 @@
     }
     xform.premultiply(new THREE.Matrix4().makeScale(unitScale, unitScale, unitScale));
     const useSkin = !noSkeleton && hasSkin;
+
+    /* --- FIX (Mixamo): xform phải áp cho CẢ xương, không chỉ geometry ---
+     * Trước đây geometry được bake bằng xform (xoay trục dọc lên +Y, dịch đáy
+     * về y=0, scale về cao ~1.8) nhưng bone Lcl, Cluster TransformLink và
+     * BindPose vẫn dùng matrixWorld GỐC → xương nhỏ/lệch hẳn so với mesh
+     * (vd: mesh cao 1.8 nhưng Hips vẫn ở y=0.25), Mixamo/Blender skin sai
+     * và auto-rig đo sai chiều cao. Tính world' = xform * bone.matrixWorld
+     * cho mọi xương TRƯỚC khi ghi, rồi suy local từ world' của xương cha. */
+    const boneWorldX = {};
+    sc.bones.forEach(function (b) {
+      boneWorldX[b.uuid] = xform.clone().multiply(b.matrixWorld);
+    });
+    const boneLocalX = function (b) {
+      /* world' của xương cha gần nhất (không có → armature, identity) */
+      let parentWorld = null;
+      let walker = b.parent;
+      while (walker) {
+        if (walker.isBone && boneWorldX[walker.uuid]) { parentWorld = boneWorldX[walker.uuid]; break; }
+        walker = walker.parent;
+      }
+      const local = new THREE.Matrix4();
+      if (parentWorld) local.copy(parentWorld).invert().multiply(boneWorldX[b.uuid]);
+      else local.copy(boneWorldX[b.uuid]);
+      const p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
+      local.decompose(p, q, s);
+      const e = new THREE.Euler().setFromQuaternion(q, 'XYZ');
+      return {
+        p: [p.x, p.y, p.z],
+        e: [THREE.MathUtils.radToDeg(e.x), THREE.MathUtils.radToDeg(e.y), THREE.MathUtils.radToDeg(e.z)],
+        s: [s.x, s.y, s.z]
+      };
+    };
+    const xformApplied = !xform.equals(new THREE.Matrix4());
 
     /* --- bones (Model::LimbNode) --- */
     const boneIds = {};
@@ -492,7 +532,7 @@
           Object.keys(byBone).forEach(function (k) {
             const rec = byBone[k];
             const cid = id();
-            const link = new THREE.Matrix4().copy(rec.bone.matrixWorld);   /* bind world */
+            const link = boneWorldX[rec.bone.uuid].clone();   /* bind world ĐÃ qua xform (khớp geometry đã bake) */
             clusters.push({
               id: cid, boneId: boneIds[rec.bone.uuid] || 0, bone: rec.bone,
               indexes: rec.indexes, weights: rec.weights, transformLink: link,
@@ -510,11 +550,10 @@
     if (!noSkeleton) {
       sc.bones.forEach(function (b) {
         const bid = boneIds[b.uuid];
-        const p = b.position, q = b.quaternion, s = b.scale;
-        const e = new THREE.Euler().setFromQuaternion(q, 'XYZ');
-        const pArr = [p.x, p.y, p.z];
-        const eArr = [THREE.MathUtils.radToDeg(e.x), THREE.MathUtils.radToDeg(e.y), THREE.MathUtils.radToDeg(e.z)];
-        const sArr = [s.x, s.y, s.z];
+        /* Local transform suy từ world' (đã qua xform) — KHÔNG dùng
+           b.position/quaternion/scale gốc vì geometry đã bake xform. */
+        const lx = boneLocalX(b);
+        const pArr = lx.p, eArr = lx.e, sArr = lx.s;
 
         const attrId = id();
         objects.push(node('NodeAttribute', [pI(attrId), pS('NodeAttribute::' + b.name), pS('LimbNode')], [
@@ -582,7 +621,7 @@
       const poseNodes = sc.bones.map(function (b) {
         return node('PoseNode', [], [
           node('Node', [pI(boneIds[b.uuid])]),
-          node('Matrix', [arrD(mat4ToArray(b.matrixWorld))])
+          node('Matrix', [arrD(mat4ToArray(boneWorldX[b.uuid]))])   /* bind world ĐÃ qua xform */
         ]);
       });
       objects.push(node('Pose', [pI(poseId), pS('Pose::BIND_POSES'), pS('BindPose')], [
@@ -730,7 +769,7 @@
         node('P', [pS('FrontAxisSign'), pS('int'), pS('Integer'), pS(''), pI(1)]),
         node('P', [pS('CoordAxis'), pS('int'), pS('Integer'), pS(''), pI(0)]),
         node('P', [pS('CoordAxisSign'), pS('int'), pS('Integer'), pS(''), pI(1)]),
-        node('P', [pS('OriginalUpAxis'), pS('int'), pS('Integer'), pS(''), pI(upY ? 1 : -1)]),
+        node('P', [pS('OriginalUpAxis'), pS('int'), pS('Integer'), pS(''), pI(origAxis)]),
         node('P', [pS('OriginalUpAxisSign'), pS('int'), pS('Integer'), pS(''), pI(1)]),
         node('P', [pS('UnitScaleFactor'), pS('double'), pS('Number'), pS(''), pD(100)]),
         node('P', [pS('OriginalUnitScaleFactor'), pS('double'), pS('Number'), pS(''), pD(1)]),
@@ -829,11 +868,12 @@
         bytes: asc,
         report: {
           bytes: asc.length, format: 'FBX-ASCII-7.3', version: vi,
-          meshes: sc.meshes.length, bones: 0, clusters: 0, materials: mats.length,
-          geometryIds: geoms.length, hasSkin: false,
-          upAxis: upY ? ('baked: ' + upAxisName + ' → Y, feet at y=0') : 'kept as-is',
+          meshes: sc.meshes.length, bones: noSkeleton ? 0 : sc.bones.length,
+          clusters: noSkeleton ? 0 : clusters.length, materials: mats.length,
+          geometryIds: geoms.length, hasSkin: useSkin && clusters.length > 0,
+          upAxis: xformApplied ? ('baked: ' + upAxisName + ' → Y, feet at y=0') : 'kept as-is',
           srcUpAxis: upAxisName,
-          version: ver, unitScale: +unitScale.toFixed(4), meshOnly: true
+          version: ver, unitScale: +unitScale.toFixed(4), meshOnly: !!noSkeleton
         }
       };
     }
@@ -876,8 +916,7 @@
       bytes: bytes,
       report: {
         bytes: bytes.length,
-        format: 'FBX-Binary-7.4',
-        version: VERSION,
+        format: ver === 7300 ? 'FBX-Binary-7.3' : 'FBX-Binary-7.4',
         meshes: sc.meshes.length,
         bones: noSkeleton ? 0 : sc.bones.length,
         clusters: noSkeleton ? 0 : clusters.length,
@@ -886,7 +925,7 @@
         hasSkin: noSkeleton ? false : clusters.length > 0,
         textures: texRecords.length,
         textureReport: texReport,
-        upAxis: upY ? ('baked: ' + upAxisName + ' → Y, feet at y=0') : 'kept as-is',
+        upAxis: xformApplied ? ('baked: ' + upAxisName + ' → Y, feet at y=0') : 'kept as-is',
         srcUpAxis: upAxisName,
         version: ver,
         versionName: ver === 7300 ? 'FBX 2013' : (ver === 7400 ? 'FBX 2014' : 'FBX ' + ver),
