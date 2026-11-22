@@ -2219,7 +2219,7 @@ tỉ lệ.
         },
         optimization: Object.assign({}, SaveManager.options),
         parts: report.parts,
-        runtime: { engine: 'pixijs-7 + three-r128', webgl2: PixiStudio.ThreeRenderer.webgl2 },
+        runtime: { engine: 'pixijs-7.4 + three-r128', webgl2: PixiStudio.ThreeRenderer.webgl2 },
         usage: 'Load model.glb bằng THREE.GLTFLoader.setMeshoptDecoder — xem README.md'
       };
       files.push({ name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify(manifest, null, 2)) });

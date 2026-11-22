@@ -1,6 +1,8 @@
 /* ============================================================
- * renderer/pixi-renderer.js — PixiJS v7 overlay layer
+ * renderer/pixi-renderer.js — PixiJS v7.4 overlay layer
  * Chạy THẬT: particle bụi lơ lửng + sparkle khi select model.
+ * Hiệu ứng mở rộng (emitter, ring, chữ nổi, flash) nằm ở
+ * renderer/pixi-effects.js — PixiEffects, khởi tạo ở đây.
  * Nếu PIXI chưa load (CDN lỗi) → bỏ qua an toàn.
  * ============================================================ */
 (function () {
@@ -37,6 +39,9 @@
 
       /* Layer dust particles */
       PixiRenderer._initDust();
+
+      /* Effects Engine v20.0 (emitter/ring/text/flash) */
+      if (PixiStudio.PixiEffects) PixiStudio.PixiEffects.init(app);
 
       /* Ticker render loop */
       app.ticker.add(function () { PixiRenderer._tick(app.ticker.deltaMS / 1000); });
@@ -105,6 +110,9 @@
     const H = app.renderer.height / (app.renderer.resolution || 1);
     const t = performance.now() / 1000;
 
+    /* Effects Engine v20.0 */
+    if (PixiStudio.PixiEffects) PixiStudio.PixiEffects.update(dt);
+
     /* Dust */
     const ps = PixiRenderer.particles;
     for (let i = 0; i < ps.length; i++) {
@@ -135,9 +143,15 @@
     }
   };
 
-  /* Bắn sparkle tại toạ độ pixel của viewport */
+  /* Bắn sparkle tại toạ độ pixel của viewport — v20.0: dùng
+     emitter của PixiEffects (sprite chung 1 texture, rẻ hơn
+     Graphics riêng); giữ đường cũ làm fallback. */
   PixiRenderer.burst = function (x, y, count) {
     if (!PixiRenderer.app || !PixiRenderer.enabled) return;
+    if (PixiStudio.PixiEffects && PixiStudio.PixiEffects.layer) {
+      PixiStudio.PixiEffects.burst(x, y, count || 16);
+      return;
+    }
     const n = count || 16;
     for (let i = 0; i < n; i++) {
       const g = new PIXI.Graphics();
@@ -157,6 +171,24 @@
       PixiRenderer.app.stage.addChild(g);
       PixiRenderer.sparkles.push({ g: g, life: life, maxLife: life, seed: Math.random() * 10 });
     }
+  };
+
+  /* API mở rộng v20.0 — chuyển tiếp sang PixiEffects (no-op nếu chưa load) */
+  PixiRenderer.emit = function (preset, x, y, opts) {
+    if (PixiStudio.PixiEffects) return PixiStudio.PixiEffects.emit(preset, x, y, opts);
+    return 0;
+  };
+  PixiRenderer.ring = function (x, y, opts) {
+    if (PixiStudio.PixiEffects) PixiStudio.PixiEffects.ring(x, y, opts);
+  };
+  PixiRenderer.floatText = function (text, x, y, opts) {
+    if (PixiStudio.PixiEffects) PixiStudio.PixiEffects.floatText(text, x, y, opts);
+  };
+  PixiRenderer.flash = function (color, alpha, dur) {
+    if (PixiStudio.PixiEffects) PixiStudio.PixiEffects.flash(color, alpha, dur);
+  };
+  PixiRenderer.effectsStats = function () {
+    return PixiStudio.PixiEffects ? PixiStudio.PixiEffects.stats() : null;
   };
 
   PixiRenderer.resize = function () {

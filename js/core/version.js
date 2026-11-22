@@ -28,6 +28,12 @@
     'Mới: Mixamo Pre-flight — kiểm tra model trước khi xuất FBX (số tam giác, chiều cao, xương mixamorig, skin, texture) và cảnh báo ngay trong studio.',
     'Mới: hộp thoại “Có gì mới v20.0” hiện 1 lần sau khi nâng cấp.',
     'Phiên bản thống nhất 20.0.0 ở mọi nơi — trước đây chỗ v5.0, chỗ v10.0.',
-    'FBX Binary Writer ghi Creator theo đúng phiên bản Studio đang chạy.'
+    'FBX Binary Writer ghi Creator theo đúng phiên bản Studio đang chạy.',
+    'PixiJS engine: studio CDN 7.3.2 → 7.4.3 (bản vá mới nhất dòng v7); game WUXIAMMORPG lên PixiJS 8.23.0.',
+    'Mới: PixiJS Effects Engine — particle emitter (burst / lửa / phép / khói), vòng xung kích, chữ nổi 2D, flash màn hình.',
+    'Chọn model giờ hiện tên nổi 2D tại vị trí click (PixiJS overlay) + sparkle dùng emitter mới.',
+    'Tripo API v2 → v3 (v2 đã tắt 2026-10-31): endpoint mới openapi.tripo3d.ai/v3, model H3.1/P2, poll 2s, link model hết hạn sau 5 phút.',
+    'Mới: Tripo Multi-view to 3D (2–4 ảnh), Convert FBX/USDZ/OBJ, Decimate, Smart UV, Segment, Mesh Repair.',
+    'Tripo Rig đúng chuẩn docs: rig-check trước rồi mới rig (spec mixamo); Animate chỉ nhận model đã rig (preset:walk/idle/run).'
   ];
 })();

@@ -157,7 +157,7 @@
       version: PixiStudio.VERSION,
       builtAt: new Date().toISOString(),
       runtime: {
-        engine: 'pixijs-7 + three-r128',
+        engine: 'pixijs-7.4 + three-r128',
         webgl2: PixiStudio.ThreeRenderer.webgl2,
         webgpu: !!PixiStudio.ThreeRenderer.webgpuAvailable
       },

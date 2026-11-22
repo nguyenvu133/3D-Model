@@ -145,3 +145,70 @@ bằng tool Node đó — xem `npm run qa:mixamo`.
 
 Các sửa FBX exporter ở §2 đã đẩy lên `main` trước đó ở commit `0b7ba36`;
 bản v20.0 này đẩy tiếp thành 1 commit riêng (xem git log).
+
+## 9. Bổ sung v20.0 (đợt 2, 2026-11-22): PixiJS Engine + Tripo API v3
+
+### 9.1 PixiJS Engine
+
+- CDN: studio `pixi.js@7.3.2 → 7.4.3` (bản vá mới nhất dòng v7, đã kiểm
+  tra trên jsDelivr); game `WUXIAMMORPG.html` `8.6.6 → 8.23.0`.
+  Studio giữ dòng v7 vì v8 đổi API khởi tạo bất đồng bộ (`app.init()`)
+  và Graphics — chuyển v8 sẽ vỡ overlay; trang game đã viết theo v8 nên
+  lên 8.23.0 an toàn. Chuỗi engine trong export đổi sang `pixijs-7.4`.
+- Mới — `js/renderer/pixi-effects.js` (`PixiStudio.PixiEffects`): particle
+  emitter có cấu hình (preset burst/fire/magic/smoke, chung 1 radial
+  texture, ngân sách hạt theo `setQuality('low'|'medium'|'high')`), vòng
+  xung kích, chữ nổi 2D (`PIXI.Text`), flash màn hình, `stats()`.
+  `PixiRenderer` khởi tạo effects trong `create()`, gọi `update(dt)` mỗi
+  frame; `burst()` chuyển sang emitter (đường Graphics cũ còn làm fallback);
+  thêm API `emit/ring/floatText/flash/effectsStats`.
+- Click chọn model (`js/viewport/controls.js:pickAt`) giờ vừa bắn sparkle
+  vừa hiện tên object nổi 2D tại vị trí click.
+- Test: `/tmp/test-fbx/test-effects.js` (PIXI stub) — 23/23 đạt, gồm hạt
+  chết hết sau 2s, quality low giảm nửa / high tăng gấp đôi.
+
+### 9.2 Tripo API v2 → v3 (bắt buộc — v2 đã tắt 2026-10-31)
+
+- `js/ai/tripo-adapter.js` viết lại theo docs chính thức
+  (developers.tripo3d.ai, kiểm chứng 2026-11-22): base mới
+  `https://openapi.tripo3d.ai/v3`, model `v3.1-20260211` (mặc định) /
+  `v3.0` / `v2.5` / `P2-20260801` / `P1-20260311`, poll `GET /v3/tasks/{id}`
+  mỗi 2s (tối đa ~10 phút), tải `output.model_url` ngay (hết hạn sau 5 phút).
+- Mới: `multiviewTo3D()` (`inputs: [{front}, {left}, ...]`, front bắt buộc,
+  tối thiểu 2 ảnh), `convertModel()` (GLTF/FBX/USDZ/OBJ/STL/3MF),
+  `decimateModel()` (thay `upscale_model` đã bỏ ở v3), `uvModel()`,
+  `segmentModel()`, `completeModel()` (Mesh Repair), `uploadFile()`
+  (`POST /v3/files` → `file_token`), `getTask()`/`listTasks()`,
+  `downloadResult()`.
+- Rig đúng chuẩn docs: `rig-check` trước (lấy `rig_type`), rồi `rig`
+  (`model: v3.0-20260909`, `spec: 'mixamo'`); Animate (`retarget`,
+  `preset:walk/idle/run`) bị chặn khi model chưa rig (`lastCreatedKind`).
+- `js/ai/ai-panel.js`: chọn model H3.1/P2 trong Generation Studio, nút
+  “Multi-view → 3D”, tools grid đổi Upscale → Convert FBX + Decimate,
+  endpoint mặc định v3, auto-update engine sửa sang `GET /v3/tasks/{id}`
+  (trước đây gọi `/task/{id}` kiểu v2). `js/m2m/m2m-ui.js`: endpoint v3,
+  toast rig mới.
+- Test: `/tmp/test-fbx/test-tripo-v3.js` (fetch giả lập) — 50+ assert đạt:
+  endpoint/payload v3 đúng docs, upload → file_token, multiview front/left,
+  rig-check → rig (spec mixamo), retarget `preset:*`, chặn animate khi chưa
+  rig, lỗi code v3 → failed, poll failed → failed, không còn request v2.
+  **Chưa test với key thật** — cần key Tripo của người dùng (300 credit thử).
+- Xem chi tiết tính năng Studio, giá/credit, giới hạn trong
+  `docs/TRIPO_V20.md`.
+
+### 9.3 File thay đổi (đợt 2)
+
+| File | Thay đổi |
+|---|---|
+| `js/renderer/pixi-effects.js` | **mới** — PixiJS Effects Engine v20.0 |
+| `docs/TRIPO_V20.md` | **mới** — Tripo Studio features + migration v2→v3 |
+| `js/ai/tripo-adapter.js` | viết lại theo Tripo OpenAPI v3 |
+| `js/ai/ai-panel.js` | chọn model, Multi-view, tools v3, auto-update v3 |
+| `js/m2m/m2m-ui.js` | endpoint v3, toast rig |
+| `js/renderer/pixi-renderer.js` | nối PixiEffects, burst qua emitter, API mới |
+| `js/viewport/controls.js` | click chọn hiện tên nổi 2D |
+| `js/core/version.js` | thêm 6 mục changelog (PixiJS + Tripo v3) |
+| `js/exporter/exporter.js`, `js/exporter/save-manager.js` | chuỗi engine `pixijs-7.4` |
+| `index.html`, `mesh2motion.html` | PixiJS CDN 7.4.3 (+ fallback unpkg) |
+| `WUXIAMMORPG.html` | PixiJS CDN 8.23.0 |
+| `README.md`, `docs/PHASES.md` | ghi chú PixiJS 7.4.3 / 8.23.0 + Tripo v3 |

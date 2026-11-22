@@ -189,7 +189,7 @@
 
 ## Phase 22 — WUXIAMMORPG.html — Quan Ải Long Ngâm (PixiJS v8) ✅
 
-- [x] Single-file game thuần JS + PixiJS v8.6.6 CDN (IIFE build, không build tool)
+- [x] Single-file game thuần JS + PixiJS v8.23.0 CDN (IIFE build, không build tool)
 - [x] Isometric 2.5D: tile 64×32, depth sort zIndex = wx+wy, 7 layers
 - [x] Map Trường Bạch: 60×60 tiles tuyết batch-render, đường đá, plaza, mountain backdrop
 - [x] Đền Trung Hoa: mái cong 2 tầng xanh đám + tuyết, cột đỏ, 3 cửa, đèn lồng glow động,

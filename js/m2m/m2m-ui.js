@@ -438,7 +438,7 @@
     const Tripo = P.AI && P.AI.Tripo;
     if (!Tripo) return;
     const wrap = U.el('div');
-    const ep = U.el('input', { class: 'field', placeholder: 'https://api.tripo3d.ai/v2/openapi', value: Tripo.config.endpoint || 'https://api.tripo3d.ai/v2/openapi' });
+    const ep = U.el('input', { class: 'field', placeholder: 'https://openapi.tripo3d.ai/v3', value: Tripo.config.endpoint || 'https://openapi.tripo3d.ai/v3' });
     const key = U.el('input', { class: 'field', placeholder: 'Tripo API key', value: Tripo.config.apiKey || '' });
     wrap.appendChild(U.el('div', { class: 'fieldset' }, [
       U.el('h4', { text: 'Tripo OpenAPI' }),
@@ -725,7 +725,7 @@
     $('#m2m-ai-rig').addEventListener('click', function () {
       const Tripo = P.AI && P.AI.Tripo;
       if (!Tripo || !Tripo.config.connected) { toast('warning', 'AI', 'Cần kết nối Tripo (🔗 Key).'); return; }
-      Tripo.rigModel({}); toast('info', 'AI Rig', 'Đã gửi task rig_model');
+      Tripo.rigModel({}); toast('info', 'AI Rig', 'Đã gửi rig-check → rig (Tripo v3)');
       renderAiTasks();
     });
 

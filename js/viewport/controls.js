@@ -156,9 +156,10 @@
     const state = PixiStudio.State;
     if (hit) {
       state.select(hit);
-      /* Sparkle Pixi tại vị trí click */
+      /* Sparkle Pixi tại vị trí click + tên object nổi 2D (v20.0) */
       const rect = Controls._dom.getBoundingClientRect();
       PixiStudio.PixiRenderer.burst(clientX - rect.left, clientY - rect.top, 14);
+      if (hit && hit.name) PixiStudio.PixiRenderer.floatText(hit.name, clientX - rect.left, clientY - rect.top - 14);
     } else {
       state.select(null);
     }

@@ -20,7 +20,8 @@
      ============================================================ */
   AIPanel._genState = AIPanel._genState || {
     prompt: '', negative: '', style: 'person', quality: 'standard',
-    polygon: 30000, tex: '2k', seed: '', batch: 1, imageView: 'single'
+    polygon: 30000, tex: '2k', seed: '', batch: 1, imageView: 'single',
+    model: 'v3.1-20260211'   /* Tripo v3 — H3.1 mặc định */
   };
 
   AIPanel._renderGenerationStudio = function (body, tripo) {
@@ -65,6 +66,18 @@
     qSel.addEventListener('change', function () { S.quality = qSel.value; });
     row1.appendChild(styleSel); row1.appendChild(qSel);
     sc.appendChild(row1);
+
+    /* Tripo v3 model — H3.1 chi tiết / P2 game-ready */
+    const row1b = U.el('div', { style: 'display:flex;gap:6px;margin-bottom:6px;' });
+    const modelSel = U.el('select', { class: 'select', style: 'flex:1;height:28px;font-size:11px;' });
+    Object.keys(tripo.MODELS || {}).forEach(function (m) {
+      const opt = U.el('option', { value: m, text: 'model: ' + m + ' — ' + tripo.MODELS[m].label });
+      if (m === S.model) opt.selected = true;
+      modelSel.appendChild(opt);
+    });
+    modelSel.addEventListener('change', function () { S.model = modelSel.value; });
+    row1b.appendChild(modelSel);
+    sc.appendChild(row1b);
 
     /* polygon / texture / seed */
     const row2 = U.el('div', { style: 'display:flex;gap:6px;margin-bottom:6px;' });
@@ -120,6 +133,7 @@
           tripo.textTo3D({
             prompt: text,
             negative_prompt: neg.value,
+            model: S.model,
             quality: S.quality,
             style: S.style,
             polygon: S.polygon,
@@ -148,6 +162,25 @@
           const fd = new FormData();
           fd.append('file', file);
           tripo.imageTo3D({ formData: fd, file: file, fileName: file.name });
+          AIPanel.renderPage();
+        });
+        inp.click();
+      }
+    }));
+    imgRow.appendChild(U.el('button', {
+      class: 'btn sm grow',
+      html: '🖼️ Multi-view → 3D',
+      'data-tooltip': '2–4 ảnh (ảnh đầu = mặt trước) → model chính xác hơn — Tripo v3 multiview-to-model',
+      onclick: function () {
+        const inp = document.createElement('input');
+        inp.type = 'file'; inp.accept = 'image/*'; inp.multiple = true;
+        inp.addEventListener('change', function () {
+          const files = Array.prototype.slice.call(inp.files || []);
+          if (files.length < 2) {
+            bus.emit('notify', { type: 'warning', title: 'Multi-view cần 2–4 ảnh', message: 'Chọn ít nhất 2 ảnh — ảnh đầu tiên phải là mặt trước (front).' });
+            return;
+          }
+          tripo.multiviewTo3D({ files: files.slice(0, 4) });
           AIPanel.renderPage();
         });
         inp.click();
@@ -203,7 +236,7 @@
     }
 
     sc.appendChild(U.el('div', { class: 'dim small', style: 'margin-top:6px;line-height:1.5;', text: tripo.config.connected
-      ? 'Generate thật qua Tripo OpenAPI: ' + tripo.config.endpoint + ' · batch ' + S.batch + ' task/lần, seed tăng dần.'
+      ? 'Generate thật qua Tripo OpenAPI v3: ' + tripo.config.endpoint + ' · batch ' + S.batch + ' task/lần, seed tăng dần. Link model hết hạn sau 5 phút — tải ngay khi xong.'
       : 'Chưa có API key ⇒ mọi nút generate ở trạng thái blocked (không giả lập). Kết nối ở khối “Tripo3D AI” phía trên.' }));
 
     section.appendChild(sc);
@@ -296,15 +329,16 @@
     if (tripo.isXingchi()) {
       tc.appendChild(U.el('div', { class: 'info-row', style: 'margin-bottom:8px;' }, [
         U.el('span', { class: 'i-label', text: 'Provider' }),
-        U.el('span', { class: 'state-badge pending', text: 'xingchiapi — không có rig_model / animate_model' })
+        U.el('span', { class: 'state-badge pending', text: 'xingchiapi — không có /v3/animations/rig / retarget' })
       ]));
     }
     const toolsGrid = U.el('div', { class: 'mt-grid', style: 'grid-template-columns:repeat(2,1fr);gap:5px;' });
     [
-      ['🎨 Texturing', 'Tạo PBR texture cho model — texture_model', function () { tripo.textureModel(); AIPanel.renderPage(); }],
-      ['⬆ Upscale 4x', 'Tăng độ phân giải model — upscale_model', function () { tripo.upscaleModel(); AIPanel.renderPage(); }],
-      ['🦴 Auto Rig', 'Sinh skeleton — rig_model (cần trước Animate)', function () { tripo.rigModel(); AIPanel.renderPage(); }],
-      ['🎬 Auto Animate', 'Sinh clips idle/walk/run — animate_model', function () { tripo.animateModel(['idle', 'walk', 'run']); AIPanel.renderPage(); }]
+      ['🎨 Texturing', 'Tạo lại PBR texture cho model — POST /v3/models/texture', function () { tripo.textureModel(); AIPanel.renderPage(); }],
+      ['🔄 Convert FBX', 'Đổi định dạng sang FBX (Unity/Unreal) — POST /v3/models/convert', function () { tripo.convertModel('FBX'); AIPanel.renderPage(); }],
+      ['🦴 Auto Rig', 'Rig-check rồi sinh skeleton (spec mixamo) — /v3/animations/rig (cần trước Animate)', function () { tripo.rigModel(); AIPanel.renderPage(); }],
+      ['🎬 Auto Animate', 'Retarget preset idle/walk/run lên model đã rig — /v3/animations/retarget', function () { tripo.animateModel(['idle', 'walk', 'run']); AIPanel.renderPage(); }],
+      ['⬇ Decimate', 'Giảm số poly cho game — POST /v3/mesh/decimate (v2 upscale đã bỏ ở v3)', function () { tripo.decimateModel({ face_limit: S.polygon }); AIPanel.renderPage(); }]
     ].forEach(function (t) {
       toolsGrid.appendChild(U.el('button', {
         class: 'mt-btn' + (modelId ? ' primary' : ''),
@@ -562,7 +596,7 @@
       provInput.appendChild(U.el('option', { value: id, text: providers[id].label, selected: PixiStudio.AI.Tripo.config.provider === id }));
     });
     const epInput = U.el('input', {
-      class: 'input', placeholder: 'https://api.tripo3d.ai/v2/openapi', style: 'margin:5px 0;',
+      class: 'input', placeholder: 'https://openapi.tripo3d.ai/v3', style: 'margin:5px 0;',
       value: PixiStudio.AI.Tripo.config.endpoint || ''
     });
     const keyInput = U.el('input', {
@@ -652,7 +686,7 @@
     provSel.addEventListener('change', function () { ep.value = (provs[provSel.value] || {}).endpoint || ''; });
     wrap.appendChild(provSel);
     wrap.appendChild(U.el('label', { class: 'label-xs', text: 'Endpoint' }));
-    const ep = U.el('input', { class: 'input', style: 'margin:5px 0;', placeholder: 'https://api.tripo3d.ai/v2/openapi', value: PixiStudio.AI.Tripo.config.endpoint || 'https://api.tripo3d.ai/v2/openapi' });
+    const ep = U.el('input', { class: 'input', style: 'margin:5px 0;', placeholder: 'https://openapi.tripo3d.ai/v3', value: PixiStudio.AI.Tripo.config.endpoint || 'https://openapi.tripo3d.ai/v3' });
     wrap.appendChild(ep);
     wrap.appendChild(U.el('label', { class: 'label-xs', text: 'API key' }));
     const key = U.el('input', { class: 'input', type: 'password', style: 'margin:5px 0 12px;', placeholder: 'API key', value: PixiStudio.AI.Tripo.config.apiKey || '' });
@@ -684,24 +718,23 @@
   AIPanel.autoUpdate = { tripo: true, meshy: true, _tripoTimer: null, _meshyTimer: null, _knownFbx: {} };
 
   AIPanel.startAutoUpdate = function () {
-    /* TRIPO AUTO-UPDATE — poll task processing */
+    /* TRIPO AUTO-UPDATE (v3) — lưới an toàn cho task processing
+       (adapter đã poll mỗi 2s; timer này bắt lại task còn processing
+       sau khi reload trang, dùng GET /v3/tasks/{id} qua Tripo.getTask) */
     if (AIPanel._tripoTimer) clearInterval(AIPanel._tripoTimer);
     AIPanel._tripoTimer = setInterval(function () {
       if (!AIPanel.autoUpdate.tripo || !PixiStudio.AI.Tripo.config.connected) return;
       const tripo = PixiStudio.AI.Tripo;
       tripo.queue.forEach(function (task) {
         if (task.state !== 'processing' || !task.taskId) return;
-        fetch((tripo.config.endpoint || 'https://api.tripo3d.ai/v2/openapi') + '/task/' + task.taskId, {
-          headers: { 'Authorization': 'Bearer ' + tripo.config.apiKey }
-        }).then(function (r) { return r.json(); }).then(function (j) {
-          const d = j && j.data;
+        tripo.getTask(task.taskId).then(function (d) {
           if (!d) return;
-          if (d.status === 'success' || d.status === 'queued_success') {
-            const url = d.output && (d.output.pbr_model || d.output.model || d.output.url);
+          if (d.status === 'success') {
+            const url = d.output && (d.output.model_url || d.output.model || d.output.pbr_model);
             tripo.lastCreatedModelId = task.taskId;
             bus.emit('ai:task', { id: task.id, state: 'success', progress: 100 });
-            bus.emit('notify', { type: 'success', title: 'Tripo task hoàn tất', message: 'Model đang TỰ ĐỘNG import vào viewport…' });
-            if (url) {
+            bus.emit('notify', { type: 'success', title: 'Tripo task hoàn tất', message: 'Model đang TỰ ĐỘNG import vào viewport… (link hết hạn sau 5 phút)' });
+            if (url && /\.glb(\?|$)/i.test(url)) {
               fetch(url).then(function (r2) { return r2.arrayBuffer(); }).then(function (buf) {
                 PixiStudio.Models.loadGLBFromBuffer(buf, 'TripoAI_' + task.taskId.slice(0, 8), buf.byteLength);
                 PixiStudio.Viewport.focusSelected();
