@@ -233,6 +233,23 @@
       console.warn('[RigAutoGen] skinning lỗi (mesh giữ rigid):', skinErr.message);
     }
 
+    /* FIX: three.js r128 PropertyBinding KHÔNG parse được ':' trong tên track
+       ('mixamorig:Hips.quaternion' → nodeName 'Hips') nên clip AutoGen trên rig
+       Mixamo không bind được bone nào — preview báo "đang chạy" nhưng nhân vật
+       đứng im (rig Studio không prefix thì chạy bình thường). Gắn skeleton lên
+       rootBone với getBoneByName khớp theo tên đã bỏ prefix để mixer tìm đúng
+       bone mà vẫn giữ tên 'mixamorig:*' cho export Mixamo. */
+    if (RigAutoGen.current.skeleton) {
+      const stripPre = function (s) { return String(s == null ? '' : s).replace(/^mixamorig:?/i, ''); };
+      RigAutoGen.current.skeleton.getBoneByName = function (name) {
+        for (let i = 0; i < this.bones.length; i++) {
+          if (this.bones[i].name === name || stripPre(this.bones[i].name) === stripPre(name)) return this.bones[i];
+        }
+        return undefined;
+      };
+      RigAutoGen.current.rootBone.skeleton = RigAutoGen.current.skeleton;
+    }
+
     /* Đồng bộ toggle với Rig cũ */
     PixiStudio.Rig.current = {
       name: 'AutoGen',
@@ -242,17 +259,24 @@
       visualGroup: root,
       isAutoGen: true
     };
+    /* FIX: ghi parentName cho từng bone — trước đây entry không có parentName
+       nên BoneEditor coi MỌI bone là root và vẽ cây trùng nhau (23 bone → 94 dòng). */
+    const parentNameOf = {};
+    Object.keys(parents).forEach(function (child) {
+      const p = parents[child];
+      parentNameOf[child] = p ? (Object.keys(bones).find(function (k) { return bones[k] === p; }) || null) : null;
+    });
     Object.keys(bones).forEach(function (n) {
       PixiStudio.Rig.current.bones[n] = {
         name: n,
-        children: Object.keys(bones).filter(function (k) { return bones[k].userData.targetWorld; })
-          .filter(function () { return false; }),
+        parentName: parentNameOf[n] || null,
+        children: [],
         worldPos: bones[n].userData.targetWorld
       };
     });
     /* nối children cho Bone Editor */
     Object.keys(parents).forEach(function (child) {
-      const pName = Object.keys(bones).find(function (k) { return bones[k] === parents[child]; });
+      const pName = parentNameOf[child];
       if (pName && PixiStudio.Rig.current.bones[pName]) {
         PixiStudio.Rig.current.bones[pName].children.push(PixiStudio.Rig.current.bones[child]);
       }
@@ -411,11 +435,16 @@
       const bone = rig.bones[name];
       boneAnchors[name] = new THREE.Vector3().setFromMatrixPosition(bone.matrixWorld);
     });
+    /* FIX: tên bone Mixamo có prefix 'mixamorig:' nhưng key trong rig.bones
+       là tên trần ('Hips') — trước đây childrenOf tra theo tên có prefix nên
+       mọi bone đều bị coi là leaf → skin weight tính theo điểm (stub) thay vì
+       theo đoạn xương, đùi/cẳng tay dính weight 50/50 thay vì xương chính. */
+    const stripPrefix = function (s) { return String(s == null ? '' : s).replace(/^mixamorig:?/i, ''); };
     /* children map từ hierarchy thực tế */
     const childrenOf = {};
     Object.keys(rig.bones).forEach(function (name) {
       const bone = rig.bones[name];
-      const pName = bone.parent && bone.parent.isBone ? bone.parent.name : null;
+      const pName = bone.parent && bone.parent.isBone ? stripPrefix(bone.parent.name) : null;
       childrenOf[name] = [];
       if (pName) {
         if (!childrenOf[pName]) childrenOf[pName] = [];
@@ -470,7 +499,6 @@
        và FBX xuất ra chỉ có 1 Cluster thay vì 1 cluster/xương như X Bot.fbx.
        Nay tra index theo ĐỐI TƯỢNG bone (khớp chính xác), fallback theo tên đã
        bỏ prefix. */
-    const stripPrefix = function (s) { return String(s == null ? '' : s).replace(/^mixamorig:?/i, ''); };
     const boneIndexOf = function (bone) {
       if (!bone) return -1;
       const byObj = boneList.indexOf(bone);

@@ -253,6 +253,11 @@
           }
         })
       ]));
+    /* FIX: section chứa empty-state phải được chèn vào panel — trước đây
+       section chỉ appendChild(sc) ở nhánh có rig nên khi chưa rig cả hướng
+       dẫn "Chưa có Auto Gen rig" lẫn nút "Auto Rig Gen ngay" đều biến mất. */
+    section.appendChild(sc);
+    body.insertBefore(section, body.firstChild);
     /* ===== 2 NÚT MESHY-STYLE: Rig AI Gen + Animation AI Gen ===== */
     const meshyBtns = U.el('div', { class: 'section-block', id: 'meshy-gen-buttons' }, [
       U.el('div', { class: 'section-head' }, [

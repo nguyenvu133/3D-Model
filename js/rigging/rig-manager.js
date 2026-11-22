@@ -215,7 +215,8 @@
           U.el('span', { class: 'i-value', text: r[1] })
         ]));
       });
-      info.appendChild(head, content);
+      info.appendChild(head);
+      info.appendChild(content);
       body.appendChild(info);
     }
 
