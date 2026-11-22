@@ -11,14 +11,14 @@
   'use strict';
 
   window.PixiStudio = window.PixiStudio || {};
-  window.PixiStudio.VERSION = '20.0.0';
-  window.PixiStudio.VERSION_NAME = '20.0';
+  window.PixiStudio.VERSION = '20.1.0';
+  window.PixiStudio.VERSION_NAME = '20.1';
   window.PixiStudio.RELEASE = {
-    version: '20.0.0',
-    name: '20.0',
-    codename: 'Mixamo Ready',
+    version: '20.1.0',
+    name: '20.1',
+    codename: 'Meshy Animate',
     date: '2026-11-22',
-    previous: '10.0.0'
+    previous: '20.0.0'
   };
   /* Có gì mới v20.0 — hiển thị 1 lần sau khi nâng cấp (xem App.boot). */
   window.PixiStudio.CHANGELOG_V20 = [
@@ -34,6 +34,12 @@
     'Chọn model giờ hiện tên nổi 2D tại vị trí click (PixiJS overlay) + sparkle dùng emitter mới.',
     'Tripo API v2 → v3 (v2 đã tắt 2026-10-31): endpoint mới openapi.tripo3d.ai/v3, model H3.1/P2, poll 2s, link model hết hạn sau 5 phút.',
     'Mới: Tripo Multi-view to 3D (2–4 ảnh), Convert FBX/USDZ/OBJ, Decimate, Smart UV, Segment, Mesh Repair.',
-    'Tripo Rig đúng chuẩn docs: rig-check trước rồi mới rig (spec mixamo); Animate chỉ nhận model đã rig (preset:walk/idle/run).'
+    'Tripo Rig đúng chuẩn docs: rig-check trước rồi mới rig (spec mixamo); Animate chỉ nhận model đã rig (preset:walk/idle/run).',
+    'v20.1 — Meshy Animate: Motion Library kiểu Meshy — gộp AutoGen 10 + Presets 16 + FBX + M2M 326 clip, 5 category, search, bấm Add vào tab Added rồi phát lần lượt.',
+    'v20.1: Prompt Engine Pro — 1 prompt thành timeline nhiều bước (chạy → chém ×2 → đứng nghỉ), style Heroic/Tired/Angry…, negative prompt, lưu preset prompt.',
+    'v20.1: 4 clip AutoGen mới — Wave (vẫy tay), Punch (jab-cross), Kick, Bow (cúi chào); AutoGen giờ 10 clips.',
+    'v20.1: Meshy API adapter — Rigging (5cr), Animations 1–10 preset (3cr/action), Text to Motion Prime 10cr / Swift 3cr, Library 631 preset, Balance; clip FBX cloud retarget thẳng lên rig.',
+    'v20.1: Smart Rig — tự nhận diện humanoid/4 chân, Align (Rotate/Offset/Height mét), marker khớp cằm/vai/khuỷu/cổ tay/háng/gối/mắt cá, Symmetry, Re-rig, Rig QA báo cáo số.',
+    'v20.1: Rig AutoGen thêm preset UE5 Mannequin (pelvis/spine_01…) + tùy chọn Fingers (+20 bone); skeleton.js thêm UE5 Mannequin và Unity Humanoid.'
   ];
 })();

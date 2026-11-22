@@ -356,7 +356,7 @@ function start(port) {
 
   srv.listen(port, () => {
     console.log('==============================================');
-    console.log(' PixiJS Studio × Tripo3D AI Studio v20.0');
+    console.log(' PixiJS Studio × Tripo3D AI Studio v20.1');
     console.log(' Server chạy tại: http://localhost:' + port);
     console.log(' Meshopt API  : ' + (MeshoptEncoder ? 'BẬT (nén geometry server-side)' : 'tắt (npm install meshoptimizer)'));
     console.log(' Nhấn Ctrl+C để dừng');

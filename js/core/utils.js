@@ -271,5 +271,5 @@
   window.PixiStudio.Utils = U;
   /* VERSION do js/core/version.js định nghĩa (load trước file này);
      giữ fallback để app vẫn chạy nếu thiếu version.js. */
-  window.PixiStudio.VERSION = window.PixiStudio.VERSION || '20.0.0';
+  window.PixiStudio.VERSION = window.PixiStudio.VERSION || '20.1.0';
 })();

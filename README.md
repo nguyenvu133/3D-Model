@@ -1,10 +1,10 @@
-# PixiJS Studio × Tripo3D AI Studio — v20.0 “Mixamo Ready”
+# PixiJS Studio × Tripo3D AI Studio — v20.1 “Meshy Animate”
 
 > **All-in-One 3D Game Creation Environment** — Môi trường phát triển game 2D/3D Hybrid chạy hoàn toàn trên trình duyệt, không cần build tool, không cần TypeScript, 100% JavaScript thuần (Vanilla JS).
 
 | | |
 |---|---|
-| **Phiên bản** | v20.0.0 (“Mixamo Ready”, 2026-11-22 — nâng cấp từ v10.0.0) |
+| **Phiên bản** | v20.1.0 (“Meshy Animate”, 2026-11-22 — nâng cấp từ v20.0.0) |
 | **Engine** | PixiJS v7 (2D Overlay / Game Layer) + Three.js r128 (3D Viewport) |
 | **Render** | WebGL 2.0 / WebGL 1.0 (WebGPU auto-detect — sẵn sàng khi trình duyệt hỗ trợ) |
 | **Model mẫu chuẩn** | `assets/models/kiemhiep.glb` — 10.94 MB, 1 nhân vật võ hiệp chibi (đã xoá 3 bản sao, −38.8%) |
@@ -24,6 +24,15 @@
 - **PixiJS engine v20.0:** studio dùng PixiJS **7.4.3** (bản vá mới nhất dòng v7, từ 7.3.2); game `WUXIAMMORPG.html` dùng PixiJS **8.23.0**. Mới thêm **PixiJS Effects Engine** (`js/renderer/pixi-effects.js`): particle emitter (burst/lửa/phép/khói, chung 1 texture nên ít draw call), vòng xung kích, chữ nổi 2D, flash màn hình — click chọn model giờ hiện tên nổi 2D tại vị trí click. Studio vẫn ở dòng v7 vì v8 đổi API khởi tạo bất đồng bộ và Graphics (v8 chỉ dùng cho trang game riêng đã viết theo v8).
 - **Tripo API v3 (studio.tripo3d.ai):** adapter đã chuyển từ API v2 (Tripo tắt v2 ngày 2026-10-31) sang **OpenAPI v3** (`openapi.tripo3d.ai/v3`): Text/Image/Multi-view-to-3D với model H3.1 (chi tiết) / P2 (game-ready, quad), Texturing, Convert FBX/USDZ/OBJ, Decimate, Smart UV, Segment, Mesh Repair, Auto Rig đúng chuẩn docs (rig-check → rig, spec `mixamo`) và Auto Animate bằng preset retarget. Link model hết hạn sau 5 phút nên studio tải ngay khi task xong. Cần API key Tripo (300 credit thử, sau đó $0.01/credit); xem `docs/TRIPO_V20.md`.
 - **Kiểm thử:** `npm run qa:mixamo` (validator FBX), `npm run check` (verify cuối), `npm run verify:anim`. Xem chi tiết trong `docs/V20_UPGRADE_REPORT.md`.
+
+## ✨ Có gì mới trong v20.1 “Meshy Animate” (2026-11-22)
+
+- **Motion Library kiểu Meshy** (`js/animation/motion-library.js`): gộp mọi clip thật đang có — AutoGen 10 + Presets 16 + FBX + M2M 326 — theo đúng 5 category của Meshy (Walk & Run, Daily Actions, Dancing, Fighting, Body Movements), search theo tên, bấm ▶ phát ngay, bấm + Add đưa vào tab **Added** rồi phát lần lượt / export All Added.
+- **Prompt Engine Pro** (`js/animation/anim-prompt.js`): 1 prompt thành **timeline nhiều bước** nối tiếp — “a heroic warrior runs forward, swings a sword twice, then returns to idle” → Run → Attack ×2 → Idle; style Heroic/Tired/Angry/Happy/Slow/Fast/Sneaky đổi tốc độ; negative prompt loại bước; lưu preset prompt (localStorage). Bước nào chưa có clip thì báo rõ, không bịa chuyển động.
+- **4 clip AutoGen mới:** Wave (vẫy tay — đúng ví dụ “a character waving” của Meshy), Punch (jab-cross), Kick, Bow (cúi chào). AutoGen giờ **10 clips**.
+- **Meshy API adapter** (`js/ai/meshy-adapter.js`): Rigging 5 credits, Animations 1–10 preset 3 credits/action, Text to Motion Prime 10 / Swift 3 credits (prompt ≤400 ký tự, 2–10s bước 0.5), Library 631 preset, Balance. Clip FBX cloud retarget thẳng lên rig qua `M2MMotion.playClip` (cần FBXLoader). Không key → trạng thái `blocked`, không giả lập. Xem `docs/MESHY_V20.md`.
+- **Smart Rig** (`js/rigging/rig-auto-gen.js`): tự nhận diện humanoid/4 chân theo bbox (Smart Rig), Align kiểu Meshy (Rotate/Offset/Height mét), marker khớp cằm/vai/khuỷu/cổ tay/háng/gối/mắt cá nhập % chiều cao, Symmetry, **Re-rig**, **Rig QA** (bone count, symmetry, rig height, skin coverage), tùy chọn **Fingers** (+20 bone), preset **UE5 Mannequin** (pelvis/spine_01…) cho AutoGen; `skeleton.js` thêm UE5 Mannequin + Unity Humanoid.
+- **Phiên bản thống nhất 20.1.0:** `js/core/version.js` là nguồn duy nhất; index.html, mesh2motion.html, server banner, package.json, GLB/FBX generator strings đều theo v20.1.
 
 ---
 

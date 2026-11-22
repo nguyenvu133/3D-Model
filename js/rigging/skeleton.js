@@ -1,5 +1,5 @@
 /* ============================================================
- * rigging/skeleton.js — Bone class + 6 preset skeleton humanoid
+ * rigging/skeleton.js — Bone class + 8 preset skeleton humanoid
  * ============================================================ */
 (function () {
   'use strict';
@@ -122,6 +122,60 @@
         ['FootL', 'LegL', [-0.14, 0.03, 0.03], 'L'],
         ['LegR', 'Hips', [0.14, 0.2, 0], 'R'],
         ['FootR', 'LegR', [0.14, 0.03, 0.03], 'R']
+      ]
+    },
+    'UE5 Mannequin': {
+      prefix: '',
+      bones: [
+        ['root', null, [0, 0, 0], 'center'],
+        ['pelvis', 'root', [0, 0.52, 0], 'center'],
+        ['spine_01', 'pelvis', [0, 0.60, 0], 'center'],
+        ['spine_02', 'spine_01', [0, 0.68, 0], 'center'],
+        ['spine_03', 'spine_02', [0, 0.72, 0], 'center'],
+        ['neck_01', 'spine_03', [0, 0.76, 0], 'center'],
+        ['head', 'neck_01', [0, 0.80, 0], 'center'],
+        ['clavicle_l', 'spine_03', [-0.10, 0.72, 0], 'L'],
+        ['upperarm_l', 'clavicle_l', [-0.20, 0.70, 0], 'L'],
+        ['lowerarm_l', 'upperarm_l', [-0.34, 0.69, 0.01], 'L'],
+        ['hand_l', 'lowerarm_l', [-0.44, 0.68, 0.02], 'L'],
+        ['clavicle_r', 'spine_03', [0.10, 0.72, 0], 'R'],
+        ['upperarm_r', 'clavicle_r', [0.20, 0.70, 0], 'R'],
+        ['lowerarm_r', 'upperarm_r', [0.34, 0.69, 0.01], 'R'],
+        ['hand_r', 'lowerarm_r', [0.44, 0.68, 0.02], 'R'],
+        ['thigh_l', 'pelvis', [-0.09, 0.44, 0], 'L'],
+        ['calf_l', 'thigh_l', [-0.09, 0.24, 0.01], 'L'],
+        ['foot_l', 'calf_l', [-0.09, 0.045, 0.02], 'L'],
+        ['ball_l', 'foot_l', [-0.09, 0.02, 0.10], 'L'],
+        ['thigh_r', 'pelvis', [0.09, 0.44, 0], 'R'],
+        ['calf_r', 'thigh_r', [0.09, 0.24, 0.01], 'R'],
+        ['foot_r', 'calf_r', [0.09, 0.045, 0.02], 'R'],
+        ['ball_r', 'foot_r', [0.09, 0.02, 0.10], 'R']
+      ]
+    },
+    'Unity Humanoid': {
+      prefix: '',
+      bones: [
+        ['Hips', null, [0, 0.52, 0], 'center'],
+        ['Spine', 'Hips', [0, 0.60, 0], 'center'],
+        ['Chest', 'Spine', [0, 0.68, 0], 'center'],
+        ['Neck', 'Chest', [0, 0.76, 0], 'center'],
+        ['Head', 'Neck', [0, 0.80, 0], 'center'],
+        ['LeftShoulder', 'Chest', [-0.10, 0.72, 0], 'L'],
+        ['LeftUpperArm', 'LeftShoulder', [-0.20, 0.70, 0], 'L'],
+        ['LeftLowerArm', 'LeftUpperArm', [-0.34, 0.69, 0.01], 'L'],
+        ['LeftHand', 'LeftLowerArm', [-0.44, 0.68, 0.02], 'L'],
+        ['RightShoulder', 'Chest', [0.10, 0.72, 0], 'R'],
+        ['RightUpperArm', 'RightShoulder', [0.20, 0.70, 0], 'R'],
+        ['RightLowerArm', 'RightUpperArm', [0.34, 0.69, 0.01], 'R'],
+        ['RightHand', 'RightLowerArm', [0.44, 0.68, 0.02], 'R'],
+        ['LeftUpperLeg', 'Hips', [-0.09, 0.44, 0], 'L'],
+        ['LeftLowerLeg', 'LeftUpperLeg', [-0.09, 0.24, 0.01], 'L'],
+        ['LeftFoot', 'LeftLowerLeg', [-0.09, 0.045, 0.02], 'L'],
+        ['LeftToes', 'LeftFoot', [-0.09, 0.02, 0.10], 'L'],
+        ['RightUpperLeg', 'Hips', [0.09, 0.44, 0], 'R'],
+        ['RightLowerLeg', 'RightUpperLeg', [0.09, 0.24, 0.01], 'R'],
+        ['RightFoot', 'RightLowerLeg', [0.09, 0.045, 0.02], 'R'],
+        ['RightToes', 'RightFoot', [0.09, 0.02, 0.10], 'R']
       ]
     },
     'Custom Skeleton': {

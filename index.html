@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="description" content="PixiJS Studio × Tripo3D AI Studio v20.0 — All-in-One 3D Game Creation Environment">
-<title>PixiJS Studio × Tripo3D AI Studio — v20.0</title>
+<meta name="description" content="PixiJS Studio × Tripo3D AI Studio v20.1 — All-in-One 3D Game Creation Environment">
+<title>PixiJS Studio × Tripo3D AI Studio — v20.1</title>
 
 <link rel="stylesheet" href="css/main.css">
 <link rel="stylesheet" href="css/layout.css">
@@ -22,7 +22,7 @@
     <svg viewBox="0 0 24 24" fill="none"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" stroke="#fff" stroke-width="1.7"/><path d="M12 3v9m0 0l8-4.5M12 12l-8-4.5" stroke="#fff" stroke-width="1.1" opacity=".75"/></svg>
   </div>
   <div class="boot-title">PixiJS Studio × Tripo3D AI Studio</div>
-  <div class="boot-sub">v20.0 — 3D Studio · Rig · Animation · Mesh2Motion · AI Generation</div>
+  <div class="boot-sub">v20.1 — 3D Studio · Rig · Animation · Mesh2Motion · AI Generation</div>
   <div class="boot-bar"><i id="boot-bar-fill"></i></div>
   <div class="boot-status" id="boot-status">Initializing engine…</div>
 </div>
@@ -47,7 +47,7 @@
         <b>PixiJS <span style="color:#b79bff">Studio</span></b>
         <span>Tripo3D.AI Studio <span class="badge pro">Pro</span></span>
       </div>
-      <span class="badge">v20.0</span>
+      <span class="badge">v20.1</span>
     </div>
 
     <div class="tagline">3D Studio • Rig • Animation • Game Ready</div>
@@ -66,7 +66,7 @@
       <button class="btn sm" id="btn-save-mixamo" data-tooltip="Save Mixamo — xuất FBX 2013 mesh-only + texture nhúng (có màu) để upload lên mixamo.com"><i data-ic="wand"></i><span class="lbl">Save Mixamo</span></button>
       <button class="btn sm" id="btn-save" data-tooltip="Save Project (Ctrl+S)"><i data-ic="save"></i><span class="lbl">Save</span></button>
       <button class="btn sm primary" id="btn-export-top" data-tooltip="Export (GLB/JSON/Image)"><i data-ic="export"></i><span class="lbl">Export</span></button>
-      <button class="btn sm" id="btn-whats-new" data-tooltip="Có gì mới trong v20.0"><i data-ic="wand"></i><span class="lbl">What's New</span></button>
+      <button class="btn sm" id="btn-whats-new" data-tooltip="Có gì mới trong v20.1"><i data-ic="wand"></i><span class="lbl">What's New</span></button>
       <button class="btn sm warning" id="btn-upgrade" data-tooltip="Upgrade Plan"><i data-ic="crown"></i><span class="lbl">Upgrade</span></button>
       <div class="win-controls">
         <button class="win-btn" id="win-min" data-tooltip="Minimize" data-tooltip-side="left"><i data-ic="win-min"></i></button>
@@ -535,6 +535,9 @@
 <script src="js/animation/mesh2motion-studio.js"></script>
 <script src="js/animation/animation-manager.js"></script>
 <script src="js/animation/anim-auto-gen.js"></script>
+<script src="js/animation/anim-queue.js"></script>
+<script src="js/animation/anim-prompt.js"></script>
+<script src="js/animation/motion-library.js"></script>
 <script src="js/animation/fbx-rig-import.js"></script>
 
 <!-- ============ MATERIAL / TEXTURE / SCENE / PHYSICS ============ -->
@@ -545,6 +548,7 @@
 
 <!-- ============ AI ============ -->
 <script src="js/ai/tripo-adapter.js"></script>
+<script src="js/ai/meshy-adapter.js"></script>
 <script src="js/ai/ai-panel.js"></script>
 
 <!-- ============ TIMELINE ============ -->

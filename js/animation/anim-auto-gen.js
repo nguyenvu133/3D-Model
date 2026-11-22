@@ -67,7 +67,11 @@
       { id: 'Run', dur: 0.7, icon: 'character' },
       { id: 'Attack', dur: 0.8, icon: 'swords' },
       { id: 'Combo', dur: 1.4, icon: 'swords' },
-      { id: 'Dodge', dur: 0.6, icon: 'cursor' }
+      { id: 'Dodge', dur: 0.6, icon: 'cursor' },
+      { id: 'Wave', dur: 2.0, icon: 'character' },
+      { id: 'Punch', dur: 1.2, icon: 'swords' },
+      { id: 'Kick', dur: 1.0, icon: 'swords' },
+      { id: 'Bow', dur: 1.4, icon: 'character' }
     ]
   };
 
@@ -175,6 +179,55 @@
     ]);
   };
 
+  /* Tay phải giơ lên vẫy qua lại — clip Meshy "a character waving" */
+  GEN.Wave = function (b) {
+    const t = times(7, 2.0);
+    return new THREE.AnimationClip('Wave', 2.0, [
+      qTrack(b.RightArm, t, [ID, quat(0, 0, -60), quat(-30, 0, -140), quat(-30, 0, -110), quat(-30, 0, -140), quat(-30, 0, -110), quat(0, 0, -60)]),
+      qTrack(b.RightForeArm, t, [ID, quat(-20, 0, 0), quat(-15, 0, 25), quat(-15, 0, -25), quat(-15, 0, 25), quat(-15, 0, -25), quat(-20, 0, 0)]),
+      qTrack(b.Head, t, [ID, quat(0, 0, 6), quat(0, 0, 8), quat(0, 0, 4), quat(0, 0, 8), quat(0, 0, 4), quat(0, 0, 6)]),
+      qTrack(b.LeftArm, t, [ID, quat(0, 0, 8), quat(0, 0, 10), quat(0, 0, 8), quat(0, 0, 10), quat(0, 0, 8), quat(0, 0, 8)])
+    ]);
+  };
+
+  /* Jab-cross: đấm thẳng tay phải 2 nhịp, xoay hông theo từng cú đấm */
+  GEN.Punch = function (b) {
+    const t = times(7, 1.2);
+    return new THREE.AnimationClip('Punch', 1.2, [
+      qTrack(b.Chest, t, [ID, quat(0, -20, 0), quat(0, 30, 0), quat(0, -10, 0), quat(0, 35, 0), quat(0, 0, 0), ID]),
+      qTrack(b.RightArm, t, [ID, quat(-10, 0, -20), quat(-85, 0, 5), quat(-20, 0, -10), quat(-88, 0, 0), quat(-30, 0, -5), ID]),
+      qTrack(b.RightForeArm, t, [ID, quat(-40, 0, 0), quat(-5, 0, 0), quat(-35, 0, 0), quat(-5, 0, 0), quat(-30, 0, 0), ID]),
+      qTrack(b.LeftArm, t, [ID, quat(-10, 0, 25), quat(0, 0, 15), quat(-15, 0, 30), quat(0, 0, 15), quat(-10, 0, 20), ID]),
+      vTrack(b.Hips, t, [[0, 0, 0], [0, 0, 0.02], [0, 0.02, 0.06], [0, 0, 0.02], [0, 0.02, 0.06], [0, 0, 0.01], [0, 0, 0]])
+    ]);
+  };
+
+  /* Đá thẳng chân phải, hông trụ nghiêng giữ thăng bằng */
+  GEN.Kick = function (b) {
+    const t = times(6, 1.0);
+    return new THREE.AnimationClip('Kick', 1.0, [
+      qTrack(b.RightUpLeg, t, [ID, quat(20, 0, 0), quat(-85, 0, 0), quat(-50, 0, 0), quat(10, 0, 0), ID]),
+      qTrack(b.RightLeg, t, [ID, quat(-10, 0, 0), quat(-25, 0, 0), quat(-60, 0, 0), quat(-15, 0, 0), ID]),
+      qTrack(b.LeftUpLeg, t, [ID, quat(-8, 0, 0), quat(-15, 0, 0), quat(-10, 0, 0), quat(-5, 0, 0), ID]),
+      qTrack(b.Spine, t, [ID, quat(-6, 0, 0), quat(-14, 0, 5), quat(-8, 0, 3), quat(0, 0, 0), ID]),
+      qTrack(b.LeftArm, t, [ID, quat(0, 0, 20), quat(0, 0, 45), quat(0, 0, 30), quat(0, 0, 15), ID]),
+      vTrack(b.Hips, t, [[0, 0, 0], [0, 0.01, 0], [0, 0.03, -0.02], [0, 0.01, 0], [0, 0, 0], [0, 0, 0]])
+    ]);
+  };
+
+  /* Cúi chào: gập thân + đầu, hai tay hơi đưa ra sau */
+  GEN.Bow = function (b) {
+    const t = times(5, 1.4);
+    return new THREE.AnimationClip('Bow', 1.4, [
+      qTrack(b.Spine, t, [ID, quat(12, 0, 0), quat(28, 0, 0), quat(14, 0, 0), ID]),
+      qTrack(b.Chest, t, [ID, quat(10, 0, 0), quat(22, 0, 0), quat(10, 0, 0), ID]),
+      qTrack(b.Head, t, [ID, quat(8, 0, 0), quat(18, 0, 0), quat(8, 0, 0), ID]),
+      qTrack(b.LeftArm, t, [ID, quat(8, 0, 12), quat(14, 0, 18), quat(8, 0, 12), ID]),
+      qTrack(b.RightArm, t, [ID, quat(8, 0, -12), quat(14, 0, -18), quat(8, 0, -12), ID]),
+      vTrack(b.Hips, t, [[0, 0, 0], [0, -0.02, 0], [0, -0.04, 0], [0, -0.02, 0], [0, 0, 0]])
+    ]);
+  };
+
   /* ---------- Generate tất cả clips cho rig hiện tại ---------- */
   AnimAutoGen.generateAll = function (rig) {
     if (!rig || !rig.bones) return [];
@@ -187,7 +240,7 @@
     const clips = AnimAutoGen.definitions.map(function (def) {
       const fn = GEN[def.id];
       const clip = fn(names);
-      return { id: def.id, name: def.id, duration: clip.duration, clip: clip, icon: def.icon, loop: def.id === 'Attack' || def.id === 'Dodge' ? false : true };
+      return { id: def.id, name: def.id, duration: clip.duration, clip: clip, icon: def.icon, loop: ['Idle', 'Walk', 'Run', 'Wave'].indexOf(def.id) >= 0 };
     });
     return clips;
   };
@@ -234,7 +287,7 @@
     const section = U.el('div', { class: 'section-block', id: 'anim-autogen-section' }, [
       U.el('div', { class: 'section-head' }, [
         U.el('span', { html: U.icon('wand') }),
-        U.el('span', { text: '🎬 Animation Auto Gen — 6 clips trên bone tree' })
+        U.el('span', { text: '🎬 Animation Auto Gen — 10 clips trên bone tree' })
       ])
     ]);
     const sc = U.el('div', { class: 'section-content' });

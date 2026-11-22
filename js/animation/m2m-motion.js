@@ -286,6 +286,28 @@
     return null;
   }
 
+  /* Áp clip đã load sẵn (không qua URL) — dùng cho clip FBX Text to Motion
+     của Meshy (FBXLoader.parse) hoặc bất kỳ clip nguồn nào: src = {clip, rest, scene}. */
+  Motion.playClip = function (src, label) {
+    var t = resolveTarget();
+    if (!t) { bus.emit('notify', { type: 'warning', title: 'Motion', message: 'Chưa có rig: hãy Load FBX hoặc Auto-Rig trước.' }); return Promise.resolve(null); }
+    if (!src || !src.clip) return Promise.resolve(null);
+    var clip = Motion.retarget(src, t.root);
+    if (!clip) { bus.emit('notify', { type: 'warning', title: 'Retarget', message: 'Không map được bone nào cho rig hiện tại.' }); return null; }
+    if (Motion.mixer !== t.mixer) { Motion.mixer = t.mixer; Motion._actions = {}; }
+    Motion.mixer.stopAllAction();
+    var action = Motion.mixer.clipAction(clip);
+    action.reset();
+    action.setLoop(Motion.loop ? THREE.LoopRepeat : THREE.LoopOnce);
+    action.clampWhenFinished = !Motion.loop;
+    action.setEffectiveTimeScale(Motion.speed);
+    action.setEffectiveWeight(1);
+    action.play();
+    Motion.current = { url: null, label: label || clip.name, duration: clip.duration, tracks: clip.tracks.length };
+    bus.emit('m2m:played', Motion.current);
+    return Promise.resolve(Motion.current);
+  };
+
   Motion.play = function (url, label) {
     const t = resolveTarget();
     if (!t) { bus.emit('notify', { type: 'warning', title: 'Motion', message: 'Chưa có rig: hãy Load FBX hoặc Auto-Rig trước.' }); return Promise.resolve(null); }

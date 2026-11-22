@@ -212,3 +212,77 @@ bản v20.0 này đẩy tiếp thành 1 commit riêng (xem git log).
 | `index.html`, `mesh2motion.html` | PixiJS CDN 7.4.3 (+ fallback unpkg) |
 | `WUXIAMMORPG.html` | PixiJS CDN 8.23.0 |
 | `README.md`, `docs/PHASES.md` | ghi chú PixiJS 7.4.3 / 8.23.0 + Tripo v3 |
+
+## 10. Bổ sung v20.1 “Meshy Animate” (2026-11-22): Meshy workspace Animate + Smart Rig + Prompt AI Gen
+
+Nghiên cứu: docs.meshy.ai + trang tính năng + help center (workspace thật cần login
+nên không xem trực tiếp; giá gói webapp mâu thuẫn giữa các nguồn — chỉ giá API là
+chắc chắn). Báo cáo đầy đủ: `/tmp/meshy-research.md`, tóm tắt + hướng dẫn:
+`docs/MESHY_V20.md`.
+
+### 10.1 Mới
+
+- **Motion Library kiểu Meshy** (`js/animation/motion-library.js`, mới) — gộp clip thật:
+  AutoGen 10 + Presets 16 + FBX + M2M 326, đúng 5 category Meshy (Walk & Run,
+  Daily Actions, Dancing, Fighting, Body Movements), search, ▶ phát ngay,
+  + Add vào tab Added.
+- **Added queue** (`js/animation/anim-queue.js`, mới) — add/remove/move/clear,
+  Play All lần lượt (crossfade AutoGen/FBX 0.22s), loop queue, tổng thời lượng.
+- **Prompt Engine Pro** (`js/animation/anim-prompt.js`, mới) — 1 prompt → timeline
+  nhiều bước (EN+VI, số lần lặp, thời lượng từng bước, scale duration tổng),
+  style (Heroic/Tired/Angry/Happy/Slow/Fast/Sneaky), negative prompt, lưu preset
+  (localStorage). Bước chưa có clip → `unmatched`, báo rõ, không bịa.
+- **4 clip AutoGen mới** (`js/animation/anim-auto-gen.js`) — Wave, Punch (jab-cross),
+  Kick, Bow. AutoGen 6 → 10 clips; loop: Idle/Walk/Run/Wave.
+- **Meshy API adapter** (`js/ai/meshy-adapter.js`, mới) — `api.meshy.ai`:
+  Rigging 5cr, Animations 1–10 preset 3cr/action, Text to Motion Prime 10cr (FBX) /
+  Swift 3cr (BVH), prompt ≤400 ký tự, duration 2–10s bước 0.5, Library 631 preset,
+  Balance. Poll 3s tới SUCCEEDED/FAILED/CANCELED; file hết hạn ~3 ngày.
+  Không key → `blocked`. Clip FBX cloud áp lên rig qua `M2MMotion.playClip` mới.
+- **Smart Rig** (`js/rigging/rig-auto-gen.js`) — `detectCharacterType` (bbox),
+  `align` (Rotate/Offset/Height mét), `smartRig` (humanoid → AutoGen; 4 chân →
+  CreatureRigs fox/horse/kaiju), `reRig`, `qaReport` (bone count, symmetry,
+  rig height, skin coverage), markers (cằm/vai/khuỷu/cổ tay/háng/gối/mắt cá, tỉ lệ
+  theo H, mặc định = tỉ lệ cũ), preset **UE5 Mannequin**, tùy chọn **Fingers**
+  (+20 bone, tên kiểu Mixamo). Panel Rig thêm mục Smart Rig Setup.
+- **Skeleton templates mới** (`js/rigging/skeleton.js`) — UE5 Mannequin (23 bone:
+  pelvis/spine_01/upperarm_l…), Unity Humanoid (21 bone). Rig panel preset select
+  giờ 8 preset (động từ `Skeleton.PRESETS`).
+- **Animate Studio panel** — Prompt Pro UI (timeline preview khi gõ, style select,
+  ví dụ prompt chính thức của Meshy, preset đã lưu) + Meshy Cloud (key, Connect,
+  Balance, Prime/Swift, Generate).
+- **Phiên bản 20.1.0** — `js/core/version.js` + index/mesh2motion/server banner/
+  package.json/GLB-FBX generator strings theo v20.1.
+
+### 10.2 Sửa trong lúc test
+
+- `anim-prompt.js`: regex từ ngắn không dấu (`ne`, `lan`, `chem`, `bow`, `hit`,
+  `die`, `hop`, `da`, `do`, `chay`, `danh`) gây false-match (“lands” → Dodge,
+  “white” → Hit) — đã thêm `\b`. Negative prompt so theo gốc 4 ký tự để
+  “jumping” chặn được “jump”.
+- `rig-auto-gen.js`: `generate()` thiếu tham số `opts` trong signature (strict
+  mode → ReferenceError) — đã thêm.
+- `rig-auto-gen.js` `qaReport()`: box đo cả visual xương (octahedron HeadTop
+  vươn +0.31H) làm rig-height sai — đã đo box chỉ từ mesh không phải visual.
+- Test cũ `test-rig-anim.js`: cập nhật kỳ vọng 6 → 10 clips, 6 → 8 preset
+  (đúng thay đổi có chủ đích, không phải regression).
+
+### 10.3 Kiểm thử đã chạy (2026-11-22)
+
+- `node /tmp/test-fbx/test-meshy.js` — **73/73 pass**: prompt parser (EN+VI,
+  multi-action, repeats, negative, duration, style), queue, adapter mock
+  (blocked, validation, poll IN_PROGRESS→SUCCEEDED, library, balance),
+  Smart Rig (detect/align/markers/fingers/UE5/QA), Motion Library, M2M playClip,
+  10 clip AutoGen validate, AnimateStudio tích hợp.
+- `node /tmp/test-fbx/test-rig-anim.js` — **80/80 pass** (sau khi cập nhật kỳ
+  vọng 6→10 clips, 6→8 preset).
+- Server smoke test: `node server.js` — index + 5 file mới HTTP 200,
+  version.js trả 20.1.0.
+
+### 10.4 Chưa test / giới hạn
+
+- **Chưa test với key Meshy thật** — endpoint cloud mới chỉ test bằng mock fetch.
+  Cần key `msy_…` (gói trả phí) để chạy thật và kiểm tra tên field kết quả.
+- Marker chưa kéo trực tiếp trên viewport 3D (nhập số %); chưa có template
+  Maya HumanIK / Blender Rigify / CC5 / DAZ; Text to Motion local chỉ ghép clip
+  thật có sẵn, không sinh motion mới.
