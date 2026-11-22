@@ -1,15 +1,27 @@
-# PixiJS Studio × Tripo3D AI Studio — Prototype v5.0
+# PixiJS Studio × Tripo3D AI Studio — v20.0 “Mixamo Ready”
 
 > **All-in-One 3D Game Creation Environment** — Môi trường phát triển game 2D/3D Hybrid chạy hoàn toàn trên trình duyệt, không cần build tool, không cần TypeScript, 100% JavaScript thuần (Vanilla JS).
 
 | | |
 |---|---|
-| **Phiên bản** | v5.0.0 (Prototype) |
+| **Phiên bản** | v20.0.0 (“Mixamo Ready”, 2026-11-22 — nâng cấp từ v10.0.0) |
 | **Engine** | PixiJS v7 (2D Overlay / Game Layer) + Three.js r128 (3D Viewport) |
 | **Render** | WebGL 2.0 / WebGL 1.0 (WebGPU auto-detect — sẵn sàng khi trình duyệt hỗ trợ) |
 | **Model mẫu chuẩn** | `assets/models/kiemhiep.glb` — 10.94 MB, 1 nhân vật võ hiệp chibi (đã xoá 3 bản sao, −38.8%) |
 | **Ngôn ngữ** | JavaScript thuần (IIFE + Namespace pattern, **không** ES Modules bắt buộc) |
 | **Build** | ❌ Không cần — mở `index.html` hoặc chạy `server.bat` là chạy ngay |
+
+---
+
+## ✨ Có gì mới trong v20.0 “Mixamo Ready” (2026-11-22)
+
+- **FBX Mixamo — xương đi theo mesh:** `js/exporter/fbx-binary.js` giờ áp phép biến đổi (xoay/dịch/scale về cao ~1.8) cho cả xương, Cluster TransformLink và BindPose, không chỉ geometry. Trước đây model cao 0.5 xuất ra mesh 1.8 nhưng Hips vẫn ở y=0.25 — Mixamo/Blender skin sai.
+- **FBX Mixamo — tự nhận trục dọc:** `upAxis: 'Y'` (mặc định) giờ tự nhận trục dài nhất làm trục dọc. Model Z-up/X-up từ GLB Tripo/Meshy không còn xuất ra nằm ngang.
+- **FBX Mixamo — sửa dấu xoay X-up:** +90° thay vì −90° (dấu cũ lộn ngược nhân vật, đầu ở y=0).
+- **Mới — Mixamo Pre-flight** (`js/exporter/mixamo-validator.js`): kiểm tra model ngay trong studio trước khi xuất FBX — số tam giác (giới hạn 50.000), chiều cao, xương `mixamorig:*`, skin, texture — lỗi chặn thì không xuất, cảnh báo thì hiện trong thông báo Save Mixamo / Save Mixamo Rig.
+- **Mới — “Có gì mới v20.0”:** hộp thoại hiện 1 lần sau khi nâng cấp (nhớ bằng `State.settings.seenVersion`), mở lại bất cứ lúc nào bằng nút **What's New** trên topbar.
+- **Phiên bản thống nhất 20.0.0:** số hiệu giờ chỉ định nghĩa ở một chỗ duy nhất — `js/core/version.js` (`PixiStudio.VERSION`, `RELEASE`, `CHANGELOG_V20`) — và được dùng chung cho console boot, About, FBX Creator, Exporter, server banner. Trước đây chỗ v5.0, chỗ v10.0.
+- **Kiểm thử:** `npm run qa:mixamo` (validator FBX), `npm run check` (verify cuối), `npm run verify:anim`. Xem chi tiết trong `docs/V20_UPGRADE_REPORT.md`.
 
 ---
 
@@ -35,7 +47,7 @@
 
 ## 1. Giới thiệu tổng quan
 
-**PixiJS Studio × Tripo3D AI Studio v5.0** là một *prototype phần mềm 3D Studio thương mại* chạy trên web, mô phỏng trải nghiệm làm việc của Blender / Maya / Unity Editor nhưng:
+**PixiJS Studio × Tripo3D AI Studio v20.0** là một *phần mềm 3D Studio* chạy trên web, mô phỏng trải nghiệm làm việc của Blender / Maya / Unity Editor nhưng:
 
 - Chạy 100% trong trình duyệt — không cài đặt, không build, không server bắt buộc.
 - Kết hợp **PixiJS** (2D engine — layer hiệu ứng, sprite, game runtime) và **Three.js** (3D rendering, GLB loading, animation skeleton).
@@ -46,7 +58,7 @@
 
 Bố cục chuẩn bị sao chép từ ảnh `Futuristic 3D Chibi Studio Dashboard.png`:
 
-- **TOP BAR**: Logo PixiJS + Tripo3D.AI Studio (Pro) + badge v5.0 + menu Studio/Model/Rig/Animation/Scene/Material/Render/Game/Tools/Settings + Local/Save/Export/Upgrade + Window Controls.
+- **TOP BAR**: Logo PixiJS + Tripo3D.AI Studio (Pro) + badge v20.0 + menu Studio/Model/Rig/Animation/Scene/Material/Render/Game/Tools/Settings + Local/Save/Export/Upgrade + Window Controls + nút What's New (v20.0).
 - **LEFT TOOLBAR** (icon rail): Assets, Model, Rig, Animation, Material, Scene, Render, Export, AI Tools.
 - **ASSET LIBRARY**: tìm kiếm, bộ lọc, danh mục, grid thumbnail, Import 3D/Image/FBX/GLB, Model Tools.
 - **CENTRAL 3D VIEWPORT**: 4 góc nhìn nhân vật (Front/Left/Right/Back), lưới 3D, vòng sáng dưới chân, axis gizmo, transform gizmo.

@@ -1,6 +1,6 @@
 /* ============================================================
  * core/utils.js — DOM helpers, icon registry, format helpers
- * PixiJS Studio × Tripo3D AI Studio v5.0
+ * PixiJS Studio × Tripo3D AI Studio v20.0
  * ============================================================ */
 (function () {
   'use strict';
@@ -269,5 +269,7 @@
   /* Export namespace */
   window.PixiStudio = window.PixiStudio || {};
   window.PixiStudio.Utils = U;
-  window.PixiStudio.VERSION = '10.0.0';
+  /* VERSION do js/core/version.js định nghĩa (load trước file này);
+     giữ fallback để app vẫn chạy nếu thiếu version.js. */
+  window.PixiStudio.VERSION = window.PixiStudio.VERSION || '20.0.0';
 })();

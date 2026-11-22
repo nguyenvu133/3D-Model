@@ -2,9 +2,14 @@
   "dependencies": {
     "meshoptimizer": "^1.3.0"
   },
+  "description": "PixiJS Studio × Tripo3D AI Studio v20.0 — All-in-One 3D Game Creation Environment (Mixamo Ready)",
+  "name": "pixijs-tripo3d-ai-studio",
   "scripts": {
+    "check": "node tools/final-verify.js",
+    "qa:mixamo": "node tools/qa-fbx-mixamo.mjs",
     "start": "node server.js",
-    "wt": "powershell -NoProfile -ExecutionPolicy Bypass -File ./start-studio.ps1",
-    "verify:anim": "node tools/verify-anim.js"
-  }
+    "verify:anim": "node tools/verify-anim.js",
+    "wt": "powershell -NoProfile -ExecutionPolicy Bypass -File ./start-studio.ps1"
+  },
+  "version": "20.0.0"
 }

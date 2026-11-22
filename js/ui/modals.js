@@ -266,7 +266,7 @@
     const wrap = U.el('div', { style: 'text-align:center;' }, [
       U.el('div', { style: 'font-size:44px;margin-bottom:6px;', text: '🎛️' }),
       U.el('b', { style: 'font-size:16px;', text: 'PixiJS Studio × Tripo3D AI Studio' }),
-      U.el('p', { class: 'dim', style: 'margin:6px 0 12px;', text: 'Prototype v' + PixiStudio.VERSION + ' — All-in-One 3D Game Creation Environment' }),
+      U.el('p', { class: 'dim', style: 'margin:6px 0 12px;', text: 'v' + PixiStudio.VERSION + ' — All-in-One 3D Game Creation Environment' }),
       U.el('div', { class: 'stat-grid', style: 'text-align:left;' }, [
         U.el('div', { class: 'stat-cell' }, [U.el('div', { class: 'sc-label', text: '3D Engine' }), U.el('div', { class: 'sc-value', text: 'Three.js r128' })]),
         U.el('div', { class: 'stat-cell' }, [U.el('div', { class: 'sc-label', text: '2D Engine' }), U.el('div', { class: 'sc-value', text: 'PixiJS v7' })]),
@@ -276,6 +276,26 @@
       U.el('p', { class: 'dim small', style: 'margin-top:12px;', text: '100% Vanilla JS — không build tool. Adapter Tripo3D sẵn sàng kết nối backend thật.' })
     ]);
     Modals.open({ title: 'About', body: wrap, buttons: [{ label: 'Close', class: 'btn primary' }] });
+  };
+
+  /* ---------- WHAT'S NEW v20.0 ---------- */
+  Modals.showWhatsNew = function () {
+    const items = (window.PixiStudio && PixiStudio.CHANGELOG_V20) || [];
+    const rel = (window.PixiStudio && PixiStudio.RELEASE) || {};
+    const wrap = U.el('div', { style: 'text-align:left;' }, [
+      U.el('div', { style: 'text-align:center;margin-bottom:8px;' }, [
+        U.el('div', { style: 'font-size:40px;', text: '🚀' }),
+        U.el('b', { style: 'font-size:16px;', text: 'PixiJS Studio × Tripo3D AI Studio v' + (PixiStudio.VERSION_NAME || PixiStudio.VERSION) }),
+        U.el('p', { class: 'dim', style: 'margin:6px 0 4px;', text: (rel.codename ? '“' + rel.codename + '”' : '') + (rel.date ? ' · ' + rel.date : '') + (rel.previous ? ' · nâng cấp từ v' + rel.previous : '') })
+      ]),
+      U.el('div', {}, items.map(function (it) {
+        return U.el('div', { class: 'sc-row', style: 'align-items:flex-start;' }, [
+          U.el('span', { style: 'color:var(--success);margin-right:6px;', text: '✓' }),
+          U.el('span', { class: 'sc-desc', style: 'white-space:normal;', text: it })
+        ]);
+      }))
+    ]);
+    Modals.open({ title: 'Có gì mới trong v' + (PixiStudio.VERSION_NAME || PixiStudio.VERSION), body: wrap, buttons: [{ label: 'Bắt đầu dùng v' + (PixiStudio.VERSION_NAME || PixiStudio.VERSION), class: 'btn primary' }] });
   };
 
   /* ---------- SHORTCUTS LIST ---------- */

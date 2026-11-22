@@ -46,7 +46,8 @@
       antialias: true,
       defaultQuality: 'ultra',
       engine: 'three',            // three | pixi
-      accent: 'purple'
+      accent: 'purple',
+      seenVersion: ''             // v20.0: phiên bản đã xem "Có gì mới" — để hiện 1 lần sau nâng cấp
     }
   };
 

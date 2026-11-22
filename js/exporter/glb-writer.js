@@ -270,7 +270,7 @@
       };
 
       const json = {
-        asset: { version: '2.0', generator: 'PixiJS Studio × Tripo3D AI Studio v5.0 — GLB Writer (compat: ' + (universal ? 'universal' : 'web') + (opts.tripoFormat ? ' · tripoGLB' : '') + ')' },
+        asset: { version: '2.0', generator: 'PixiJS Studio × Tripo3D AI Studio v20.0 — GLB Writer (compat: ' + (universal ? 'universal' : 'web') + (opts.tripoFormat ? ' · tripoGLB' : '') + ')' },
         scene: 0,
         scenes: [{ nodes: [0] }],
         nodes: [],

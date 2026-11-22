@@ -15,7 +15,7 @@
 
   /* ---------- Tripo floating card checklist ---------- */
   /* ============================================================
-     🚀 AI 3D GENERATION STUDIO (v10.0)
+     🚀 AI 3D GENERATION STUDIO (v20.0)
      Bổ sung các tham số generate còn thiếu + batch + history + import lại
      ============================================================ */
   AIPanel._genState = AIPanel._genState || {
@@ -272,7 +272,7 @@
     }
 
     /* Generation Queue */
-    /* ===== 🚀 AI 3D GENERATION STUDIO (v10.0) — đầy đủ tham số + batch + history ===== */
+    /* ===== 🚀 AI 3D GENERATION STUDIO (v20.0) — đầy đủ tham số + batch + history ===== */
     AIPanel._renderGenerationStudio(body, tripo);
 
     const queueSection = U.el('div', { class: 'section-block' }, [

@@ -109,6 +109,19 @@
     });
   };
 
+  /* ---------- WHAT'S NEW (hiện 1 lần sau nâng cấp) ---------- */
+  App._maybeShowWhatsNew = function () {
+    try {
+      var seen = PixiStudio.State.settings.seenVersion || '';
+      if (seen === PixiStudio.VERSION) return;
+      PixiStudio.State.settings.seenVersion = PixiStudio.VERSION;
+      PixiStudio.State.saveSettings();
+      if (PixiStudio.Modals && PixiStudio.Modals.showWhatsNew) {
+        PixiStudio.Modals.showWhatsNew();
+      }
+    } catch (e) { /* private mode / modal chưa sẵn sàng — bỏ qua */ }
+  };
+
   /* ---------- BOOT SEQUENCE ---------- */
   App.boot = function () {
     if (App.booted) return;
@@ -197,6 +210,7 @@
           getBoot().bootProgress(100, 'Ready!');
           setTimeout(function () {
             getBoot().hideBoot();
+            App._maybeShowWhatsNew();
             bus.emit('app:ready', {
               loadMs: Math.round(performance.now() - (App._bootStart || performance.now()))
             });

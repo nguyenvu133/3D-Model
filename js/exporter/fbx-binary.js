@@ -743,7 +743,7 @@
         node('Second', [pI(now.getSeconds())]),
         node('Millisecond', [pI(now.getMilliseconds())])
       ]),
-      node('Creator', [pS('PixiJS Studio x Tripo3D AI Studio v10.0 — FBX Binary Writer')]),
+      node('Creator', [pS('PixiJS Studio x Tripo3D AI Studio v' + (window.PixiStudio && PixiStudio.VERSION || '20.0') + ' — FBX Binary Writer')]),
       node('SceneInfo', [pS('GlobalInfo\u0000\u0001SceneInfo'), pS('UserData')], [
         node('Type', [pS('UserData')]),
         node('Version', [pI(100)]),
@@ -848,7 +848,7 @@
       lines.push('\t\tYear: ' + now.getFullYear() + '\n\t\tMonth: ' + (now.getMonth() + 1) + '\n\t\tDay: ' + now.getDate());
       lines.push('\t\tHour: ' + now.getHours() + '\n\t\tMinute: ' + now.getMinutes() + '\n\t\tSecond: ' + now.getSeconds() + '\n\t\tMillisecond: ' + now.getMilliseconds());
       lines.push('\t}');
-      lines.push('\tCreator: "PixiJS Studio x Tripo3D AI Studio (Mixamo-ready)"');
+      lines.push('\tCreator: "PixiJS Studio x Tripo3D AI Studio v' + (window.PixiStudio && PixiStudio.VERSION || '20.0') + ' (Mixamo-ready)"');
       lines.push('}');
       /* toàn bộ cây còn lại trừ FBXHeaderExtension/Creator (đã viết tay phía trên) */
       roots.filter(function (n) { return n.name !== 'FBXHeaderExtension'; })

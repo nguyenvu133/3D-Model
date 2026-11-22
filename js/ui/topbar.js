@@ -143,13 +143,21 @@
       });
     }
 
+    /* What's new button — mở lại hộp thoại "Có gì mới" bất cứ lúc nào */
+    const whatsNewBtn = document.getElementById('btn-whats-new');
+    if (whatsNewBtn) {
+      whatsNewBtn.addEventListener('click', function () {
+        if (PixiStudio.Modals && PixiStudio.Modals.showWhatsNew) PixiStudio.Modals.showWhatsNew();
+      });
+    }
+
     /* Upgrade button — trung thực */
     const upgradeBtn = document.getElementById('btn-upgrade');
     if (upgradeBtn) {
       upgradeBtn.addEventListener('click', function () {
         bus.emit('notify', {
           type: 'info', title: 'Upgrade',
-          message: 'Prototype v5.0 — đầy đủ tính năng local. Bản Pro (AI cloud quota, cloud render) khi tích hợp backend thật.'
+          message: 'Studio v' + PixiStudio.VERSION + ' — đầy đủ tính năng local. Bản Pro (AI cloud quota, cloud render) khi tích hợp backend thật.'
         });
       });
     }

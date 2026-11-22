@@ -1,5 +1,5 @@
 /* ============================================================
- * exporter/save-manager.js — SAVE CENTER v5.0
+ * exporter/save-manager.js — SAVE CENTER v20.0
  * Hệ thống lưu/tối ưu file đầy đủ:
  *   • 13 định dạng xuất (GLB tối ưu, GLTF, OBJ, STL, PLY, JSON,
  *     PNG/JPG/WebP, WebM, ZIP bundle, Spritesheet, Thumbnails, Project)
@@ -226,7 +226,7 @@
     });
 
     const hasUv = uvs.some(function (v) { return v !== 0; });
-    let header = 'ply\nformat ascii 1.0\ncomment PixiJS Studio × Tripo3D AI Studio v5.0\n' +
+    let header = 'ply\nformat ascii 1.0\ncomment PixiJS Studio × Tripo3D AI Studio v20.0\n' +
       'element vertex ' + (positions.length / 3) + '\n' +
       'property float x\nproperty float y\nproperty float z\n' +
       'property float nx\nproperty float ny\nproperty float nz\n';
@@ -443,7 +443,7 @@
     const now = new Date().toISOString();
     let xml = '<?xml version="1.0" encoding="utf-8"?>\n';
     xml += '<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">\n';
-    xml += ' <asset>\n  <contributor><authoring_tool>PixiJS Studio × Tripo3D AI Studio v5.0</authoring_tool></contributor>\n';
+    xml += ' <asset>\n  <contributor><authoring_tool>PixiJS Studio × Tripo3D AI Studio v20.0</authoring_tool></contributor>\n';
     xml += '  <created>' + now + '</created><modified>' + now + '</modified>\n';
     xml += '  <unit name="meter" meter="1"/><up_axis>Y_UP</up_axis>\n </asset>\n';
 
@@ -617,6 +617,22 @@ tỉ lệ.
     return Math.round(tris);
   }
 
+  /* v20.0 — Mixamo Pre-flight: kiểm tra model trước khi ghi FBX.
+     Lỗi chặn (errors) → ok=false, warn chứa 'LỖI: ...'; cảnh báo →
+     ok=true, warn để gộp vào thông báo. Thiếu module validator thì
+     bỏ qua (giữ hành vi cũ). */
+  function mixamoPreflight(target, mode) {
+    var V = PixiStudio.MixamoValidator;
+    if (!V) return { ok: true, warn: [] };
+    try {
+      var res = V.check(target, { mode: mode });
+      var warn = [];
+      res.errors.forEach(function (e) { warn.push('LỖI: ' + e); });
+      res.warnings.forEach(function (w) { warn.push(w); });
+      return { ok: res.ok, warn: warn, summary: V.summary(res) };
+    } catch (e) { return { ok: true, warn: [] }; }
+  }
+
   function saveFBXMixamo(target, modelName, finish, fmt) {
     PixiStudio.Notifications.updateLoading(20, 'Chờ texture decode để nhúng màu vào FBX...');
     return new Promise(function (resolve) {
@@ -624,6 +640,15 @@ tỉ lệ.
         PixiStudio.Notifications.updateLoading(60, 'Ghi FBX 2013 cho Mixamo (mesh-only + texture nhúng)...');
         setTimeout(function () {
           try {
+            /* v20.0 Pre-flight: chặn xuất nếu Mixamo chắc chắn từ chối
+               (vd: >50.000 tam giác, không có mesh). */
+            const pre = mixamoPreflight(target, 'mesh-only');
+            if (!pre.ok) {
+              PixiStudio.Notifications.hideLoading();
+              bus.emit('notify', { type: 'error', title: 'Mixamo Pre-flight', message: 'Model chưa đủ điều kiện upload Mixamo: ' + pre.warn.join('; ') });
+              resolve(null);
+              return;
+            }
             const res = PixiStudio.FBXBinary.write(target, {
               noSkeleton: true,
               prepareMixamo: true,
@@ -638,9 +663,8 @@ tỉ lệ.
             finish(blob, { mixamo: true, textures: res.report.textures }, name);
             const r = res.report;
             const tris = countTris(target);
-            const warn = [];
-            if (tris > 50000) warn.push(tris + ' tam giác > giới hạn 50.000 của Mixamo — hãy giảm chi tiết trước');
-            if (!r.textures) warn.push(tx.total ? 'texture chưa decode xong (' + tx.ready + '/' + tx.total + ') — file sẽ KHÔNG có màu' : 'model không có texture — file không có màu');
+            const warn = pre.warn.slice();
+            if (!r.textures && tx.total) warn.push('texture chưa decode xong (' + tx.ready + '/' + tx.total + ') — file sẽ KHÔNG có màu');
             bus.emit('notify', {
               type: warn.length ? 'warning' : 'success',
               title: 'Save Mixamo xong',
@@ -721,6 +745,14 @@ tỉ lệ.
                 ? { bones: built.stats.bones, skinned: built.skinnedMeshes.length, mixamoNamed: built.stats.bones, sample: [] }
                 : collectRigInfo(target);
               const hasRig = info.bones > 0;
+              /* v20.0 Pre-flight: chặn xuất nếu Mixamo chắc chắn từ chối. */
+              const pre = mixamoPreflight(out, hasRig ? 'rig' : 'mesh-only');
+              if (!pre.ok) {
+                PixiStudio.Notifications.hideLoading();
+                bus.emit('notify', { type: 'error', title: 'Mixamo Pre-flight', message: 'Model chưa đủ điều kiện upload Mixamo: ' + pre.warn.join('; ') });
+                resolve(null);
+                return;
+              }
               const res = PixiStudio.FBXBinary.write(out, {
                 version: 7300,                    /* FBX 2013 — Mixamo chỉ nhận ≤ 2013 */
                 /* Khung xương chuẩn đã ở +Y, cao 1.8, đáy y=0 → KHÔNG bake lại
@@ -736,12 +768,10 @@ tỉ lệ.
               const name = buildFileName(modelName, 'mixamo-rig', fmt ? fmt.ext : '.fbx');
               finish(blob, { version: 7300, bones: res.report.bones, hasSkin: res.report.hasSkin }, name);
               const r = res.report;
-              const warn = [];
+              const warn = pre.warn.slice();
               if (!built && buildErr) warn.push('không dựng được khung xương chuẩn Mixamo (' + String(buildErr.message || buildErr) + ') — dùng rig auto-gen');
               if (!hasRig) warn.push('không tạo được rig — file là mesh-only, Mixamo sẽ tự auto-rig');
-              if (!r.textures) warn.push('không có texture nhúng — model sẽ không có màu (X Bot.fbx gốc cũng không có texture)');
               const tris = countTris(out);
-              if (tris > 50000) warn.push(tris + ' tam giác > 50.000 (giới hạn auto-rig Mixamo)');
               PixiStudio.Notifications.hideLoading();
               bus.emit('notify', {
                 type: warn.length ? 'warning' : 'success',
@@ -1019,7 +1049,7 @@ tỉ lệ.
     const now = new Date();
     let f = '';
     f += '; FBX 7.4.0 project file\n';
-    f += '; Generated by PixiJS Studio x Tripo3D AI Studio v5.0\n';
+    f += '; Generated by PixiJS Studio x Tripo3D AI Studio v20.0\n';
     f += '; NOTE: ASCII FBX — Maya/Autodesk doc duoc. Blender chi doc FBX binary (dung DAE/GLB).\n\n';
     f += 'FBXHeaderExtension:  {\n\tFBXHeaderVersion: 1003\n\tFBXVersion: 7400\n\tCreator: "PixiJS Studio"\n\tCreationTimeStamp:  {\n\t\tVersion: 1000\n\t\tYear: ' + now.getFullYear() + '\n\t\tMonth: ' + (now.getMonth() + 1) + '\n\t\tDay: ' + now.getDate() + '\n\t\tHour: ' + now.getHours() + '\n\t}\n}\n\n';
     f += 'GlobalSettings:  {\n\tVersion: 1000\n\tProperties70:  {\n\t\tP: "UpAxis", "int", "Integer", "",1\n\t\tP: "UpAxisSign", "int", "Integer", "",1\n\t\tP: "FrontAxis", "int", "Integer", "",2\n\t\tP: "FrontAxisSign", "int", "Integer", "",1\n\t\tP: "CoordSystem", "int", "Integer", "",0\n\t\tP: "OriginalUnitScaleFactor", "double", "Number", "",1\n\t}\n}\n\n';
@@ -1685,7 +1715,7 @@ tỉ lệ.
           });
           files.push({
             name: 'README.txt',
-            data: new TextEncoder().encode('DAE Collada 1.4.1 + textures PNG\nBlender: File > Import > Collada (DAE)\nMaya/Unity: import trực tiếp\nXuất bởi PixiJS Studio × Tripo3D AI Studio v5.0')
+            data: new TextEncoder().encode('DAE Collada 1.4.1 + textures PNG\nBlender: File > Import > Collada (DAE)\nMaya/Unity: import trực tiếp\nXuất bởi PixiJS Studio × Tripo3D AI Studio v20.0')
           });
           const blob = PixiStudio.ZipWriter.create(files);
           PixiStudio.Notifications.hideLoading();
@@ -1738,7 +1768,7 @@ tỉ lệ.
               { name: 'model.gltf', data: new TextEncoder().encode(jsonText) },
               {
                 name: 'README.txt',
-                data: new TextEncoder().encode('GLTF source pack — model.gltf embed data URI buffers/textures.\nDùng làm nguồn pipeline (không phải file runtime tối ưu — dùng GLB).\nXuất bởi PixiJS Studio × Tripo3D AI Studio v5.0')
+                data: new TextEncoder().encode('GLTF source pack — model.gltf embed data URI buffers/textures.\nDùng làm nguồn pipeline (không phải file runtime tối ưu — dùng GLB).\nXuất bởi PixiJS Studio × Tripo3D AI Studio v20.0')
               }
             ];
             const blob = PixiStudio.ZipWriter.create(files);
@@ -1860,7 +1890,7 @@ tỉ lệ.
                     'Cach 2 (TAO MESH TU SCRIPT): Blender -> tab Scripting -> New -> dan\n' +
                     '  noi dung import_to_blender.py -> Run Script. Mesh + texture se duoc\n' +
                     '  tao truc tiep trong scene. Sau do: File > Save As... => file .blend cua ban.\n\n' +
-                    'Xuat boi PixiJS Studio x Tripo3D AI Studio v5.0 - ' + new Date().toLocaleString())
+                    'Xuat boi PixiJS Studio x Tripo3D AI Studio v20.0 - ' + new Date().toLocaleString())
                 }]
               ].flat();
               const blob = PixiStudio.ZipWriter.create(files);
@@ -2180,7 +2210,7 @@ tỉ lệ.
       const entry = PixiStudio.Models.getCurrent();
       const manifest = {
         name: modelName,
-        generator: 'PixiJS Studio × Tripo3D AI Studio v5.0',
+        generator: 'PixiJS Studio × Tripo3D AI Studio v20.0',
         exportedAt: new Date().toISOString(),
         model: {
           triangles: entry ? entry.stats.triangles : null,
@@ -2206,7 +2236,7 @@ tỉ lệ.
         '  • Three.js: loader.setMeshoptDecoder(MeshoptDecoder); loader.load("model.glb", ...)',
         '  • Babylon.js / PlayCanvas / Unity glTFast đều đọc GLB chuẩn glTF 2.0',
         '',
-        'Xuất bởi PixiJS Studio × Tripo3D AI Studio v5.0 — ' + new Date().toLocaleString()
+        'Xuất bởi PixiJS Studio × Tripo3D AI Studio v20.0 — ' + new Date().toLocaleString()
       ].join('\n');
       files.push({ name: 'README.txt', data: new TextEncoder().encode(readme) });
 
