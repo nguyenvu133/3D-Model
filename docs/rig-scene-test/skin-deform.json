@@ -1,0 +1,154 @@
+[
+ {
+  "rigId": "fox",
+  "anim": "Bark",
+  "tracks": 48,
+  "maxRatio": 1.11,
+  "worst": {
+   "rest": [
+    3.01,
+    3.99,
+    1.85
+   ],
+   "now": [
+    3.01,
+    3.77,
+    2.04
+   ]
+  },
+  "sane": true
+ },
+ {
+  "rigId": "horse",
+  "anim": "Death",
+  "tracks": 51,
+  "maxRatio": 1.25,
+  "worst": {
+   "rest": [
+    3.01,
+    3.99,
+    1.85
+   ],
+   "now": [
+    2.81,
+    3.81,
+    2.31
+   ]
+  },
+  "sane": true
+ },
+ {
+  "rigId": "kaiju",
+  "anim": "Attack",
+  "tracks": 54,
+  "maxRatio": 1.64,
+  "worst": {
+   "rest": [
+    3.01,
+    3.99,
+    1.85
+   ],
+   "now": [
+    2.65,
+    3.64,
+    3.02
+   ]
+  },
+  "sane": true
+ },
+ {
+  "rigId": "dragon",
+  "anim": "Attack",
+  "tracks": 95,
+  "maxRatio": 1.18,
+  "worst": {
+   "rest": [
+    3.01,
+    3.99,
+    1.85
+   ],
+   "now": [
+    3,
+    3.77,
+    2.17
+   ]
+  },
+  "sane": true
+ },
+ {
+  "rigId": "bird",
+  "anim": "Hop",
+  "tracks": 52,
+  "maxRatio": 1.37,
+  "worst": {
+   "rest": [
+    3.01,
+    3.99,
+    1.85
+   ],
+   "now": [
+    2.96,
+    5.47,
+    2.14
+   ]
+  },
+  "sane": true
+ },
+ {
+  "rigId": "snake",
+  "anim": "Bite",
+  "tracks": 25,
+  "maxRatio": 1.17,
+  "worst": {
+   "rest": [
+    3.01,
+    3.99,
+    1.85
+   ],
+   "now": [
+    2.66,
+    4.01,
+    2.16
+   ]
+  },
+  "sane": true
+ },
+ {
+  "rigId": "shark",
+  "anim": "Bite",
+  "tracks": 30,
+  "maxRatio": 1.01,
+  "worst": {
+   "rest": [
+    3.01,
+    3.99,
+    1.85
+   ],
+   "now": [
+    3,
+    4.03,
+    1.82
+   ]
+  },
+  "sane": true
+ },
+ {
+  "rigId": "spider",
+  "anim": "Attack",
+  "tracks": 54,
+  "maxRatio": 2.26,
+  "worst": {
+   "rest": [
+    3.01,
+    3.99,
+    1.85
+   ],
+   "now": [
+    3.89,
+    5.09,
+    4.17
+   ]
+  },
+  "sane": false
+ }
+]

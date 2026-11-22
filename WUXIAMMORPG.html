@@ -1,0 +1,2597 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WUXIA MMORPG — Quan Ải Long Ngâm | PixiJS v8</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0e14; font-family: "Segoe UI", system-ui, sans-serif; }
+  #stage { position: fixed; inset: 0; }
+  #stage canvas { display: block; }
+
+  /* ============ HUD ============ */
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; font-size: 13px; color: #e8e8f0; }
+  #hud .panel { background: linear-gradient(160deg, rgba(12,16,26,.88), rgba(18,22,34,.82)); border: 1px solid rgba(140,120,70,.45); border-radius: 10px; backdrop-filter: blur(6px); box-shadow: 0 4px 18px rgba(0,0,0,.5); }
+
+  /* Top-left: level + activity */
+  #tl-info { position: absolute; top: 14px; left: 14px; padding: 10px 14px; min-width: 230px; }
+  #tl-info .game-title { font-size: 15px; font-weight: 800; letter-spacing: .03em; color: #ffd76a; text-shadow: 0 0 12px rgba(255,190,60,.5); }
+  #tl-info .activity { font-size: 12px; color: #9fd4ff; margin-top: 2px; font-weight: 600; }
+  #tl-info .party-size { font-size: 11px; color: #aab2c8; margin-top: 2px; }
+  #tl-info .player-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  #tl-info .lv-badge { width: 34px; height: 34px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #8f6bff, #4a2fa8); border: 2px solid #c9a94f; display: grid; place-items: center; font-weight: 800; font-size: 14px; color: #fff; }
+  #tl-info .xp-wrap { flex: 1; }
+  #tl-info .hp-bar { height: 12px; background: #2a1520; border-radius: 7px; overflow: hidden; border: 1px solid #5a2838; position: relative; }
+  #tl-info .hp-bar i { display: block; height: 100%; background: linear-gradient(90deg, #e03848, #ff7050); width: 100%; transition: width .2s; }
+  #tl-info .hp-text { position: absolute; inset: 0; text-align: center; font-size: 9.5px; line-height: 11px; color: #ffd8d8; font-weight: 700; }
+  #tl-info .xp-bar { height: 5px; background: #1a2030; border-radius: 4px; margin-top: 4px; overflow: hidden; }
+  #tl-info .xp-bar i { display: block; height: 100%; background: linear-gradient(90deg, #38c8e0, #7fe0ff); width: 30%; }
+  #tl-info .gold-row { margin-top: 6px; font-size: 12px; color: #ffd76a; font-weight: 700; display: flex; gap: 12px; }
+  #tl-info .gold-row span.kill { color: #9fd4ff; }
+
+  /* Left: party */
+  #party { position: absolute; left: 14px; top: 140px; display: flex; flex-direction: column; gap: 8px; width: 210px; }
+  .party-member { display: flex; gap: 8px; padding: 8px; align-items: center; }
+  .party-member .portrait { width: 40px; height: 40px; border-radius: 9px; border: 2px solid #c9a94f; background: radial-gradient(circle at 40% 30%, #3c4a6e, #182238); display: grid; place-items: center; font-size: 18px; flex: none; }
+  .party-member .p-info { flex: 1; min-width: 0; }
+  .party-member .p-name { font-size: 11.5px; font-weight: 700; color: #ffe9a8; white-space: nowrap; }
+  .party-member .hp-bar { height: 9px; background: #2a1520; border-radius: 5px; margin-top: 3px; overflow: hidden; border: 1px solid #5a2838; position: relative; }
+  .party-member .hp-bar i { display: block; height: 100%; background: linear-gradient(90deg, #48c860, #a0e878); transition: width .2s; }
+  .party-member .mp-bar { height: 5px; background: #14203a; border-radius: 4px; margin-top: 2px; overflow: hidden; }
+  .party-member .mp-bar i { display: block; height: 100%; background: linear-gradient(90deg, #3878e8, #78b0ff); }
+  .party-member .p-status { font-size: 9px; color: #8fa0c0; margin-top: 2px; }
+
+  /* Right: quest + minimap + wave */
+  #quest-panel { position: absolute; right: 14px; top: 14px; width: 250px; padding: 10px 14px; }
+  #quest-panel .q-title { font-size: 12.5px; font-weight: 800; color: #ffd76a; display: flex; gap: 6px; align-items: center; }
+  #quest-panel .q-obj { font-size: 11.5px; color: #c8d2e8; margin-top: 6px; line-height: 1.5; }
+  #quest-panel .q-progress { margin-top: 6px; height: 7px; background: #1a2030; border-radius: 4px; overflow: hidden; }
+  #quest-panel .q-progress i { display: block; height: 100%; background: linear-gradient(90deg, #e8a838, #ffd76a); width: 0%; transition: width .3s; }
+  #quest-panel .q-reward { font-size: 10.5px; color: #8fd8a0; margin-top: 5px; }
+  #minimap-wrap { position: absolute; right: 14px; top: 150px; padding: 6px; }
+  #minimap { display: block; border-radius: 8px; }
+  #wave-panel { position: absolute; right: 14px; top: 345px; width: 250px; padding: 10px 14px; }
+  #wave-panel .w-title { font-size: 13px; font-weight: 800; color: #ff9f60; }
+  #wave-panel .w-info { font-size: 11px; color: #c8d2e8; margin-top: 4px; display: flex; justify-content: space-between; }
+  #wave-panel .w-progress { margin-top: 6px; height: 7px; background: #1a2030; border-radius: 4px; overflow: hidden; }
+  #wave-panel .w-progress i { display: block; height: 100%; background: linear-gradient(90deg, #e85838, #ffa060); width: 0%; transition: width .3s; }
+
+  /* Boss bar */
+  #boss-bar { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); width: 480px; padding: 8px 16px 10px; display: none; }
+  #boss-bar.show { display: block; }
+  #boss-bar .b-name { text-align: center; font-size: 13.5px; font-weight: 800; color: #ff8060; letter-spacing: .06em; text-shadow: 0 0 10px rgba(255,80,40,.5); }
+  #boss-bar .b-hp { margin-top: 5px; height: 13px; background: #2a1020; border-radius: 8px; border: 1px solid #7a3038; overflow: hidden; }
+  #boss-bar .b-hp i { display: block; height: 100%; background: linear-gradient(90deg, #c02828, #ff7848); width: 100%; transition: width .25s; }
+
+  /* Bottom skill bar */
+  #skillbar { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; pointer-events: auto; padding: 10px 14px; align-items: center; }
+  .skill-slot { width: 58px; height: 58px; border-radius: 12px; border: 2px solid #8a7638; background: radial-gradient(circle at 40% 30%, #2c3050, #141828); position: relative; display: grid; place-items: center; cursor: pointer; transition: transform .1s, box-shadow .15s; }
+  .skill-slot:hover { transform: translateY(-3px); box-shadow: 0 6px 16px rgba(255,200,80,.25); }
+  .skill-slot .sk-icon { font-size: 24px; filter: drop-shadow(0 0 6px rgba(255,220,120,.4)); }
+  .skill-slot .sk-key { position: absolute; top: -7px; left: -7px; width: 20px; height: 20px; border-radius: 50%; background: #c9a94f; color: #1a1608; font-size: 11px; font-weight: 800; display: grid; place-items: center; border: 1px solid #ffd76a; }
+  .skill-slot .sk-cd { position: absolute; inset: 0; background: rgba(8,10,20,.72); border-radius: 10px; display: grid; place-items: center; font-size: 15px; font-weight: 800; color: #ffcf7a; display: none; }
+  .skill-slot.cooldown .sk-cd { display: grid; }
+  .skill-slot .sk-name { position: absolute; bottom: -16px; left: 50%; transform: translateX(-50%); font-size: 8.5px; color: #c8b880; white-space: nowrap; font-weight: 600; }
+  .skill-slot.sep { width: 8px; height: 44px; border: none; background: linear-gradient(#5a5030, #2a2418); border-radius: 4px; }
+  .skill-slot.atk { border-color: #d85a48; }
+  .skill-slot.atk .sk-key { background: #d85a48; border-color: #ff8a70; }
+
+  /* Target frame */
+  #target-frame { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); width: 300px; padding: 7px 14px 9px; display: none; }
+  #target-frame.show { display: block; }
+  #target-frame .t-name { font-size: 12px; font-weight: 700; color: #ffb0a0; text-align: center; }
+  #target-frame .t-hp { margin-top: 4px; height: 9px; background: #2a1520; border-radius: 5px; border: 1px solid #5a2838; overflow: hidden; }
+  #target-frame .t-hp i { display: block; height: 100%; background: linear-gradient(90deg, #e03848, #ff7050); width: 100%; }
+
+  /* Controls hint */
+  #controls-hint { position: absolute; bottom: 88px; left: 14px; font-size: 10.5px; color: #8a94b0; padding: 8px 12px; line-height: 1.7; }
+  #controls-hint b { color: #ffd76a; font-weight: 700; }
+
+  /* Toast */
+  #game-toast { position: absolute; top: 80px; left: 50%; transform: translateX(-50%); background: rgba(12,16,26,.92); border: 1px solid rgba(255,200,90,.5); color: #ffe9a8; padding: 9px 20px; border-radius: 20px; font-size: 13px; font-weight: 700; opacity: 0; transition: opacity .3s; text-shadow: 0 0 8px rgba(0,0,0,.6); }
+  #game-toast.show { opacity: 1; }
+
+  /* Loading */
+  #loading { position: fixed; inset: 0; background: radial-gradient(1000px 600px at 50% 40%, #1a2234, #0a0e14); z-index: 99; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; }
+  #loading .lg-title { font-size: 26px; font-weight: 800; color: #ffd76a; letter-spacing: .08em; text-shadow: 0 0 24px rgba(255,190,60,.5); }
+  #loading .lg-sub { font-size: 13px; color: #9fb2d0; }
+  #loading .lg-bar { width: 300px; height: 6px; background: #1a2234; border-radius: 4px; overflow: hidden; }
+  #loading .lg-bar i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, #c9a94f, #ffd76a); transition: width .3s; }
+  #loading.hide { opacity: 0; pointer-events: none; transition: opacity .6s; }
+
+  /* Damage vignette */
+  #vignette { position: fixed; inset: 0; pointer-events: none; z-index: 9; box-shadow: inset 0 0 120px rgba(200,30,30,0); transition: box-shadow .2s; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+
+<div id="hud">
+  <div id="tl-info" class="panel">
+    <div class="game-title">⚔ WUXIA MMORPG</div>
+    <div class="activity">Quan Ải Long Ngâm — Trường Bạch</div>
+    <div class="party-size">Đội ngũ: 3 người · Sự kiện săn boss</div>
+    <div class="player-row">
+      <div class="lv-badge" id="hud-level">1</div>
+      <div class="xp-wrap">
+        <div class="hp-bar"><i id="hud-hp"></i><div class="hp-text" id="hud-hp-text">100/100</div></div>
+        <div class="xp-bar"><i id="hud-xp"></i></div>
+      </div>
+    </div>
+    <div class="gold-row"><span>💰 <b id="hud-gold">0</b></span><span class="kill">🗡 Tiêu diệt: <b id="hud-kills">0</b></span></div>
+  </div>
+
+  <div id="party"></div>
+
+  <div id="quest-panel" class="panel">
+    <div class="q-title">📜 Trường Bạch — Tiêu diệt địch tại Quan Ải</div>
+    <div class="q-obj">Tiêu diệt quân địch đóng giữ Quan Ải Long Ngâm, mở đường tiến vào đại sảnh.</div>
+    <div class="q-progress"><i id="quest-progress"></i></div>
+    <div class="q-reward">Phần thưởng: 500 vàng · 300 EXP · Võ khí Trường Bạch</div>
+  </div>
+
+  <div id="minimap-wrap" class="panel"><canvas id="minimap" width="170" height="170"></canvas></div>
+
+  <div id="wave-panel" class="panel">
+    <div class="w-title">⚔ Quan Ải Long Ngâm — Đợt <span id="wave-num">1</span>/4</div>
+    <div class="w-info"><span id="wave-name">Sơn tặc tuyết</span><span id="wave-count">0/6</span></div>
+    <div class="w-progress"><i id="wave-progress"></i></div>
+  </div>
+
+  <div id="boss-bar" class="panel">
+    <div class="b-name" id="boss-name">Thor — Vương Sơn Tặc</div>
+    <div class="b-hp"><i id="boss-hp"></i></div>
+  </div>
+
+  <div id="target-frame" class="panel">
+    <div class="t-name" id="target-name">—</div>
+    <div class="t-hp"><i id="target-hp"></i></div>
+  </div>
+
+  <div id="skillbar" class="panel">
+    <div class="skill-slot atk" data-skill="attack"><span class="sk-icon">🗡</span><span class="sk-key">LMB</span><div class="sk-cd"></div><span class="sk-name">Tấn công</span></div>
+    <div class="sep" style="width:8px;"></div>
+    <div class="skill-slot" data-skill="q"><span class="sk-icon">💫</span><span class="sk-key">Q</span><div class="sk-cd">0</div><span class="sk-name">Kim Hoàn Trận</span></div>
+    <div class="skill-slot" data-skill="e"><span class="sk-icon">🐉</span><span class="sk-key">E</span><div class="sk-cd">0</div><span class="sk-name">Long Kiếm</span></div>
+    <div class="skill-slot" data-skill="r"><span class="sk-icon">🔥</span><span class="sk-key">R</span><div class="sk-cd">0</div><span class="sk-name">Viêm Đao</span></div>
+    <div class="skill-slot" data-skill="f"><span class="sk-icon">🌪</span><span class="sk-key">F</span><div class="sk-cd">0</div><span class="sk-name">Long Ngâm</span></div>
+    <div class="sep" style="width:8px;"></div>
+    <div class="skill-slot" data-skill="space"><span class="sk-icon">💨</span><span class="sk-key">SPC</span><div class="sk-cd">0</div><span class="sk-name">Né thân</span></div>
+    <div class="skill-slot" data-skill="char"><span class="sk-icon">🎒</span><span class="sk-key">I</span><div class="sk-cd"></div><span class="sk-name">Nhân vật</span></div>
+  </div>
+
+  <div id="controls-hint" class="panel">
+    <b>WASD</b> Di chuyển · <b>Chuột trái</b> Tấn công · <b>Chuột phải</b> Chọn mục tiêu<br>
+    <b>Q</b> Kim Hoàn Trận · <b>E</b> Long Kiếm · <b>R</b> Viêm Đao · <b>F</b> Long Ngâm · <b>Space</b> Né · <b>Lăn chuột</b> Zoom
+  </div>
+
+  <div id="game-toast"></div>
+</div>
+<div id="vignette"></div>
+
+<div id="loading">
+  <div class="lg-title">⚔ QUAN ẢI LONG NGÂM ⚔</div>
+  <div class="lg-sub">Trường Bạch — Tuyết lạc thiên sơn · Đang dựng thế giới…</div>
+  <div class="lg-bar"><i id="load-fill"></i></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@8.6.6/dist/pixi.min.js"></script>
+<script>
+/* ================================================================
+ * WUXIA MMORPG — Quan Ải Long Ngâm (PixiJS v8, thuần JS)
+ * Trường Bạch · Snowy Isometric Action RPG · 3-person party
+ * Systems: Engine · Iso · TileMap · World · Camera · Party · Enemy
+ *          Combat · Skill · Effect · Particle · Quest · UI · MiniMap
+ *          Loot · Audio · Input
+ * ================================================================ */
+(function () {
+  'use strict';
+
+  /* ================= CONFIG & UTILS ================= */
+  var CFG = {
+    TILE_W: 64, TILE_H: 32,
+    MAP_W: 60, MAP_H: 60,
+    DESIGN_W: 1920, DESIGN_H: 1080,
+    MAX_ZOOM: 1.6, MIN_ZOOM: 0.55
+  };
+
+  function rand(a, b) { return a + Math.random() * (b - a); }
+  function randInt(a, b) { return Math.floor(rand(a, b + 1)); }
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function dist(ax, ay, bx, by) { var dx = bx - ax, dy = by - ay; return Math.sqrt(dx * dx + dy * dy); }
+  function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+  /* Isometric world → screen (world units = tile units, float) */
+  function isoX(wx, wy) { return (wx - wy) * CFG.TILE_W / 2; }
+  function isoY(wx, wy) { return (wx + wy) * CFG.TILE_H / 2; }
+  /* depth: wx + wy */
+  function depthOf(wx, wy) { return wx + wy; }
+
+  /* Screen → world (tại zoom 1, camera offset 0) */
+  function screenToWorld(sx, sy) {
+    var X = sx / (CFG.TILE_W / 2), Y = sy / (CFG.TILE_H / 2);
+    return { x: (X + Y) / 2, y: (Y - X) / 2 };
+  }
+
+  /* ================= AUDIO MANAGER ================= */
+  var AudioMan = {
+    ctx: null,
+    init: function () {
+      try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { this.ctx = null; }
+    },
+    sfx: function (type) {
+      if (!this.ctx) return;
+      var ctx = this.ctx, t = ctx.currentTime, o, g;
+      try {
+        if (type === 'hit') {
+          o = ctx.createOscillator(); g = ctx.createGain();
+          o.type = 'square'; o.frequency.setValueAtTime(160, t); o.frequency.exponentialRampToValueAtTime(60, t + 0.08);
+          g.gain.setValueAtTime(0.08, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+          o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + 0.1);
+        } else if (type === 'swing') {
+          o = ctx.createOscillator(); g = ctx.createGain();
+          o.type = 'sine'; o.frequency.setValueAtTime(700, t); o.frequency.exponentialRampToValueAtTime(220, t + 0.1);
+          g.gain.setValueAtTime(0.04, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+          o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + 0.13);
+        } else if (type === 'skill') {
+          o = ctx.createOscillator(); g = ctx.createGain();
+          o.type = 'sawtooth'; o.frequency.setValueAtTime(220, t); o.frequency.exponentialRampToValueAtTime(880, t + 0.25);
+          g.gain.setValueAtTime(0.07, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+          o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + 0.32);
+        } else if (type === 'ult') {
+          o = ctx.createOscillator(); g = ctx.createGain();
+          o.type = 'sawtooth'; o.frequency.setValueAtTime(80, t); o.frequency.exponentialRampToValueAtTime(440, t + 0.5);
+          g.gain.setValueAtTime(0.14, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
+          o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + 0.85);
+        } else if (type === 'pickup') {
+          o = ctx.createOscillator(); g = ctx.createGain();
+          o.type = 'sine'; o.frequency.setValueAtTime(880, t); o.frequency.setValueAtTime(1320, t + 0.07);
+          g.gain.setValueAtTime(0.06, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+          o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + 0.16);
+        }
+      } catch (e) { }
+    }
+  };
+
+  /* ================= GAME ENGINE ================= */
+  var Engine = {
+    app: null,
+    layers: {},       // terrain, groundFx, env, characters, effects, overlay
+    worldRoot: null,
+    time: 0
+  };
+
+  Engine.init = function (onProgress) {
+    return new Promise(function (resolve) {
+      onProgress(20);
+      var app = new PIXI.Application();
+      Engine.app = app;
+      app.init({
+        width: window.innerWidth, height: window.innerHeight,
+        background: 0x0d1420,
+        antialias: true,
+        resolution: Math.min(window.devicePixelRatio || 1, 2),
+        autoDensity: true
+      }).then(function () {
+        document.getElementById('stage').appendChild(app.canvas);
+        onProgress(45);
+
+        /* Layer root — camera transform áp lên đây */
+        var worldRoot = new PIXI.Container();
+        Engine.worldRoot = worldRoot;
+        app.stage.addChild(worldRoot);
+
+        /* Layers — sortable theo depth */
+        var layers = { terrain: new PIXI.Container(), groundFx: new PIXI.Container(), env: new PIXI.Container(), characters: new PIXI.Container(), effects: new PIXI.Container(), overlay: new PIXI.Container() };
+        Object.keys(layers).forEach(function (k) {
+          layers[k].sortableChildren = true;
+          worldRoot.addChild(layers[k]);
+        });
+        layers.env.zIndex = 10;
+        layers.characters.zIndex = 20;
+        layers.effects.zIndex = 30;
+        layers.overlay.zIndex = 40;
+        Engine.layers = layers;
+        onProgress(60);
+
+        window.addEventListener('resize', function () {
+          app.renderer.resize(window.innerWidth, window.innerHeight);
+        });
+
+        resolve(app);
+      });
+    });
+  };
+
+  /* ================= TILE MAP (Trường Bạch terrain) ================= */
+  var TileMap = {
+    /* Vẽ terrain — batch theo màu (3 lần fill thay vì 3600) */
+    build: function () {
+      var g = new PIXI.Graphics();
+      var TW = CFG.TILE_W, TH = CFG.TILE_H;
+      var W = CFG.MAP_W, H = CFG.MAP_H;
+
+      /* nền tuyết tổng */
+      g.rect(-2000, -1400, W * TW + 4000, H * TH + 2800).fill(0x4a5878);
+
+      /* Batch tiles theo màu — mỗi màu 1 Graphics + 1 fill (palette tuyết đêm sáng) */
+      var batches = {};
+      var COLORS = [0x5c6c8c, 0x566280, 0x526078];
+      COLORS.forEach(function (c) { batches[c] = new PIXI.Graphics(); });
+      for (var x = 0; x < W; x++) {
+        for (var y = 0; y < H; y++) {
+          var sx = isoX(x, y), sy = isoY(x, y);
+          var tint = (x * 7 + y * 13) % 10;
+          var col = tint > 8 ? 0x5c6c8c : tint > 4 ? 0x566280 : 0x526078;
+          var b = batches[col];
+          b.moveTo(sx, sy)
+            .lineTo(sx + TW / 2, sy + TH / 2)
+            .lineTo(sx, sy + TH)
+            .lineTo(sx - TW / 2, sy + TH / 2)
+            .closePath();
+        }
+      }
+      COLORS.forEach(function (c) {
+        batches[c].fill(c);
+        Engine.layers.terrain.addChild(batches[c]);
+      });
+
+      /* ===== Đường đá chính (dọc theo trục — từ cửa đền chảy xuống nam) ===== */
+      function roadRect(w0, h0, w1, h1, col, wide) {
+        /* vẽ dải đường theo iso giữa 2 điểm world */
+        var steps = 60;
+        for (var i = 0; i <= steps; i++) {
+          var t = i / steps;
+          var wx = w0.x + (w1.x - w0.x) * t;
+          var wy = w0.y + (w1.y - w0.y) * t;
+          var sx = isoX(wx, wy), sy = isoY(wx, wy);
+          var rw = wide;
+          g.moveTo(sx - rw / 2, sy)
+            .lineTo(sx, sy + rw / 4)
+            .lineTo(sx + rw / 2, sy)
+            .lineTo(sx, sy - rw / 4)
+            .closePath()
+            .fill({ color: col, alpha: 0.9 });
+        }
+      }
+      var roadCol = 0x606c88, roadDark = 0x525e78;
+      /* đường chính nam-bắc qua trung tâm */
+      roadRect({ x: 30, y: 34 }, { x: 30, y: 56 }, 0, 0, roadCol, 150);
+      roadRect({ x: 30, y: 34 }, { x: 30, y: 56 }, 0, 0, roadDark, 120);
+      /* đường ngang đông-tây trước đền */
+      roadRect({ x: 16, y: 36 }, { x: 46, y: 36 }, 0, 0, roadCol, 140);
+      roadRect({ x: 16, y: 36 }, { x: 46, y: 36 }, 0, 0, roadDark, 110);
+      /* nhánh tới đền */
+      roadRect({ x: 30, y: 36 }, { x: 30, y: 30 }, 0, 0, roadCol, 120);
+
+      /* Plaza đá trước đền */
+      var plazaX = isoX(30, 32), plazaY = isoY(30, 32);
+      for (var px = -4; px <= 4; px++) {
+        for (var py = -3; py <= 3; py++) {
+          var tsx = plazaX + px * TW / 2, tsy = plazaY + py * TH / 2;
+          g.moveTo(tsx, tsy).lineTo(tsx + TW / 2, tsy + TH / 2).lineTo(tsx, tsy + TH).lineTo(tsx - TW / 2, tsy + TH / 2).closePath().fill(0x46516c);
+          if ((px + py) % 2 === 0) {
+            g.moveTo(tsx + TW / 4, tsy + TH / 4).lineTo(tsx + TW / 2, tsy + TH / 2).lineTo(tsx + TW / 4, tsy + TH * 3 / 4).lineTo(tsx, tsy + TH / 2).closePath().fill(0x3e4a64);
+          }
+        }
+      }
+
+      /* Snow patches + ice patches rải rác */
+      for (var i = 0; i < 140; i++) {
+        var rx = rand(4, W - 4), ry = rand(4, H - 4);
+        var px2 = isoX(rx, ry), py2 = isoY(rx, ry);
+        if (i % 5 === 0) {
+          g.ellipse(px2, py2 + 8, rand(20, 45), rand(8, 16)).fill({ color: 0x9fc8e8, alpha: 0.16 });
+        } else {
+          g.ellipse(px2, py2 + 6, rand(14, 34), rand(6, 12)).fill({ color: 0x46536e, alpha: rand(0.2, 0.45) });
+        }
+      }
+
+      /* Debris + footprints */
+      for (var d = 0; d < 40; d++) {
+        var dx = isoX(rand(8, W - 8), rand(8, H - 8)), dy = isoY(rand(8, W - 8), rand(8, H - 8));
+        g.circle(dx, dy, rand(1.5, 3)).fill({ color: 0x5a6478, alpha: 0.5 });
+      }
+
+      Engine.layers.terrain.addChild(g);
+      Engine.layers.terrain.zIndex = 0;
+    }
+  };
+
+  /* ================= WORLD MANAGER — môi trường ================= */
+  var World = {
+    objects: [],
+    npcs: [],
+    TEMPLE: { x: 30, y: 22 },   // world center của đền
+
+    add: function (container, wx, wy, zOff) {
+      container.position.set(isoX(wx, wy), isoY(wx, wy));
+      container.zIndex = depthOf(wx, wy) + (zOff || 0);
+      Engine.layers.env.addChild(container);
+      this.objects.push(container);
+      return container;
+    },
+
+    build: function () {
+      this.buildMountains();
+      this.buildTemple();
+      this.buildHouses();
+      this.buildTrees();
+      this.buildFences();
+      this.buildLanterns();
+      this.buildProps();
+      this.buildStatues();
+      this.buildNPCs();
+    },
+
+    /* ----- Mountain backdrop ----- */
+    buildMountains: function () {
+      var g = new PIXI.Graphics();
+      var peaks = [
+        { x: -1400, y: -650, w: 900, h: 520, c: 0x2a3450 },
+        { x: -500, y: -760, w: 1100, h: 640, c: 0x24304a },
+        { x: 700, y: -680, w: 950, h: 560, c: 0x2a3450 },
+        { x: 1500, y: -560, w: 800, h: 440, c: 0x323e5c }
+      ];
+      peaks.forEach(function (p) {
+        g.moveTo(p.x, p.y + p.h);
+        g.lineTo(p.x + p.w * 0.22, p.y + p.h * 0.35);
+        g.lineTo(p.x + p.w * 0.42, p.y + p.h * 0.55);
+        g.lineTo(p.x + p.w * 0.52, p.y);
+        g.lineTo(p.x + p.w * 0.66, p.y + p.h * 0.42);
+        g.lineTo(p.x + p.w * 0.85, p.y + p.h * 0.28);
+        g.lineTo(p.x + p.w, p.y + p.h);
+        g.closePath().fill({ color: p.c, alpha: 0.9 });
+        /* tuyết đỉnh */
+        g.moveTo(p.x + p.w * 0.44, p.y + p.h * 0.18);
+        g.lineTo(p.x + p.w * 0.52, p.y);
+        g.lineTo(p.x + p.w * 0.62, p.y + p.h * 0.17);
+        g.lineTo(p.x + p.w * 0.52, p.y + p.h * 0.24);
+        g.closePath().fill({ color: 0xcfe0f4, alpha: 0.85 });
+      });
+      g.zIndex = -50;
+      Engine.layers.terrain.addChild(g);
+    },
+
+    /* ----- TEMPLE chính — Upper middle ----- */
+    buildTemple: function () {
+      var t = new PIXI.Container();
+      var wx = this.TEMPLE.x, wy = this.TEMPLE.y;
+      t.position.set(isoX(wx, wy), isoY(wx, wy));
+      t.zIndex = depthOf(wx, wy);
+      var g = new PIXI.Graphics();
+
+      /* Nền platform đá 3 tầng */
+      var steps = [
+        { dw: 520, dh: 240, dy: 92, c: 0x545f78 },
+        { dw: 460, dh: 210, dy: 66, c: 0x5c687f },
+        { dw: 400, dh: 180, dy: 42, c: 0x64708a }
+      ];
+      steps.forEach(function (s) {
+        /* khối platform iso */
+        g.moveTo(-s.dw / 2, -s.dh / 2 + s.dy)
+          .lineTo(0, s.dy - s.dh / 4 + s.dy * 0)
+          .lineTo(s.dw / 2, -s.dh / 2 + s.dy)
+          .lineTo(0, s.dy - s.dh * 0 + -s.dh / 2 + s.dy / 2)
+          .closePath().fill(s.c);
+        /* đơn giản hóa: vẽ diamond platform + side */
+        g.clear !== undefined;
+      });
+      /* vẽ lại platform rõ ràng */
+      g.poly([[-260, 60], [0, 130], [260, 60], [0, -10]]).fill(0x545f78);
+      g.poly([[-260, 60], [0, 130], [0, 148], [-260, 78]]).fill(0x3c465e);
+      g.poly([[260, 60], [0, 130], [0, 148], [260, 78]]).fill(0x48536c);
+      g.poly([[-220, 42], [0, 108], [220, 42], [0, -24]]).fill(0x5c687f);
+      g.poly([[-180, 26], [0, 88], [180, 26], [0, -36]]).fill(0x64708a);
+
+      /* bậc thang giữa (stone steps) */
+      for (var s2 = 0; s2 < 4; s2++) {
+        var stepW = 90 + s2 * 26, stepY = 96 - s2 * 16;
+        g.poly([[-stepW / 2, stepY], [0, stepY + stepW * 0.32], [stepW / 2, stepY], [0, stepY - stepW * 0.32]]).fill(0x6a7890);
+      }
+
+      /* Thân đền — dark stone walls */
+      g.poly([[-170, -30], [170, -30], [170, -110], [-170, -110]]).fill(0x3a4258);
+      g.poly([[-170, -110], [170, -110], [170, -122], [-170, -122]]).fill(0x2c3448);
+      /* wall texture stones */
+      for (var st = 0; st < 12; st++) {
+        var sx2 = -150 + st * 26;
+        g.rect(sx2, -104, 20, 6).fill({ color: 0x46506a, alpha: 0.6 });
+        g.rect(sx2 + 6, -92, 20, 6).fill({ color: 0x46506a, alpha: 0.4 });
+      }
+
+      /* Cột đỏ (red pillars) */
+      [-150, -75, 75, 150].forEach(function (px) {
+        g.rect(px - 7, -110, 14, 92).fill(0x8a2830);
+        g.rect(px - 7, -110, 5, 92).fill(0xa83840);
+        g.rect(px - 10, -116, 20, 8).fill(0x5a2028);
+        g.rect(px - 10, -22, 20, 7).fill(0x5a2028);
+      });
+
+      /* Cửa đền chính (3 cửa) */
+      g.poly([[-24, -30], [24, -30], [24, -84], [0, -96], [-24, -84]]).fill(0x1a1220);
+      g.poly([[-18, -34], [18, -34], [18, -80], [0, -90], [-18, -80]]).fill(0x702028);
+      g.poly([[-12, -38], [12, -38], [12, -78], [0, -85], [-12, -78]]).fill(0x8a3038);
+      /* cửa hai bên */
+      [-100, 100].forEach(function (dx2) {
+        g.poly([[dx2 - 14, -30], [dx2 + 14, -30], [dx2 + 14, -62], [dx2, -70], [dx2 - 14, -62]]).fill(0x602428);
+      });
+
+      /* Mái đền tầng 2 (curved dark green roof) */
+      function roof(cx3, cy3, halfW, rise, deep, col, snow) {
+        /* mái cong traditional */
+        g.moveTo(cx3 - halfW, cy3);
+        g.quadraticCurveTo(cx3 - halfW * 0.5, cy3 - rise - 10, cx3, cy3 - rise);
+        g.quadraticCurveTo(cx3 + halfW * 0.5, cy3 - rise - 10, cx3 + halfW, cy3);
+        g.quadraticCurveTo(cx3 + halfW * 0.55, cy3 + deep, cx3, cy3 + deep + 8);
+        g.quadraticCurveTo(cx3 - halfW * 0.55, cy3 + deep, cx3 - halfW, cy3);
+        g.closePath().fill(col);
+        /* snow trên mái */
+        if (snow) {
+          g.moveTo(cx3 - halfW * 0.7, cy3 - rise * 0.45);
+          g.quadraticCurveTo(cx3 - halfW * 0.3, cy3 - rise - 8, cx3, cy3 - rise - 2);
+          g.quadraticCurveTo(cx3 + halfW * 0.3, cy3 - rise - 8, cx3 + halfW * 0.7, cy3 - rise * 0.45);
+          g.quadraticCurveTo(cx3, cy3 - rise * 0.6, cx3 - halfW * 0.7, cy3 - rise * 0.45);
+          g.closePath().fill({ color: 0xe8f0fa, alpha: 0.92 });
+        }
+      }
+      /* Mái dưới (wide) */
+      roof(0, -128, 250, 40, 26, 0x24382e, true);
+      /* eave vàng viền */
+      g.moveTo(-250, -128); g.quadraticCurveTo(0, -70, 250, -128);
+      g.quadraticCurveTo(0, -62, -250, -128); g.closePath().fill(0x8a6a28);
+      /* trụ mái + đầu mái cong lên */
+      [-250, -160, 0, 160, 250].forEach(function (ex) {
+        g.circle(ex, -126, 5).fill(0xc9a94f);
+      });
+      /* Mái trên (nhỏ hơn) */
+      roof(0, -196, 170, 34, 22, 0x2a4034, true);
+      g.moveTo(-170, -196); g.quadraticCurveTo(0, -150, 170, -196);
+      g.quadraticCurveTo(0, -144, -170, -196); g.closePath().fill(0x9a7a2f);
+      /* ridge ornaments */
+      g.rect(-10, -238, 20, 8).fill(0xc9a94f);
+      g.circle(0, -242, 6).fill(0xffd76a);
+      [-160, 160].forEach(function (ex2) { g.circle(ex2, -198, 5).fill(0xc9a94f); });
+
+      /* Bảng hiệu đền */
+      g.rect(-26, -118, 52, 16).fill(0x1a1220);
+      g.rect(-24, -116, 48, 12).fill(0x8a2830);
+      /* chữ khắc giả */
+      g.rect(-16, -112, 6, 4).fill(0xffd76a);
+      g.rect(-6, -112, 6, 4).fill(0xffd76a);
+      g.rect(4, -112, 6, 4).fill(0xffd76a);
+
+      /* Đèn lồng treo 2 bên cửa */
+      [-130, 130].forEach(function (lx) {
+        g.rect(lx - 1, -110, 2, 14).fill(0x5a4a20);
+        g.circle(lx, -92, 9).fill(0xd83838);
+        g.circle(lx, -92, 5).fill({ color: 0xffb050, alpha: 0.95 });
+        g.rect(lx - 7, -100, 14, 2).fill(0xc9a94f);
+        g.rect(lx - 7, -86, 14, 2).fill(0xc9a94f);
+      });
+
+      /* Đài hương trước đền */
+      g.rect(-12, 60, 24, 6).fill(0x4a4258);
+      g.rect(-9, 46, 4, 16).fill(0x5a5268);
+      g.rect(5, 46, 4, 16).fill(0x5a5268);
+      g.rect(-6, 40, 12, 8).fill(0x6a5a38);
+
+      t.addChild(g);
+
+      /* Đèn lồng glow động */
+      var glow1 = new PIXI.Graphics();
+      glow1.circle(-130, -92, 16).fill({ color: 0xffb050, alpha: 0.22 });
+      glow1.circle(130, -92, 16).fill({ color: 0xffb050, alpha: 0.22 });
+      t.addChild(glow1);
+      t.lanternGlow = glow1;
+
+      Engine.layers.env.addChild(t);
+      this.objects.push(t);
+    },
+
+    /* ----- Nhà gỗ thị trấn ----- */
+    buildHouses: function () {
+      var self = this;
+      var houses = [
+        { x: 14, y: 26, flip: false }, { x: 20, y: 22, flip: false },
+        { x: 40, y: 26, flip: true }, { x: 44, y: 22, flip: true },
+        { x: 12, y: 44, flip: false }, { x: 47, y: 44, flip: true },
+        { x: 16, y: 50, flip: false }, { x: 43, y: 50, flip: true }
+      ];
+      houses.forEach(function (h) {
+        var c = new PIXI.Container();
+        var g = new PIXI.Graphics();
+        var w = rand(90, 130);
+        /* thân nhà gỗ */
+        g.poly([[-w / 2, -20], [w / 2, -20], [w / 2, -70], [-w / 2, -70]]).fill(0x5a4634);
+        for (var i = 0; i < 4; i++) {
+          g.rect(-w / 2 + 8, -64 + i * 14, w - 16, 3).fill({ color: 0x4a3a2a, alpha: 0.7 });
+        }
+        /* cửa + cửa sổ */
+        g.rect(-10, -46, 20, 26).fill(0x3a2c1e);
+        g.rect(-w / 2 + 12, -58, 14, 12).fill(0x2c2418);
+        g.rect(w / 2 - 26, -58, 14, 12).fill({ color: 0xffc860, alpha: 0.85 });
+        /* mái */
+        g.poly([[-w / 2 - 16, -68], [0, -108], [w / 2 + 16, -68], [0, -80]]).fill(0x3c3226);
+        g.poly([[-w / 2 - 10, -70], [0, -104], [w / 2 + 10, -70]]).fill({ color: 0xd8e2f0, alpha: 0.75 });
+        /* lan can trước */
+        g.rect(-w / 2 + 4, -18, w - 8, 4).fill(0x4a3a2a);
+        c.addChild(g);
+        self.add(c, h.x, h.y, 0.4);
+      });
+    },
+
+    /* ----- Thông tuyết ----- */
+    buildTrees: function () {
+      var self = this;
+      var spots = [];
+      for (var i = 0; i < 26; i++) {
+        var x = rand(6, CFG.MAP_W - 6), y = rand(6, CFG.MAP_H - 6);
+        if (dist(x, y, 30, 30) > 12 && dist(x, y, 30, 22) > 14) spots.push({ x: x, y: y, s: rand(0.8, 1.5) });
+      }
+      spots.push({ x: 52, y: 44, s: 1.7 }, { x: 8, y: 48, s: 1.5 }, { x: 54, y: 30, s: 1.4 }, { x: 7, y: 30, s: 1.4 });
+      spots.forEach(function (t) {
+        var c = new PIXI.Container();
+        var g = new PIXI.Graphics();
+        var S = t.s;
+        /* gốc */
+        g.rect(-6 * S, -18 * S, 12 * S, 20 * S).fill(0x4a3626);
+        /* 3 lớp tán */
+        var layers = [
+          { w: 52, y: -30, h: 34, c: 0x2a4436 },
+          { w: 40, y: -56, h: 30, c: 0x2e4c3c },
+          { w: 28, y: -78, h: 26, c: 0x36544a }
+        ];
+        layers.forEach(function (L) {
+          g.poly([[-L.w * S, L.y * S], [0, (L.y - L.h) * S], [L.w * S, L.y * S]]).fill(L.c);
+          /* tuyết trên tán */
+          g.poly([[-L.w * 0.7 * S, L.y * S], [0, (L.y - L.h + 8) * S], [L.w * 0.7 * S, L.y * S]]).fill({ color: 0xe4edf8, alpha: 0.8 });
+        });
+        c.addChild(g);
+        self.add(c, t.x, t.y, 0);
+      });
+    },
+
+    /* ----- Hàng rào ----- */
+    buildFences: function () {
+      var self = this;
+      function fenceRun(x0, y0, x1, y1) {
+        var steps = Math.round(dist(x0, y0, x1, y1) * 1.6);
+        for (var i = 0; i <= steps; i++) {
+          var t = i / steps;
+          (function (wx, wy) {
+            var c = new PIXI.Container();
+            var g = new PIXI.Graphics();
+            g.rect(-2, -22, 4, 24).fill(0x5a4634);
+            g.rect(-14, -18, 28, 3.5).fill({ color: 0x6a5644, alpha: 0.95 });
+            g.rect(-14, -10, 28, 3.5).fill({ color: 0x6a5644, alpha: 0.95 });
+            g.ellipse(0, -22, 7, 3).fill({ color: 0xe8f0fa, alpha: 0.9 });
+            c.addChild(g);
+            self.add(c, wx, wy, 0.2);
+          })(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t);
+        }
+      }
+      fenceRun(20, 40, 26, 44);
+      fenceRun(34, 44, 40, 40);
+      fenceRun(18, 30, 22, 34);
+      fenceRun(38, 34, 42, 30);
+    },
+
+    /* ----- Đèn lồng đường phố ----- */
+    buildLanterns: function () {
+      var self = this;
+      var spots = [
+        { x: 27, y: 40 }, { x: 33, y: 40 }, { x: 27, y: 48 }, { x: 33, y: 48 },
+        { x: 22, y: 36 }, { x: 38, y: 36 }, { x: 46, y: 40 }, { x: 15, y: 40 }
+      ];
+      this.lanterns = [];
+      spots.forEach(function (s) {
+        var c = new PIXI.Container();
+        var g = new PIXI.Graphics();
+        g.rect(-3, -44, 6, 46).fill(0x5a4634);
+        g.rect(-8, -2, 16, 4).fill(0x4a3a2a);
+        g.moveTo(-8, -44); g.lineTo(8, -44); g.lineTo(4, -50); g.lineTo(-4, -50); g.closePath().fill(0x4a3a2a);
+        /* lồng đỏ */
+        g.rect(-9, -62, 18, 3).fill(0xc9a94f);
+        g.ellipse(0, -52, 10, 12).fill(0xd83838);
+        g.ellipse(0, -52, 6, 8).fill({ color: 0xffa050, alpha: 0.9 });
+        g.rect(-9, -66, 18, 3).fill(0xc9a94f);
+        c.addChild(g);
+        var glow = new PIXI.Graphics();
+        glow.circle(0, -52, 22).fill({ color: 0xff9840, alpha: 0.18 });
+        glow.circle(0, -52, 12).fill({ color: 0xffb060, alpha: 0.16 });
+        c.addChild(glow);
+        c.glow = glow;
+        self.add(c, s.x, s.y, 0.3);
+        self.lanterns.push(glow);
+      });
+    },
+
+    /* ----- Props: carts, barrels, stalls, signboards ----- */
+    buildProps: function () {
+      var self = this;
+      /* xe đẩy */
+      [{ x: 24, y: 46 }, { x: 37, y: 46 }].forEach(function (p) {
+        var c = new PIXI.Container();
+        var g = new PIXI.Graphics();
+        g.poly([[-26, -14], [26, -14], [20, -34], [-20, -34]]).fill(0x5a4634);
+        g.rect(-22, -30, 44, 6).fill(0x6a5644);
+        g.circle(-16, -10, 8).fill(0x3a3020);
+        g.circle(-16, -10, 4).fill(0x5a4a34);
+        g.circle(16, -10, 8).fill(0x3a3020);
+        g.circle(16, -10, 4).fill(0x5a4a34);
+        g.rect(-18, -40, 36, 6).fill(0x6a5644);
+        g.ellipse(0, -40, 16, 5).fill({ color: 0xe8f0fa, alpha: 0.8 });
+        c.addChild(g);
+        self.add(c, p.x, p.y, 0.3);
+      });
+      /* thùng gỗ */
+      var barrelSpots = [{ x: 22, y: 37 }, { x: 23.5, y: 37.6 }, { x: 39, y: 37 }, { x: 26, y: 52 }, { x: 36, y: 52 }];
+      barrelSpots.forEach(function (p) {
+        var c = new PIXI.Container();
+        var g = new PIXI.Graphics();
+        g.rect(-10, -26, 20, 26).fill(0x6a4c34);
+        g.rect(-10, -20, 20, 3).fill(0x3a2c1e);
+        g.rect(-10, -10, 20, 3).fill(0x3a2c1e);
+        g.ellipse(0, -26, 10, 4).fill(0x7a5a40);
+        g.ellipse(0, -26, 7, 2.5).fill({ color: 0xe8f0fa, alpha: 0.85 });
+        c.addChild(g);
+        self.add(c, p.x, p.y, 0.2);
+      });
+      /* sạp hàng */
+      [{ x: 18, y: 42 }, { x: 42, y: 42 }].forEach(function (p) {
+        var c = new PIXI.Container();
+        var g = new PIXI.Graphics();
+        g.rect(-30, -40, 60, 4).fill(0x5a4634);
+        g.rect(-28, -36, 4, 36).fill(0x4a3a2a);
+        g.rect(24, -36, 4, 36).fill(0x4a3a2a);
+        g.poly([[-34, -42], [0, -58], [34, -42]]).fill(0x8a3038);
+        g.poly([[-30, -44], [0, -55], [30, -44]]).fill({ color: 0xe8f0fa, alpha: 0.7 });
+        g.rect(-24, -34, 48, 5).fill(0x6a5644);
+        /* hàng hóa */
+        g.circle(-14, -38, 6).fill(0xc8a050);
+        g.circle(0, -38, 6).fill(0xa04040);
+        g.circle(14, -38, 6).fill(0x5078a8);
+        c.addChild(g);
+        self.add(c, p.x, p.y, 0.25);
+      });
+      /* biển gỗ */
+      [{ x: 28.5, y: 38.5 }].forEach(function (p) {
+        var c = new PIXI.Container();
+        var g = new PIXI.Graphics();
+        g.rect(-2, -34, 4, 36).fill(0x4a3a2a);
+        g.rect(-20, -48, 40, 16).fill(0x5a4634);
+        g.rect(-18, -46, 36, 12).fill(0x6a5644);
+        g.rect(-12, -43, 5, 6).fill(0xffd76a);
+        g.rect(-3, -43, 5, 6).fill(0xffd76a);
+        g.rect(6, -43, 5, 6).fill(0xffd76a);
+        c.addChild(g);
+        self.add(c, p.x, p.y, 0.2);
+      });
+    },
+
+    /* ----- Tượng đá sư tử ----- */
+    buildStatues: function () {
+      var self = this;
+      [{ x: 26, y: 31 }, { x: 34, y: 31 }].forEach(function (p) {
+        var c = new PIXI.Container();
+        var g = new PIXI.Graphics();
+        g.rect(-16, -10, 32, 10).fill(0x5c687f);
+        g.rect(-13, -34, 26, 24).fill(0x6a7890);
+        g.circle(-7, -40, 9).fill(0x74829c);
+        g.circle(7, -40, 9).fill(0x74829c);
+        g.circle(-7, -41, 4).fill(0x8a98b2);
+        g.circle(7, -41, 4).fill(0x8a98b2);
+        g.rect(-3, -48, 6, 8).fill(0x74829c);
+        g.ellipse(0, -8, 18, 5).fill({ color: 0xe8f0fa, alpha: 0.7 });
+        c.addChild(g);
+        self.add(c, p.x, p.y, 0.1);
+      });
+    },
+
+    /* ----- NPCs ----- */
+    buildNPCs: function () {
+      var self = this;
+      var npcDefs = [
+        { x: 27.5, y: 33.5, type: 'guard', name: 'Lính gác Quan Ải' },
+        { x: 32.5, y: 33.5, type: 'guard', name: 'Lính gác Quan Ải' },
+        { x: 19, y: 40, type: 'merchant', name: 'Thương nhân Trần' },
+        { x: 41, y: 40, type: 'merchant', name: 'Tiểu nhị hàng quán' },
+        { x: 29, y: 44, type: 'villager', name: 'Dân làng' },
+        { x: 35, y: 46, type: 'villager', name: 'Lữ khách' }
+      ];
+      npcDefs.forEach(function (d) {
+        var ch = CharFactory.make(d.type === 'guard' ? 'guard' : 'villager', d.type === 'guard' ? { robe: 0x3a4a6a, trim: 0x2a3448, hat: true } : { robe: pick([0x6a5a3a, 0x5a4a6a, 0x3a5a4a]), trim: 0x2a2a1a });
+        self.add(ch.container, d.x, d.y, 0.5);
+        ch.container.npcName = d.name;
+        this.npcs.push(ch);
+        ch.wx = d.x; ch.wy = d.y;
+        ch.isNPC = true;
+      }, this);
+    }
+  };
+
+  /* ================= CHARACTER FACTORY — procedural sprites ================= */
+  var CharFactory = {
+    counter: 0,
+    /* type: player | spear | dual | bandit | elite | boss | guard | villager */
+    make: function (type, opts) {
+      opts = opts || {};
+      var c = new PIXI.Container();
+      var S = opts.scale || (type === 'boss' ? 1.55 : type === 'elite' ? 1.15 : 1.0);
+      c.scale.set(S);
+
+      var palette = opts.palette || CharFactory.paletteFor(type);
+      var bodyCol = palette.robe, trimCol = palette.trim || 0x2a2a38;
+
+      /* shadow */
+      var shadow = new PIXI.Graphics();
+      shadow.ellipse(0, 2, 20, 9).fill({ color: 0x0a0e18, alpha: 0.4 });
+      c.addChild(shadow);
+
+      /* legs */
+      var legL = new PIXI.Graphics();
+      legL.rect(-8, -6, 7, 14).fill(palette.legs || 0x241a2a);
+      legL.rect(-9, 6, 9, 5).fill(0x1a1218);
+      legL.position.set(-6, -8);
+      var legR = new PIXI.Graphics();
+      legR.rect(1, -6, 7, 14).fill(palette.legs || 0x241a2a);
+      legR.rect(0, 6, 9, 5).fill(0x1a1218);
+      legR.position.set(6, -8);
+      c.addChild(legL, legR);
+
+      /* body robe */
+      var body = new PIXI.Container();
+      var bg = new PIXI.Graphics();
+      bg.poly([[-13, -44], [13, -44], [16, -8], [-16, -8]]).fill(bodyCol);
+      /* vạt áo */
+      bg.poly([[-16, -8], [-10, -8], [-13, -20]]).fill(trimCol);
+      bg.poly([[16, -8], [10, -8], [13, -20]]).fill(trimCol);
+      /* đai lưng */
+      bg.rect(-14, -30, 28, 6).fill(palette.sash || 0xc03848);
+      bg.circle(0, -27, 3).fill(palette.sash || 0xc03848);
+      body.addChild(bg);
+      body.position.set(0, -6);
+      c.addChild(body);
+
+      /* arms */
+      var armL = new PIXI.Container();
+      var alg = new PIXI.Graphics();
+      alg.rect(-3, 0, 6, 18).fill(bodyCol);
+      alg.circle(0, 18, 4).fill(palette.skin || 0xf0d0b0);
+      armL.addChild(alg);
+      armL.position.set(-14, -40);
+      armL.pivot.set(0, 0);
+      var armR = new PIXI.Container();
+      var arg = new PIXI.Graphics();
+      arg.rect(-3, 0, 6, 18).fill(bodyCol);
+      arg.circle(0, 18, 4).fill(palette.skin || 0xf0d0b0);
+      armR.addChild(arg);
+      armR.position.set(14, -40);
+      c.addChild(armL, armR);
+
+      /* head */
+      var head = new PIXI.Container();
+      var hg = new PIXI.Graphics();
+      hg.circle(0, -6, 13).fill(palette.skin || 0xf0d0b0);
+      /* hair */
+      hg.circle(0, -9, 13).fill({ color: palette.hair || 0x2a1f18, alpha: 1 });
+      hg.poly([[-13, -8], [0, -22], [13, -8], [0, -14]]).fill(palette.hair || 0x2a1f18);
+      /* búi tóc */
+      hg.circle(0, -22, 6).fill(palette.hair || 0x2a1f18);
+      hg.circle(0, -22, 2.5).fill(palette.hairTie || 0xc03848);
+      /* mắt */
+      hg.circle(-4.5, -4, 2).fill(0x1a1418);
+      hg.circle(4.5, -4, 2).fill(0x1a1418);
+      /* mày武士 */
+      hg.rect(-7, -8, 5, 1.6).fill(0x1a1218);
+      hg.rect(2, -8, 5, 1.6).fill(0x1a1218);
+      /* khăn cổ */
+      hg.ellipse(0, 6, 10, 4).fill(palette.scarf || 0xc03848);
+      head.addChild(hg);
+      head.position.set(0, -44);
+      c.addChild(head);
+
+      /* hat cho guard */
+      if (opts.hat) {
+        var hat = new PIXI.Graphics();
+        hat.ellipse(0, -26, 16, 5).fill(0x2a3448);
+        hat.poly([[-10, -26], [0, -40], [10, -26]]).fill(0x3a4a6a);
+        head.addChild(hat);
+      }
+
+      /* weapon — attach vào armR */
+      var weapon = new PIXI.Graphics();
+      var wtype = palette.weapon || 'sword';
+      if (wtype === 'sword') {
+        weapon.rect(-2, -30, 4, 34).fill(0xc8d2e0);
+        weapon.rect(-3, -30, 6, 4).fill(0x8a98b2);
+        weapon.rect(-2, 4, 4, 10).fill(0x4a3626);
+        weapon.circle(0, 14, 3).fill(0xc03848);
+      } else if (wtype === 'spear') {
+        weapon.rect(-1.5, -34, 3, 58).fill(0x6a4a30);
+        weapon.poly([[0, -46], [-4, -32], [4, -32]]).fill(0xb0bcc8);
+        weapon.rect(-4, -30, 8, 3).fill(0xc03848);
+      } else if (wtype === 'dual') {
+        weapon.rect(-2, -26, 4, 30).fill(0xc8d2e0);
+        weapon.rect(-3, -26, 6, 3.5).fill(0x8a98b2);
+        weapon.rect(-2, 4, 4, 8).fill(0x2a2418);
+      } else if (wtype === 'club') {
+        weapon.rect(-3, -30, 6, 30).fill(0x5a4634);
+        weapon.circle(0, -30, 8).fill(0x4a3a2a);
+        weapon.circle(-3, -32, 2).fill(0x8a98b2);
+        weapon.circle(3, -28, 2).fill(0x8a98b2);
+      }
+      weapon.position.set(0, 16);
+      weapon.pivot.set(0, 4);
+      armR.addChild(weapon);
+
+      /* state */
+      var ch = {
+        id: ++CharFactory.counter,
+        type: type,
+        container: c,
+        parts: { shadow: shadow, legL: legL, legR: legR, body: body, armL: armL, armR: armR, head: head, weapon: weapon },
+        state: 'idle',
+        stateTime: 0,
+        facing: 1,
+        walkPhase: rand(0, Math.PI * 2),
+        isNPC: false,
+        dead: false,
+        /* stats */
+        hp: opts.hp || (type === 'boss' ? 900 : type === 'elite' ? 220 : type === 'bandit' ? 80 : 120),
+        maxHp: opts.hp || (type === 'boss' ? 900 : type === 'elite' ? 220 : type === 'bandit' ? 80 : 120),
+        dmg: opts.dmg || (type === 'boss' ? 26 : type === 'elite' ? 14 : 8),
+        speed: opts.speed || (type === 'player' ? 4.6 : 3.4),
+        atkRange: palette.weapon === 'spear' ? 55 : 42,
+        atkCd: 0,
+        /* world pos */
+        wx: opts.wx || 30, wy: opts.wy || 42,
+        /* combat */
+        target: null,
+        hitFlash: 0,
+        dodgeTime: 0,
+        invuln: 0
+      };
+
+      /* HP bar overlay cho enemies/party — vẽ trên đầu */
+      if (!opts.noBar) {
+        var barBg = new PIXI.Graphics();
+        barBg.rect(-22, -76, 44, 6).fill({ color: 0x1a1420, alpha: 0.85 });
+        var barFg = new PIXI.Graphics();
+        c.addChild(barBg);
+        var barWrap = new PIXI.Container();
+        barWrap.addChild(barFg);
+        barWrap.position.set(0, -74);
+        c.addChild(barWrap);
+        ch.hpBar = { bg: barBg, fg: barFg, wrap: barWrap };
+        ch.updateHpBar = function () {
+          var pct = clamp(this.hp / this.maxHp, 0, 1);
+          this.hpBar.fg.clear();
+          var col = this.hp <= 0 ? 0x555560 : (this.isParty ? 0x48c860 : pct > 0.5 ? 0xd83838 : pct > 0.25 ? 0xe8a838 : 0xff5838);
+          this.hpBar.fg.rect(-21, -1.5, 42 * pct, 3.5).fill(col);
+          this.hpBar.wrap.visible = this.hp < this.maxHp || this.isParty;
+        };
+        ch.updateHpBar();
+      }
+
+      c.zIndex = depthOf(ch.wx, ch.wy);
+      c.position.set(isoX(ch.wx, ch.wy), isoY(ch.wx, ch.wy));
+      return ch;
+    },
+
+    paletteFor: function (type) {
+      var map = {
+        player: { robe: 0x3a3a4c, trim: 0x24242e, sash: 0xc03848, scarf: 0xc03848, weapon: 'sword', skin: 0xf0d0b0, hair: 0x241a14 },
+        spear: { robe: 0x2e4a44, trim: 0x1e3430, sash: 0xc8a050, weapon: 'spear', skin: 0xe8c8a8, hair: 0x1a1418 },
+        dual: { robe: 0x4a3a5c, trim: 0x342a42, sash: 0x7a9fd8, weapon: 'dual', skin: 0xf0d4b8, hair: 0x2a1f1a },
+        bandit: { robe: 0x4a4238, trim: 0x34302a, sash: 0x8a7848, weapon: 'club', skin: 0xe0b898, hair: 0x2a2018, legs: 0x34302a },
+        elite: { robe: 0x5a2a3a, trim: 0x3a1a26, sash: 0xc8a050, weapon: 'sword', skin: 0xe8c0a0, hair: 0x1a1218 },
+        boss: { robe: 0x3a2a4c, trim: 0x241a34, sash: 0xd8b050, weapon: 'club', skin: 0xd8b090, hair: 0x181018 },
+        guard: { robe: 0x3a4a6a, trim: 0x2a3448, sash: 0x505878, weapon: 'sword', skin: 0xe8c8a8, hat: true },
+        villager: { robe: 0x6a5a3a, trim: 0x4a3a2a, sash: 0x8a7848, weapon: 'none', skin: 0xe8c8a8 }
+      };
+      return map[type] || map.bandit;
+    },
+
+    /* animate parts theo state — gọi mỗi frame */
+    animate: function (ch, dt, speedMult) {
+      var p = ch.parts;
+      ch.stateTime += dt;
+      if (ch.dead) {
+        c_alpha(ch);
+        return;
+      }
+      var moving = ch.state === 'walk' || ch.state === 'run';
+      var spd = ch.state === 'run' ? 13 : 9;
+      if (moving) ch.walkPhase += dt * spd;
+
+      if (moving) {
+        var sw = Math.sin(ch.walkPhase) * 7;
+        p.legL.rotation = Math.sin(ch.walkPhase) * 0.55;
+        p.legR.rotation = -Math.sin(ch.walkPhase) * 0.55;
+        p.body.y = -6 + Math.abs(Math.sin(ch.walkPhase)) * -2.4;
+        p.head.y = -44 + Math.abs(Math.sin(ch.walkPhase)) * -1.6;
+        p.armL.rotation = -Math.sin(ch.walkPhase) * 0.6;
+        p.armR.rotation = Math.sin(ch.walkPhase) * 0.6;
+      } else {
+        /* idle bob */
+        var t = ch.stateTime * 2.2;
+        p.body.y = -6 + Math.sin(t) * 1.1;
+        p.head.y = -44 + Math.sin(t) * 0.8;
+        p.legL.rotation = p.legR.rotation = 0;
+        p.armL.rotation = Math.sin(t) * 0.08;
+        p.armR.rotation = -Math.sin(t) * 0.08;
+      }
+
+      /* attack swing */
+      if (ch.state === 'attack') {
+        var at = ch.stateTime / (ch.attackDur || 0.35);
+        if (at < 0.4) p.armR.rotation = -0.4 - at * 2.4;
+        else if (at < 0.7) { p.armR.rotation = 2.2 - (at - 0.4) * 7; p.body.rotation = Math.sin((at - 0.4) * 5) * 0.12; }
+        else { p.armR.rotation = 0; p.body.rotation = 0; }
+        p.weapon.rotation = p.armR.rotation * 0.5;
+      } else {
+        p.weapon.rotation = 0;
+        p.body.rotation = 0;
+      }
+
+      /* hit flash */
+      if (ch.hitFlash > 0) {
+        ch.hitFlash -= dt;
+        var flash = ch.hitFlash > 0;
+        p.body.alpha = flash ? (Math.sin(ch.stateTime * 40) > 0 ? 0.4 : 1) : 1;
+        p.head.alpha = p.body.alpha;
+      }
+
+      /* dodge ghost */
+      if (ch.invuln > 0) {
+        ch.invuln -= dt;
+        c.alpha2(ch, 0.55 + Math.sin(ch.stateTime * 30) * 0.15);
+      }
+      function c_alpha(ch) { }
+      function c_alpha2(ch, a) { }
+    }
+  };
+
+  /* helper alpha */
+  function setAlpha(ch, a) {
+    ch.container.alpha = a;
+  }
+
+  /* ================= CAMERA SYSTEM ================= */
+  var Camera = {
+    x: 0, y: 0,       // world focus
+    zoom: 1,
+    targetZoom: 1,
+    shakePower: 0,
+    shakeTime: 0,
+    bounds: { minX: 6, minY: 6, maxX: CFG.MAP_W - 6, maxY: CFG.MAP_H - 6 },
+
+    update: function (dt) {
+      var player = Party.player;
+      if (player) {
+        /* smooth follow */
+        this.x += (player.wx - this.x) * Math.min(1, dt * 5);
+        this.y += (player.wy - this.y) * Math.min(1, dt * 5);
+        this.x = clamp(this.x, this.bounds.minX, this.bounds.maxX);
+        this.y = clamp(this.y, this.bounds.minY, this.bounds.maxY);
+      }
+      this.zoom += (this.targetZoom - this.zoom) * Math.min(1, dt * 6);
+
+      /* shake decay */
+      var shakeX = 0, shakeY = 0;
+      if (this.shakeTime > 0) {
+        this.shakeTime -= dt;
+        var p = this.shakePower * (this.shakeTime / this.shakeDuration);
+        shakeX = rand(-p, p);
+        shakeY = rand(-p, p);
+      }
+
+      var w = Engine.app.renderer.width / Engine.app.renderer.resolution;
+      var h = Engine.app.renderer.height / Engine.app.renderer.resolution;
+      var cx = w / 2, cy = h / 2;
+
+      Engine.worldRoot.position.set(
+        cx + shakeX - isoX(this.x, this.y) * this.zoom,
+        cy + shakeY - isoY(this.x, this.y) * this.zoom + 40
+      );
+      Engine.worldRoot.scale.set(this.zoom);
+    },
+
+    shake: function (power, dur) {
+      this.shakePower = power;
+      this.shakeTime = dur;
+      this.shakeDuration = dur;
+    },
+
+    screenToWorld: function (sx, sy) {
+      var w = Engine.app.renderer.width / Engine.app.renderer.resolution;
+      var h = Engine.app.renderer.height / Engine.app.renderer.resolution;
+      var wx = (sx - (w / 2 + Engine.worldRoot.position.x)) / this.zoom;
+      var wy = (sy - (h / 2 + Engine.worldRoot.position.y)) / this.zoom;
+      /* ngược iso */
+      var X = wx / (CFG.TILE_W / 2), Y = wy / (CFG.TILE_H / 2);
+      return { x: (X + Y) / 2, y: (Y - X) / 2 };
+    }
+  };
+
+  /* ================= PARTY SYSTEM ================= */
+  var Party = {
+    player: null,
+    members: [],
+    formation: 'follow',
+
+    init: function () {
+      /* Player — kiếm khách */
+      this.player = CharFactory.make('player', { wx: 30, wy: 44, hp: 100, dmg: 18, speed: 4.6 });
+      this.player.isParty = true;
+      this.player.isPlayer = true;
+      this.player.name = 'Kiếm Khách Trường Bạch';
+      this.player.maxHp = 100;
+      this.player.level = 1;
+      this.player.xp = 0;
+      this.player.xpNext = 100;
+      this.player.gold = 0;
+      this.player.kills = 0;
+      this.player.combo = 0;
+      this.player.comboTime = 0;
+      this.player.atkSpeed = 0.38;
+      this.player.dodgeCd = 0;
+      Engine.layers.characters.addChild(this.player.container);
+
+      /* Companion spear */
+      var m1 = CharFactory.make('spear', { wx: 28.6, wy: 45.5, hp: 130, dmg: 14, speed: 4.0 });
+      m1.isParty = true; m1.isCompanion = true; m1.companionId = 'spear';
+      m1.name = 'Lâm Sương — Thương';
+      m1.maxHp = 130;
+      m1.skillCd = 0;
+      Engine.layers.characters.addChild(m1.container);
+
+      /* Companion dual */
+      var m2 = CharFactory.make('dual', { wx: 31.4, wy: 45.5, hp: 110, dmg: 11, speed: 4.2 });
+      m2.isParty = true; m2.isCompanion = true; m2.companionId = 'dual';
+      m2.name = 'Tuyết Nhi — Song Đao';
+      m2.maxHp = 110;
+      m2.skillCd = 0;
+      Engine.layers.characters.addChild(m2.container);
+
+      this.members = [this.player, m1, m2];
+      this.player.hpBar.wrap.visible = false; // player dùng HUD
+    },
+
+    /* follow formation */
+    update: function (dt) {
+      var self = this;
+      var player = this.player;
+      var offsets = [
+        { x: 0, y: 0 },
+        { x: -1.4, y: 0.9 },
+        { x: 1.4, y: 0.9 }
+      ];
+
+      this.members.forEach(function (m, idx) {
+        if (m.dead) return;
+        if (m.isPlayer) return;   // player update ở Input
+
+        /* companion AI */
+        var off = offsets[idx];
+        var tx = player.wx + off.x;
+        var ty = player.wy + off.y;
+        var d = dist(m.wx, m.wy, tx, ty);
+
+        /* tìm enemy gần trong 150px world-units ~ 3 tiles */
+        var enemy = EnemySystem.nearestEnemy(m.wx, m.wy, 3.2);
+        var engageDist = 1.6;
+
+        if (enemy && !enemy.dead) {
+          m.combatTarget = enemy;
+          var ed = dist(m.wx, m.wy, enemy.wx, enemy.wy);
+          if (ed > m.atkRange / CFG.TILE_W) {
+            /* chạy tới enemy */
+            self.moveTo(m, enemy.wx, enemy.wy, dt, m.speed * 1.1);
+            m.state = 'run';
+          } else {
+            m.state = 'idle';
+            /* auto attack */
+            if (m.atkCd <= 0) {
+              Combat.attack(m, enemy);
+              m.atkCd = m.companionId === 'dual' ? 0.5 : 0.75;
+            }
+            /* companion skill thỉnh thoảng */
+            if (m.skillCd <= 0 && Math.random() < 0.4) {
+              if (m.companionId === 'spear') {
+                Skills.companionSpearThrust(m, enemy);
+                m.skillCd = rand(4, 7);
+              } else {
+                Skills.companionWhirl(m);
+                m.skillCd = rand(5, 8);
+              }
+            }
+          }
+        } else {
+          m.combatTarget = null;
+          if (d > 0.6) {
+            self.moveTo(m, tx, ty, dt, m.speed * (d > 2 ? 1.25 : 1));
+            m.state = d > 2 ? 'run' : 'walk';
+          } else {
+            m.state = 'idle';
+          }
+        }
+
+        if (m.atkCd > 0) m.atkCd -= dt;
+        if (m.skillCd > 0) m.skillCd -= dt;
+        CharFactory.animate(m, dt);
+        WorldSync.syncEntity(m);
+      });
+    },
+
+    moveTo: function (ch, tx, ty, dt, speed) {
+      var dx = tx - ch.wx, dy = ty - ch.wy;
+      var d = Math.sqrt(dx * dx + dy * dy);
+      if (d < 0.01) return;
+      var vx = dx / d * speed * dt;
+      var vy = dy / d * speed * dt;
+      ch.wx += vx; ch.wy += vy;
+      ch.facing = vx >= 0 ? 1 : -1;
+      ch.container.scale.x = Math.abs(ch.container.scale.x / (ch._lastAbs || 1)) * (ch.facing >= 0 ? 1 : -1) * Math.abs(ch.container.scale.x > 0 ? 1 : -1) || ch.container.scale.x;
+      /* đơn giản flip: */
+      var baseScale = ch.type === 'boss' ? 1.55 : ch.type === 'elite' ? 1.15 : 1.0;
+      ch.container.scale.x = ch.facing >= 0 ? baseScale : -baseScale;
+      ch.container.scale.y = baseScale;
+    }
+  };
+
+  /* ================= ENEMY SYSTEM ================= */
+  var EnemySystem = {
+    enemies: [],
+    wave: 0,
+    waveKills: 0,
+    waveNeed: 6,
+    waveActive: false,
+    spawnTimer: 0,
+    boss: null,
+    totalKills: 0,
+    questGoal: 24,
+
+    WAVE_DEFS: [
+      { name: 'Sơn tặc tuyết', type: 'bandit', count: 6, hp: 80 },
+      { name: 'Võ sĩ kiến võ', type: 'bandit', count: 7, hp: 100 },
+      { name: 'Cảnh vệ tinh nhuệ', type: 'elite', count: 5, hp: 220 },
+      { name: 'Boss', type: 'boss', count: 1, hp: 900 }
+    ],
+
+    startWave: function (n) {
+      this.wave = n;
+      this.waveKills = 0;
+      this.waveActive = true;
+      var def = this.WAVE_DEFS[n - 1];
+      this.waveNeed = def.count;
+      UIManager.updateWave(def.name, def.count);
+
+      var spawnCenters = [
+        { x: 26, y: 36 }, { x: 34, y: 36 }, { x: 24, y: 42 }, { x: 36, y: 42 }
+      ];
+      for (var i = 0; i < def.count; i++) {
+        var c = spawnCenters[i % spawnCenters.length];
+        var wx = c.x + rand(-2.5, 2.5), wy = c.y + rand(-2, 2);
+        this.spawn(def.type, wx, wy, def.hp);
+      }
+
+      if (def.type === 'boss') {
+        var boss = this.spawn('boss', 30, 34, def.hp);
+        this.boss = boss;
+        UIManager.showBoss(boss);
+        Game.toast('☠ ' + (boss.name || 'Thor — Vương Sơn Tặc') + ' xuất hiện!');
+        AudioMan.sfx('ult');
+        Camera.shake(14, 0.5);
+      }
+      Game.toast('Đợt ' + n + ': ' + def.name + ' — ' + def.count + ' địch!');
+    },
+
+    spawn: function (type, wx, wy, hp) {
+      var e = CharFactory.make(type, { wx: wx, wy: wy, hp: hp });
+      e.isEnemy = true;
+      e.aiState = 'patrol';
+      e.patrolT = rand(0, 3);
+      e.homeX = wx; e.homeY = wy;
+      e.detectRange = type === 'boss' ? 7 : 4.5;
+      e.name = type === 'boss' ? 'Thor — Vương Sơn Tặc' : type === 'elite' ? 'Cảnh vệ tinh nhuệ' : 'Sơn tặc';
+      e.deathT = 0;
+      Engine.layers.characters.addChild(e.container);
+      this.enemies.push(e);
+      return e;
+    },
+
+    nearestEnemy: function (wx, wy, rangeTiles) {
+      var best = null, bestD = rangeTiles;
+      for (var i = 0; i < this.enemies.length; i++) {
+        var e = this.enemies[i];
+        if (e.dead) continue;
+        var d = dist(wx, wy, e.wx, e.wy);
+        if (d < bestD) { bestD = d; best = e; }
+      }
+      return best;
+    },
+
+    onKill: function (e) {
+      this.totalKills++;
+      Party.player.kills++;
+      this.waveKills++;
+      Party.player.xp += e.type === 'boss' ? 150 : e.type === 'elite' ? 45 : 20;
+      /* level up */
+      var p = Party.player;
+      while (p.xp >= p.xpNext) {
+        p.xp -= p.xpNext;
+        p.level++;
+        p.xpNext = Math.round(p.xpNext * 1.5);
+        p.maxHp += 20; p.hp = p.maxHp;
+        p.dmg += 3;
+        Game.toast('⬆ Lên cấp ' + p.level + '! HP +20 · DMG +3');
+        AudioMan.sfx('skill');
+      }
+      UIManager.updatePlayer();
+      QuestSystem.onKill();
+      LootSystem.drop(e.wx, e.wy, e.type);
+
+      /* wave progress */
+      if (this.waveActive) {
+        UIManager.updateWave(null, this.waveNeed - this.waveKills);
+        if (this.waveKills >= this.waveNeed) {
+          this.waveActive = false;
+          if (this.wave >= 4) {
+            Game.toast('🏆 QUAN ẢI LONG NGÂM THÔNG QUA! Địch đã bị quét sạch!');
+            Game.questComplete();
+          } else {
+            Game.toast('Đợt ' + this.wave + ' quét xong! Đợt tiếp theo sau 3s…');
+            this.spawnTimer = 3;
+          }
+        }
+      }
+    },
+
+    update: function (dt) {
+      var self = this;
+
+      /* spawn next wave */
+      if (!this.waveActive && this.spawnTimer > 0) {
+        this.spawnTimer -= dt;
+        if (this.spawnTimer <= 0) this.startWave(this.wave + 1);
+      }
+
+      /* boss respawn nếu chết giữa chừng? không — boss là cuối wave */
+
+      this.enemies.forEach(function (e) {
+        if (e.dead) {
+          e.deathT -= dt;
+          if (e.deathT <= 0 && e.container.parent) {
+            Engine.layers.characters.removeChild(e.container);
+          }
+          return;
+        }
+        if (e.hitFlash > 0) e.hitFlash -= dt;
+
+        var p = Party.player;
+        var dPlayer = dist(e.wx, e.wy, p.wx, p.wy);
+
+        /* AI states */
+        if (e.aiState === 'patrol') {
+          e.patrolT -= dt;
+          if (e.patrolT <= 0) {
+            e.patrolTarget = { x: e.homeX + rand(-2, 2), y: e.homeY + rand(-2, 2) };
+            e.patrolT = rand(2, 5);
+          }
+          if (e.patrolTarget && dist(e.wx, e.wy, e.patrolTarget.x, e.patrolTarget.y) > 0.3) {
+            Party.moveTo(e, e.patrolTarget.x, e.patrolTarget.y, dt, e.speed * 0.5);
+            e.state = 'walk';
+          } else e.state = 'idle';
+          if (dPlayer < e.detectRange) { e.aiState = 'chase'; e.aggro = true; }
+        }
+        else if (e.aiState === 'chase') {
+          var target = dPlayer < 14 ? p : null;
+          /* nếu party member gần hơn → nhắm member */
+          var nearest = null, nd = dPlayer;
+          Party.members.forEach(function (m) {
+            if (m.dead) return;
+            var d = dist(e.wx, e.wy, m.wx, m.wy);
+            if (d < nd) { nd = d; nearest = m; }
+          });
+          target = nearest || p;
+
+          if (target.dead) { e.aiState = 'patrol'; return; }
+          var dT = dist(e.wx, e.wy, target.wx, target.wy);
+          var range = e.atkRange / CFG.TILE_W;
+          if (dT > range) {
+            Party.moveTo(e, target.wx, target.wy, dt, e.speed);
+            e.state = 'run';
+          } else {
+            e.state = 'idle';
+            if (e.atkCd <= 0) {
+              Combat.attack(e, target);
+              e.atkCd = rand(0.9, 1.6);
+            }
+          }
+          /* target frame nếu player nhắm e */
+        }
+        if (e.atkCd > 0) e.atkCd -= dt;
+
+        CharFactory.animate(e, dt);
+        WorldSync.syncEntity(e);
+        e.updateHpBar && e.updateHpBar();
+      });
+
+      /* cleanup dead list */
+      this.enemies = this.enemies.filter(function (e) {
+        return !(e.dead && e.deathT <= 0);
+      });
+
+      /* boss HP UI */
+      if (this.boss && !this.boss.dead) UIManager.updateBoss(this.boss);
+    }
+  };
+
+  /* ================= COMBAT SYSTEM ================= */
+  var Combat = {
+    attack: function (attacker, victim) {
+      if (attacker.dead || victim.dead) return;
+      attacker.state = 'attack';
+      attacker.stateTime = 0;
+      attacker.attackDur = attacker.isPlayer ? 0.32 : 0.4;
+      AudioMan.sfx('swing');
+
+      /* delay 0.12s để đúng nhịp vung kiếm */
+      setTimeout(function () {
+        if (attacker.dead || victim.dead) return;
+        var dmg = attacker.dmg * rand(0.85, 1.15);
+        var isCrit = attacker.isPlayer && Math.random() < 0.2;
+        if (isCrit) dmg *= 2;
+        /* combo bonus */
+        if (attacker.isPlayer) {
+          attacker.comboTime = 2;
+          dmg *= 1 + Math.min(0.3, attacker.combo * 0.05);
+        }
+        dmg = Math.round(dmg);
+        Combat.damage(victim, dmg, isCrit, attacker);
+      }, 120);
+    },
+
+    damage: function (victim, dmg, isCrit, attacker) {
+      if (victim.dead || victim.invuln > 0) return;
+      victim.hp -= dmg;
+      victim.hitFlash = 0.18;
+      victim.state = 'hit';
+      victim.stateTime = 0;
+      setTimeout(function () { if (!victim.dead && victim.state === 'hit') victim.state = 'idle'; }, 180);
+
+      Effects.damageNumber(victim.wx, victim.wy, dmg, isCrit, victim.isParty);
+      Effects.hitSpark(victim.wx, victim.wy);
+      AudioMan.sfx('hit');
+
+      /* knockback nhẹ cho enemy */
+      if (victim.isEnemy && attacker) {
+        var dx = victim.wx - attacker.wx, dy = victim.wy - attacker.wy;
+        var d = Math.sqrt(dx * dx + dy * dy) || 1;
+        victim.wx += dx / d * 0.12;
+        victim.wy += dy / d * 0.12;
+      }
+
+      /* player hurt vignette + shake */
+      if (victim.isParty) {
+        UIManager.hurtVignette();
+        Camera.shake(5, 0.18);
+        if (victim.hp <= 0 && !victim.dead) {
+          Combat.kill(victim);
+        }
+      } else if (victim.hp <= 0 && !victim.dead) {
+        Combat.kill(victim);
+      }
+
+      victim.updateHpBar && victim.updateHpBar();
+      UIManager.updateParty();
+      UIManager.updateTarget();
+    },
+
+    kill: function (victim) {
+      victim.dead = true;
+      victim.hp = 0;
+      victim.state = 'death';
+      /* death anim: ngã */
+      var p = victim.parts;
+      var tl = { rotation: 0 };
+      victim.deathT = victim.isEnemy ? 1.6 : 5;
+      /* tween ngã — dùng ticker đơn giản */
+      var t0 = performance.now();
+      var tick = function () {
+        var t = (performance.now() - t0) / 600;
+        if (t < 1) {
+          p.body.rotation = t * Math.PI / 2 * (victim.isEnemy ? 1 : -1);
+          p.body.y = -6 - Math.sin(t * Math.PI) * 4;
+          p.head.y = -44 - Math.sin(t * Math.PI) * 2;
+          requestAnimationFrame(tick);
+        } else {
+          p.body.rotation = Math.PI / 2 * (victim.isEnemy ? 1 : -1);
+        }
+      };
+      requestAnimationFrame(tick);
+      Effects.deathPoof(victim.wx, victim.wy);
+
+      if (victim.isEnemy) {
+        EnemySystem.onKill(victim);
+      } else if (victim.isPlayer) {
+        Game.playerDown();
+      } else {
+        /* companion down — hồi sinh sau 8s */
+        Game.toast(victim.name + ' đã ngã! Hồi sinh sau 8s…');
+        setTimeout(function () {
+          victim.dead = false;
+          victim.hp = victim.maxHp;
+          victim.state = 'idle';
+          victim.parts.body.rotation = 0;
+          victim.container.alpha = 1;
+          victim.updateHpBar();
+          Game.toast(victim.name + ' đã trở lại trận chiến!');
+        }, 8000);
+      }
+    },
+
+    /* AoE damage quanh điểm */
+    aoeDamage: function (wx, wy, radiusTiles, dmg, attacker, color) {
+      EnemySystem.enemies.forEach(function (e) {
+        if (e.dead) return;
+        var d = dist(wx, wy, e.wx, e.wy);
+        if (d <= radiusTiles) {
+          Combat.damage(e, Math.round(dmg * (1 - d / radiusTiles * 0.4)), Math.random() < 0.25, attacker);
+        }
+      });
+    },
+
+    /* line thrust damage */
+    lineDamage: function (fromX, fromY, dirX, dirY, lenTiles, widthTiles, dmg, attacker) {
+      EnemySystem.enemies.forEach(function (e) {
+        if (e.dead) return;
+        var vx = e.wx - fromX, vy = e.wy - fromY;
+        var proj = vx * dirX + vy * dirY;
+        if (proj < 0 || proj > lenTiles) return;
+        var perp = Math.abs(vx * dirY - vy * dirX);
+        if (perp <= widthTiles) {
+          Combat.damage(e, dmg, Math.random() < 0.3, attacker);
+        }
+      });
+    }
+  };
+
+  /* ================= SKILL SYSTEM ================= */
+  var Skills = {
+    cds: { q: 0, e: 0, r: 0, f: 0, space: 0 },
+    cdMax: { q: 5, e: 7, r: 6, f: 18, space: 3 },
+
+    update: function (dt) {
+      var self = this;
+      Object.keys(this.cds).forEach(function (k) {
+        if (self.cds[k] > 0) self.cds[k] -= dt;
+        UIManager.updateCooldown(k, Math.max(0, self.cds[k]), self.cdMax[k]);
+      });
+    },
+
+    canCast: function (k) { return this.cds[k] <= 0 && !Party.player.dead; },
+
+    cast: function (k) {
+      if (!this.canCast(k)) return;
+      var p = Party.player;
+      this.cds[k] = this.cdMax[k];
+      AudioMan.sfx(k === 'f' ? 'ult' : 'skill');
+
+      if (k === 'q') this.goldenRing(p);
+      else if (k === 'e') this.dragonSword(p);
+      else if (k === 'r') this.flameSlash(p);
+      else if (k === 'f') this.ultimate(p);
+      else if (k === 'space') this.dodge(p);
+    },
+
+    /* Skill 1 — Kim Hoàn Trận: golden expanding rings AoE */
+    goldenRing: function (p) {
+      var wx = p.wx, wy = p.wy;
+      Effects.goldenRing(wx, wy);
+      Camera.shake(6, 0.25);
+      Combat.aoeDamage(wx, wy, 2.6, 45 + p.level * 5, p);
+      Game.toast('💫 Kim Hoàn Trận!');
+    },
+
+    /* Skill 2 — Long Kiếm: blue dragon thrust */
+    dragonSword: function (p) {
+      var dir = p.lastMoveDir || { x: 0, y: -1 };
+      /* hướng theo facing/move */
+      var fx = 0, fy = -1;
+      if (p.lastMoveDir) { fx = p.lastMoveDir.x; fy = p.lastMoveDir.y; }
+      Effects.dragonSword(p.wx, p.wy, fx, fy);
+      Camera.shake(8, 0.3);
+      Combat.lineDamage(p.wx, p.wy, fx, fy, 4.5, 1.2, 60 + p.level * 6, p);
+      Game.toast('🐉 Long Kiếm Xuất Tác!');
+    },
+
+    /* Skill 3 — Viêm Đao: flame arc */
+    flameSlash: function (p) {
+      var fx = p.lastMoveDir ? p.lastMoveDir.x : 0;
+      var fy = p.lastMoveDir ? p.lastMoveDir.y : -1;
+      Effects.flameSlash(p.wx, p.wy, fx, fy);
+      /* arc damage 120° phía trước */
+      EnemySystem.enemies.forEach(function (e) {
+        if (e.dead) return;
+        var dx = e.wx - p.wx, dy = e.wy - p.wy;
+        var d = Math.sqrt(dx * dx + dy * dy);
+        if (d > 3.2 || d < 0.01) return;
+        var dot = (dx / d) * fx + (dy / d) * fy;
+        if (dot > 0.25) {
+          Combat.damage(e, Math.round(38 + p.level * 4), Math.random() < 0.3, p);
+        }
+      });
+      Camera.shake(5, 0.2);
+      Game.toast('🔥 Viêm Đao Trảm!');
+    },
+
+    /* Ultimate — Long Ngâm */
+    ultimate: function (p) {
+      var wx = p.wx, wy = p.wy;
+      Effects.ultimateLongNgam(wx, wy);
+      Camera.shake(22, 0.8);
+      Combat.aoeDamage(wx, wy, 5.5, 130 + p.level * 12, p);
+      /* đòn Boss thêm stun-ish flash */
+      Game.toast('🌪 LONG NGÂM — Rồng thép thức tỉnh!');
+      Effects.flashWhite();
+    },
+
+    dodge: function (p) {
+      p.invuln = 0.5;
+      /* dash theo hướng move */
+      var dir = p.lastMoveDir || { x: 0, y: 1 };
+      var dash = 2.2;
+      var nx = clamp(p.wx + dir.x * dash, 3, CFG.MAP_W - 3);
+      var ny = clamp(p.wy + dir.y * dash, 3, CFG.MAP_H - 3);
+      /* trail */
+      Effects.dodgeTrail(p.wx, p.wy, nx, ny);
+      p.wx = nx; p.wy = ny;
+      AudioMan.sfx('swing');
+      Game.toast('💨 Ẩn thân!');
+    },
+
+    /* Companion skills */
+    companionSpearThrust: function (m, enemy) {
+      var fx = (enemy.wx - m.wx), fy = (enemy.wy - m.wy);
+      var d = Math.sqrt(fx * fx + fy * fy) || 1;
+      fx /= d; fy /= d;
+      Effects.spearThrust(m.wx, m.wy, fx, fy);
+      Combat.lineDamage(m.wx, m.wy, fx, fy, 3, 0.9, 30, m);
+      AudioMan.sfx('skill');
+    },
+    companionWhirl: function (m) {
+      Effects.whirlwind(m.wx, m.wy);
+      Combat.aoeDamage(m.wx, m.wy, 1.8, 26, m);
+      AudioMan.sfx('swing');
+    }
+  };
+
+  /* ================= EFFECT SYSTEM ================= */
+  var Effects = {
+    /* Damage number floating */
+    damageNumber: function (wx, wy, dmg, isCrit, isParty) {
+      var t = new PIXI.Text({
+        text: (isCrit ? '✦' : '') + dmg,
+        style: {
+          fontFamily: 'Arial Black, Arial', fontSize: isCrit ? 26 : 18,
+          fontWeight: '900',
+          fill: isParty ? 0xff6a5a : isCrit ? 0xffd24a : 0xffffff,
+          stroke: { color: 0x1a0e08, width: 3 },
+          dropShadow: { color: 0x000000, alpha: 0.5, blur: 2, distance: 2 }
+        }
+      });
+      t.anchor.set(0.5);
+      t.position.set(isoX(wx, wy) + rand(-14, 14), isoY(wx, wy) - 60);
+      t.zIndex = 9999;
+      Engine.layers.effects.addChild(t);
+      var t0 = performance.now();
+      var floatDir = rand(-0.6, 0.6);
+      var tick = function () {
+        var el = (performance.now() - t0) / 900;
+        if (el >= 1) { t.destroy(); return; }
+        t.y -= 1.6;
+        t.x += floatDir;
+        t.alpha = 1 - el * el;
+        t.scale.set(isCrit ? 1 + Math.sin(el * Math.PI) * 0.25 : 1);
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    },
+
+    hitSpark: function (wx, wy) {
+      var c = new PIXI.Container();
+      var sx = isoX(wx, wy), sy = isoY(wx, wy) - 30;
+      c.position.set(sx, sy);
+      Engine.layers.effects.addChild(c);
+      for (var i = 0; i < 8; i++) {
+        var g = new PIXI.Graphics();
+        var a = rand(0, Math.PI * 2), sp = rand(40, 130);
+        g.rect(-2, -1, rand(4, 9), 2).fill({ color: pick([0xffffff, 0xffe9a8, 0xfff6d0]), alpha: 1 });
+        g.x = 0; g.y = 0;
+        g.rotation = a;
+        c.addChild(g);
+        g.userData = { vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: rand(0.2, 0.4) };
+      }
+      var t0 = performance.now();
+      var tick = function () {
+        var dt = 1 / 60;
+        var alive = false;
+        c.children.forEach(function (g) {
+          var u = g.userData;
+          if (!u || u.life <= 0) return;
+          alive = true;
+          u.life -= dt;
+          g.x += u.vx * dt; g.y += u.vy * dt;
+          g.alpha = Math.max(0, u.life / 0.4);
+        });
+        if (alive) requestAnimationFrame(tick);
+        else c.destroy();
+      };
+      requestAnimationFrame(tick);
+    },
+
+    /* Skill 1 — Golden Ring */
+    goldenRing: function (wx, wy) {
+      var c = new PIXI.Container();
+      var sx = isoX(wx, wy), sy = isoY(wx, wy);
+      c.position.set(sx, sy);
+      Engine.layers.effects.addChild(c);
+      var rings = [];
+      var ringDefs = [
+        { r: 10, delay: 0, w: 4, col: 0xffd76a },
+        { r: 10, delay: 0.1, w: 3, col: 0xffc848 },
+        { r: 10, delay: 0.2, w: 2.5, col: 0xffe9a0 },
+        { r: 10, delay: 0.3, w: 2, col: 0xfff6d0 }
+      ];
+      ringDefs.forEach(function (d) {
+        var g = new PIXI.Graphics();
+        c.addChild(g);
+        rings.push({ g: g, def: d, t: -d.delay });
+      });
+      /* golden particles bay ra */
+      for (var i = 0; i < 26; i++) {
+        var pg = new PIXI.Graphics();
+        var a = rand(0, Math.PI * 2);
+        pg.circle(0, 0, rand(2, 4)).fill(0xffd76a);
+        pg.x = 0; pg.y = 0;
+        c.addChild(pg);
+        pg.userData = { a: a, sp: rand(80, 200), life: rand(0.4, 0.8), t: 0 };
+      }
+      var t0 = performance.now();
+      var tick = function () {
+        var dt = 1 / 60;
+        var el = (performance.now() - t0) / 1000;
+        var alive = false;
+        rings.forEach(function (r) {
+          r.t += dt;
+          if (r.t < 0) { r.g.alpha = 0; alive = true; return; }
+          var maxR = 150;
+          var rr = r.def.r + (maxR - r.def.r) * Math.min(1, r.t / 0.5);
+          r.g.clear();
+          r.g.ellipse(0, 0, rr, rr / 2).stroke({ width: r.def.w, color: r.def.col, alpha: Math.max(0, 1 - r.t / 0.7) });
+          if (r.t < 0.7) alive = true; else r.g.clear();
+        });
+        c.children.forEach(function (ch) {
+          var u = ch.userData;
+          if (!u || !u.sp) return;
+          alive = true;
+          u.t += dt;
+          ch.x = Math.cos(u.a) * u.sp * u.t;
+          ch.y = Math.sin(u.a) * u.sp * u.t * 0.5 - u.t * 30;
+          ch.alpha = Math.max(0, 1 - u.t / u.life);
+        });
+        if (alive && el < 1.2) requestAnimationFrame(tick);
+        else c.destroy();
+      };
+      requestAnimationFrame(tick);
+    },
+
+    /* Skill 2 — Blue dragon thrust */
+    dragonSword: function (wx, wy, fx, fy) {
+      var c = new PIXI.Container();
+      Engine.layers.effects.addChild(c);
+      var sx = isoX(wx, wy), sy = isoY(wx, wy);
+      /* dragon head path — vẽ bezier thân rồng xanh */
+      var len = 4.5 * CFG.TILE_W;
+      var steps = 16;
+      var segs = [];
+      for (var i = 0; i < steps; i++) {
+        var g = new PIXI.Graphics();
+        var t = i / steps;
+        var px = sx + isoX(fx, fy) * t * len;
+        var py = sy + isoY(fx, fy) * t * len;
+        g.circle(0, 0, 14 - t * 8).fill({ color: 0x4ab8ff, alpha: 0.5 });
+        g.circle(0, 0, 8 - t * 4).fill({ color: 0xbfe8ff, alpha: 0.8 });
+        g.position.set(px, py);
+        c.addChild(g);
+        segs.push({ g: g, px: px, py: py, t: t });
+      }
+      /* đầu rồng */
+      var head = new PIXI.Graphics();
+      head.poly([[0, -16], [10, -6], [18, -14], [12, 2], [20, 6], [6, 12], [-8, 10], [-12, -2], [-6, -12]]).fill(0x58c8ff);
+      head.circle(6, -4, 2.5).fill(0xffffff);
+      head.position.set(sx, sy);
+      c.addChild(head);
+      var t0 = performance.now();
+      var tick = function () {
+        var dt = 1 / 60;
+        var el = (performance.now() - t0) / 1000;
+        var prog = Math.min(1, el / 0.45);
+        /* đầu rồng bay theo path */
+        head.x = sx + isoX(fx, fy) * prog * len;
+        head.y = sy + isoY(fx, fy) * prog * len - Math.sin(prog * Math.PI) * 24;
+        head.rotation = Math.atan2(isoY(fx, fy), isoX(fx, fy)) * 0.3;
+        /* segs fade theo prog */
+        segs.forEach(function (s) {
+          var local = prog - s.t * 0.25;
+          if (local > 0 && local < 0.5) {
+            s.g.alpha = Math.sin(local / 0.5 * Math.PI);
+          } else s.g.alpha = 0;
+        });
+        if (el < 0.9) requestAnimationFrame(tick);
+        else {
+          /* impact explosion tại điểm đích */
+          var ix = sx + isoX(fx, fy) * len, iy = sy + isoY(fx, fy) * len;
+          var ex = new PIXI.Graphics();
+          ex.position.set(ix, iy);
+          Engine.layers.effects.addChild(ex);
+          var t2 = 0;
+          var tick2 = function () {
+            t2 += dt;
+            var r = t2 / 0.35;
+            ex.clear();
+            ex.circle(0, 0, 8 + r * 44).stroke({ width: 4, color: 0x58c8ff, alpha: 1 - r });
+            ex.circle(0, 0, 4 + r * 24).fill({ color: 0xbfe8ff, alpha: 0.6 * (1 - r) });
+            if (t2 < 0.35) requestAnimationFrame(tick2); else ex.destroy();
+          };
+          requestAnimationFrame(tick2);
+          c.destroy();
+        }
+      };
+      requestAnimationFrame(tick);
+    },
+
+    /* Skill 3 — Flame slash arc */
+    flameSlash: function (wx, wy, fx, fy) {
+      var c = new PIXI.Container();
+      var sx = isoX(wx, wy), sy = isoY(wx, wy);
+      c.position.set(sx, sy);
+      var baseAngle = Math.atan2(fy, fx);
+      Engine.layers.effects.addChild(c);
+      var t0 = performance.now();
+      var tick = function () {
+        var dt = 1 / 60;
+        var el = (performance.now() - t0) / 1000;
+        c.clear();
+        if (el < 0.45) {
+          /* arc slash cam */
+          var spread = 1.9;
+          var a0 = baseAngle - spread / 2 + spread * Math.min(1, el / 0.3);
+          var r = 60 + el * 50;
+          /* nhiều lớp arc */
+          for (var l = 0; l < 3; l++) {
+            var rr = r - l * 14;
+            c.moveTo(Math.cos(a0 - spread / 2) * rr, Math.sin(a0 - spread / 2) * rr * 0.55);
+            for (var a = a0 - spread / 2; a <= a0 + spread / 2; a += 0.15) {
+              c.lineTo(Math.cos(a) * rr, Math.sin(a) * rr * 0.55);
+            }
+            c.stroke({ width: 8 - l * 2.5, color: pick([0xff8038, 0xffb048, 0xff5828]), alpha: (0.85 - l * 0.22) * (1 - el / 0.45) });
+          }
+          /* fire particles */
+          for (var p = 0; p < 5; p++) {
+            var pa = baseAngle + rand(-0.9, 0.9);
+            var pr = r * rand(0.6, 1.1);
+            c.circle(Math.cos(pa) * pr, Math.sin(pa) * pr * 0.55, rand(3, 7)).fill({ color: pick([0xff9038, 0xffc860, 0xff5828]), alpha: rand(0.4, 0.9) * (1 - el / 0.45) });
+          }
+          requestAnimationFrame(tick);
+        } else c.destroy();
+      };
+      requestAnimationFrame(tick);
+    },
+
+    /* Ultimate — Long Ngâm combo */
+    ultimateLongNgam: function (wx, wy) {
+      Effects.goldenRing(wx, wy);
+      /* Blue dragon bay vòng quanh rồi đâm xuống */
+      setTimeout(function () {
+        Effects.dragonSword(wx - 2, wy + 1.5, 1, -0.8);
+      }, 200);
+      setTimeout(function () {
+        Effects.dragonSword(wx + 2, wy + 1.2, -0.8, -1);
+      }, 400);
+      /* shockwave */
+      setTimeout(function () {
+        var c = new PIXI.Container();
+        var sx = isoX(wx, wy), sy = isoY(wx, wy);
+        c.position.set(sx, sy);
+        Engine.layers.effects.addChild(c);
+        var t = 0;
+        var tick = function () {
+          var dt = 1 / 60;
+          t += dt;
+          c.clear();
+          var r = t / 0.6;
+          c.ellipse(0, 0, 20 + r * 260, (20 + r * 260) / 2).stroke({ width: 8, color: 0xffd76a, alpha: 0.9 * (1 - r) });
+          c.ellipse(0, 0, 12 + r * 200, (12 + r * 200) / 2).stroke({ width: 4, color: 0xffffff, alpha: 0.6 * (1 - r) });
+          if (t < 0.6) requestAnimationFrame(tick); else c.destroy();
+        };
+        requestAnimationFrame(tick);
+      }, 550);
+      /* golden pillar */
+      setTimeout(function () {
+        var g = new PIXI.Graphics();
+        var sx = isoX(wx, wy), sy = isoY(wx, wy);
+        g.position.set(sx, sy);
+        g.poly([[-40, 0], [40, 0], [22, -220], [-22, -220]]).fill({ color: 0xffd76a, alpha: 0.3 });
+        g.poly([[-22, 0], [22, 0], [12, -180], [-12, -180]]).fill({ color: 0xfff2c0, alpha: 0.42 });
+        g.zIndex = 9998;
+        Engine.layers.effects.addChild(g);
+        var a = 1;
+        var tick = function () {
+          var dt = 1 / 60;
+          a -= dt * 1.6;
+          g.alpha = Math.max(0, a);
+          if (a > 0) requestAnimationFrame(tick); else g.destroy();
+        };
+        requestAnimationFrame(tick);
+      }, 300);
+    },
+
+    dodgeTrail: function (x0, y0, x1, y1) {
+      for (var i = 0; i < 7; i++) {
+        var t = i / 7;
+        var wx = x0 + (x1 - x0) * t, wy = y0 + (y1 - y0) * t;
+        (function (wx, wy, delay) {
+          setTimeout(function () {
+            var g = new PIXI.Graphics();
+            g.ellipse(isoX(wx, wy), isoY(wx, wy) - 20, 14, 20).fill({ color: 0x9fd4ff, alpha: 0.3 });
+            Engine.layers.effects.addChild(g);
+            var a = 0.3;
+            var tick = function () {
+              a -= 0.03;
+              g.alpha = Math.max(0, a);
+              if (a > 0) requestAnimationFrame(tick); else g.destroy();
+            };
+            requestAnimationFrame(tick);
+          }, delay);
+        })(wx, wy, i * 30);
+      }
+    },
+
+    spearThrust: function (wx, wy, fx, fy) {
+      Effects.dragonSword(wx, wy, fx, fy);
+    },
+
+    whirlwind: function (wx, wy) {
+      var c = new PIXI.Container();
+      var sx = isoX(wx, wy), sy = isoY(wx, wy);
+      c.position.set(sx, sy);
+      Engine.layers.effects.addChild(c);
+      var t = 0;
+      var tick = function () {
+        var dt = 1 / 60;
+        t += dt;
+        c.clear();
+        if (t < 0.5) {
+          for (var i = 0; i < 3; i++) {
+            var a = t * 12 + i * Math.PI * 2 / 3;
+            var r = 20 + t * 90;
+            c.circle(Math.cos(a) * r, Math.sin(a) * r * 0.5 - t * 20, 4).fill({ color: i % 2 ? 0xffd76a : 0xffffff, alpha: 1 - t / 0.5 });
+          }
+          requestAnimationFrame(tick);
+        } else c.destroy();
+      };
+      requestAnimationFrame(tick);
+    },
+
+    deathPoof: function (wx, wy) {
+      var c = new PIXI.Container();
+      c.position.set(isoX(wx, wy), isoY(wx, wy) - 20);
+      Engine.layers.effects.addChild(c);
+      for (var i = 0; i < 10; i++) {
+        var g = new PIXI.Graphics();
+        g.circle(0, 0, rand(2, 5)).fill({ color: 0x8a94b0, alpha: 0.8 });
+        c.addChild(g);
+        g.userData = { a: rand(0, Math.PI * 2), sp: rand(30, 90), t: 0, life: rand(0.3, 0.6) };
+      }
+      var tick = function () {
+        var dt = 1 / 60;
+        var alive = false;
+        c.children.forEach(function (g) {
+          var u = g.userData;
+          if (u.t >= u.life) return;
+          alive = true;
+          u.t += dt;
+          g.x += Math.cos(u.a) * u.sp * dt;
+          g.y += Math.sin(u.a) * u.sp * dt * 0.5 - dt * 40;
+          g.alpha = Math.max(0, 1 - u.t / u.life);
+        });
+        if (alive) requestAnimationFrame(tick); else c.destroy();
+      };
+      requestAnimationFrame(tick);
+    },
+
+    flashWhite: function () {
+      var r = new PIXI.Graphics();
+      r.rect(-3000, -2000, 8000, 5000).fill({ color: 0xffffff, alpha: 0.28 });
+      r.zIndex = 10000;
+      Engine.layers.effects.addChild(r);
+      var a = 0.28;
+      var tick = function () {
+        a -= 0.04;
+        r.alpha = Math.max(0, a);
+        if (a > 0) requestAnimationFrame(tick); else r.destroy();
+      };
+      requestAnimationFrame(tick);
+    }
+  };
+
+  /* ================= PARTICLE SYSTEM — snow + embers ================= */
+  var Particles = {
+    snows: [],
+    build: function () {
+      /* overlay screen-space snow */
+      var snowLayer = new PIXI.Container();
+      Engine.app.stage.addChild(snowLayer);
+      this.snowLayer = snowLayer;
+      for (var i = 0; i < 170; i++) {
+        var g = new PIXI.Graphics();
+        var s = rand(1, 3.2);
+        g.circle(0, 0, s).fill({ color: 0xe8f0fa, alpha: rand(0.35, 0.85) });
+        g.x = rand(0, window.innerWidth);
+        g.y = rand(-window.innerHeight, window.innerHeight);
+        g.userData = { vy: rand(28, 75), vx: rand(-12, 20), drift: rand(0, Math.PI * 2) };
+        snowLayer.addChild(g);
+        this.snows.push(g);
+      }
+    },
+    update: function (dt) {
+      var w = window.innerWidth, h = window.innerHeight;
+      this.snows.forEach(function (g) {
+        var u = g.userData;
+        u.drift += dt * 1.5;
+        g.y += u.vy * dt;
+        g.x += (u.vx + Math.sin(u.drift) * 14) * dt;
+        if (g.y > h + 10) { g.y = -10; g.x = rand(0, w); }
+        if (g.x > w + 10) g.x = -10;
+        if (g.x < -10) g.x = w + 10;
+      });
+      /* lantern glow pulse */
+      if (World.lanterns) {
+        var t = Engine.time;
+        World.lanterns.forEach(function (glow, i) {
+          glow.alpha = 0.75 + Math.sin(t * 2 + i * 1.3) * 0.25;
+        });
+      }
+      var templeC = Engine.layers.env.children.find(function (c) { return c.lanternGlow; });
+      if (templeC) {
+        templeC.lanternGlow.alpha = 0.7 + Math.sin(t * 1.8) * 0.3;
+      }
+    }
+  };
+
+  /* ================= QUEST SYSTEM ================= */
+  var QuestSystem = {
+    goal: 24,
+    onKill: function () {
+      var pct = Math.min(100, EnemySystem.totalKills / this.goal * 100);
+      document.getElementById('quest-progress').style.width = pct + '%';
+      if (EnemySystem.totalKills >= this.goal && !this._done) {
+        this._done = true;
+      }
+    },
+    complete: function () {
+      document.getElementById('quest-progress').style.width = '100%';
+    }
+  };
+
+  /* ================= LOOT SYSTEM ================= */
+  var LootSystem = {
+    drops: [],
+    drop: function (wx, wy, type) {
+      var n = type === 'boss' ? 10 : type === 'elite' ? 3 : randInt(1, 2);
+      for (var i = 0; i < n; i++) {
+        var g = new PIXI.Graphics();
+        var gold = randInt(8, 25) * (type === 'boss' ? 10 : type === 'elite' ? 3 : 1);
+        /* coin iso */
+        g.ellipse(0, 0, 7, 4).fill(0xd8a838);
+        g.ellipse(0, -1.5, 6, 3).fill(0xffd76a);
+        var c = new PIXI.Container();
+        c.addChild(g);
+        c.position.set(isoX(wx + rand(-0.5, 0.5), wy + rand(-0.5, 0.5)), isoY(wx, wy) - 10);
+        c.zIndex = 9990;
+        Engine.layers.effects.addChild(c);
+        this.drops.push({ c: c, wx: wx + rand(-0.5, 0.5), wy: wy + rand(-0.5, 0.5), gold: gold, t: 0, taken: false });
+      }
+    },
+    update: function (dt) {
+      var p = Party.player;
+      this.drops = this.drops.filter(function (d) {
+        if (d.taken) return false;
+        d.t += dt;
+        d.c.y = isoY(d.wx, d.wy) - 10 - Math.abs(Math.sin(d.t * 4)) * 4;
+        d.c.rotation += dt * 3;
+        var dd = dist(p.wx, p.wy, d.wx, d.wy);
+        if (dd < 1.2 && !p.dead) {
+          /* hút về player */
+          p.gold += d.gold;
+          d.taken = true;
+          AudioMan.sfx('pickup');
+          UIManager.updatePlayer();
+          d.c.destroy();
+          return false;
+        }
+        /* auto despawn 30s */
+        if (d.t > 30) { d.c.destroy(); return false; }
+        return true;
+      });
+    }
+  };
+
+  /* ================= WORLD SYNC — position + depth ================= */
+  var WorldSync = {
+    syncEntity: function (ch) {
+      ch.container.position.set(isoX(ch.wx, ch.wy), isoY(ch.wx, ch.wy));
+      ch.container.zIndex = depthOf(ch.wx, ch.wy);
+    }
+  };
+
+  /* ================= INPUT SYSTEM ================= */
+  var Input = {
+    keys: {},
+    mouseDown: false,
+    autoAttack: true,
+    targetEnemy: null,
+
+    init: function () {
+      var self = this;
+      window.addEventListener('keydown', function (e) {
+        self.keys[e.key.toLowerCase()] = true;
+        if (['q', 'e', 'r', 'f'].indexOf(e.key.toLowerCase()) !== -1) {
+          Skills.cast(e.key.toLowerCase());
+        }
+        if (e.key === ' ') {
+          e.preventDefault();
+          Skills.cast('space');
+        }
+        if (e.key.toLowerCase() === 'i') {
+          Game.toast('🎒 Túi: ' + Party.player.gold + ' vàng · 300 EXP tích lũy — tính năng đầy đủ sẽ ra mắt!');
+        }
+      });
+      window.addEventListener('keyup', function (e) {
+        self.keys[e.key.toLowerCase()] = false;
+      });
+
+      var canvas = Engine.app.canvas;
+      canvas.addEventListener('pointerdown', function (e) {
+        if (e.button === 0) {
+          self.mouseDown = true;
+          /* click vào enemy → target; click đất → move */
+          var wpos = Camera.screenToWorld(e.clientX, e.clientY);
+          var e2 = EnemySystem.nearestEnemy(wpos.x, wpos.y, 1.4);
+          if (e2) {
+            self.targetEnemy = e2;
+            UIManager.setTarget(e2);
+          } else {
+            /* move tới điểm */
+            var p = Party.player;
+            if (!p.dead) {
+              p.moveTarget = { x: clamp(wpos.x, 3, CFG.MAP_W - 3), y: clamp(wpos.y, 3, CFG.MAP_H - 3) };
+            }
+          }
+        } else if (e.button === 2) {
+          var wpos2 = Camera.screenToWorld(e.clientX, e.clientY);
+          var e3 = EnemySystem.nearestEnemy(wpos2.x, wpos2.y, 2.2);
+          if (e3) {
+            self.targetEnemy = e3;
+            UIManager.setTarget(e3);
+          }
+        }
+      });
+      canvas.addEventListener('pointerup', function () { self.mouseDown = false; });
+      canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+      canvas.addEventListener('wheel', function (e) {
+        e.preventDefault();
+        Camera.targetZoom = clamp(Camera.targetZoom * (e.deltaY > 0 ? 0.92 : 1.08), CFG.MIN_ZOOM, CFG.MAX_ZOOM);
+      }, { passive: false });
+    },
+
+    update: function (dt) {
+      var p = Party.player;
+      if (p.dead) return;
+      var vx = 0, vy = 0;
+      if (this.keys['w'] || this.keys['arrowup']) { vy -= 1; }
+      if (this.keys['s'] || this.keys['arrowdown']) { vy += 1; }
+      if (this.keys['a'] || this.keys['arrowleft']) { vx -= 1; }
+      if (this.keys['d'] || this.keys['arrowright']) { vx += 1; }
+
+      if (vx || vy) {
+        p.moveTarget = null;
+        var len = Math.sqrt(vx * vx + vy * vy);
+        vx /= len; vy /= len;
+        p.wx = clamp(p.wx + vx * p.speed * dt, 3, CFG.MAP_W - 3);
+        p.wy = clamp(p.wy + vy * p.speed * dt, 3, CFG.MAP_H - 3);
+        p.lastMoveDir = { x: vx, y: vy };
+        p.state = 'run';
+        p.facing = vx >= 0 ? 1 : -1;
+        var baseScale = 1.0;
+        p.container.scale.x = p.facing >= 0 ? baseScale : -baseScale;
+      } else if (p.moveTarget) {
+        var d = dist(p.wx, p.wy, p.moveTarget.x, p.moveTarget.y);
+        if (d > 0.25) {
+          Party.moveTo(p, p.moveTarget.x, p.moveTarget.y, dt, p.speed);
+          p.state = 'run';
+          p.lastMoveDir = { x: (p.moveTarget.x - p.wx) / d, y: (p.moveTarget.y - p.wy) / d };
+        } else p.moveTarget = null;
+      } else if (p.state === 'run' || p.state === 'walk') {
+        p.state = 'idle';
+      }
+
+      /* auto attack nearest / target */
+      var t = this.targetEnemy;
+      if (t && !t.dead) {
+        var dT = dist(p.wx, p.wy, t.wx, t.wy);
+        var range = p.atkRange / CFG.TILE_W + 0.4;
+        if (dT > range) {
+          Party.moveTo(p, t.wx, t.wy, dt, p.speed);
+          p.state = 'run';
+          var dx = t.wx - p.wx, dy = t.wy - p.wy;
+          var dd = Math.sqrt(dx * dx + dy * dy) || 1;
+          p.facing = dx >= 0 ? 1 : -1;
+          p.container.scale.x = p.facing >= 0 ? 1 : -1;
+        } else {
+          p.state = 'idle';
+          if ((this.mouseDown || this.autoAttack) && p.atkCd <= 0) {
+            Combat.attack(p, t);
+            p.atkCd = p.atkSpeed;
+          }
+        }
+        UIManager.updateTarget(t);
+      } else {
+        /* auto attack nearest trong range */
+        var near = EnemySystem.nearestEnemy(p.wx, p.wy, 1.8);
+        if (near && p.atkCd <= 0 && (this.mouseDown || this.autoAttack)) {
+          Combat.attack(p, near);
+          p.atkCd = p.atkSpeed;
+          this.targetEnemy = near;
+          UIManager.setTarget(near);
+        } else if (near) {
+          var dn = dist(p.wx, p.wy, near.wx, near.wy);
+          if (dn > p.atkRange / CFG.TILE_W) {
+            Party.moveTo(p, near.wx, near.wy, dt, p.speed * 0.9);
+            p.state = 'run';
+            p.facing = near.wx >= p.wx ? 1 : -1;
+            p.container.scale.x = p.facing >= 0 ? 1 : -1;
+          }
+        } else if (this.targetEnemy && this.targetEnemy.dead) {
+          this.targetEnemy = null;
+          UIManager.hideTarget();
+        }
+      }
+
+      /* combo timer */
+      if (p.comboTime > 0) {
+        p.comboTime -= dt;
+        if (p.comboTime <= 0) p.combo = 0;
+      } else if (p.state === 'attack') {
+        p.combo++;
+        if (p.combo >= 3) {
+          Game.toast('⚔ Combo x' + p.combo + '!');
+          p.combo = 3;
+        }
+        p.comboTime = 2;
+      }
+
+      if (p.atkCd > 0) p.atkCd -= dt;
+      if (p.dodgeCd > 0) p.dodgeCd -= dt;
+      CharFactory.animate(p, dt);
+      WorldSync.syncEntity(p);
+      p.updateHpBar && p.updateHpBar();
+    }
+  };
+
+  /* ================= UI MANAGER ================= */
+  var UIManager = {
+    init: function () {
+      var self = this;
+      /* party panels */
+      var partyEl = document.getElementById('party');
+      Party.members.forEach(function (m, i) {
+        var div = document.createElement('div');
+        div.className = 'party-member panel';
+        div.innerHTML =
+          '<div class="portrait">' + (i === 0 ? '🗡' : i === 1 ? '🔱' : '⚔') + '</div>' +
+          '<div class="p-info">' +
+          '<div class="p-name">' + m.name + ' <span style="color:#8fa0c0">Lv' + (m.isPlayer ? '<b id="pm-lv">1</b>' : '5') + '</span></div>' +
+          '<div class="hp-bar"><i id="pm-hp' + i + '"></i></div>' +
+          '<div class="mp-bar"><i id="pm-mp' + i + '" style="width:80%"></i></div>' +
+          '<div class="p-status" id="pm-status' + i + '">Sẵn sàng</div>' +
+          '</div>';
+        partyEl.appendChild(div);
+      });
+
+      /* skill slots click */
+      document.querySelectorAll('.skill-slot').forEach(function (slot) {
+        slot.addEventListener('click', function () {
+          var sk = slot.getAttribute('data-skill');
+          if (sk === 'char') {
+            Game.toast('🎒 ' + Party.player.gold + ' vàng · Level ' + Party.player.level + ' — trang bị đầy đủ sẽ ra mắt!');
+            return;
+          }
+          Skills.cast(sk === 'space' ? 'space' : sk);
+        });
+      });
+
+      this.updatePlayer();
+      this.updateParty();
+    },
+
+    updatePlayer: function () {
+      var p = Party.player;
+      if (!p) return;
+      document.getElementById('hud-level').textContent = p.level;
+      document.getElementById('hud-hp').style.width = clamp(p.hp / p.maxHp * 100, 0, 100) + '%';
+      document.getElementById('hud-hp-text').textContent = Math.max(0, Math.round(p.hp)) + '/' + p.maxHp;
+      document.getElementById('hud-xp').style.width = clamp(p.xp / p.xpNext * 100, 0, 100) + '%';
+      document.getElementById('hud-gold').textContent = p.gold;
+      document.getElementById('hud-kills').textContent = p.kills;
+      var lv = document.getElementById('pm-lv');
+      if (lv) lv.textContent = p.level;
+    },
+
+    updateParty: function () {
+      Party.members.forEach(function (m, i) {
+        var bar = document.getElementById('pm-hp' + i);
+        if (bar) bar.style.width = clamp(m.hp / m.maxHp * 100, 0, 100) + '%';
+        var st = document.getElementById('pm-status' + i);
+        if (st) st.textContent = m.dead ? '☠ Đã ngã' : m.state === 'run' ? 'Đang chiến đấu' : 'Sẵn sàng';
+      });
+    },
+
+    updateWave: function (name, remaining) {
+      if (name) document.getElementById('wave-name').textContent = name;
+      if (remaining !== undefined && remaining !== null) {
+        document.getElementById('wave-count').textContent = (EnemySystem.waveNeed - remaining) + '/' + EnemySystem.waveNeed;
+        document.getElementById('wave-progress').style.width = ((EnemySystem.waveNeed - remaining) / EnemySystem.waveNeed * 100) + '%';
+      }
+      document.getElementById('wave-num').textContent = Math.max(1, EnemySystem.wave);
+    },
+
+    showBoss: function (boss) {
+      document.getElementById('boss-bar').classList.add('show');
+      document.getElementById('boss-name').textContent = boss.name;
+    },
+    updateBoss: function (boss) {
+      document.getElementById('boss-hp').style.width = clamp(boss.hp / boss.maxHp * 100, 0, 100) + '%';
+    },
+    hideBoss: function () {
+      document.getElementById('boss-bar').classList.remove('show');
+    },
+
+    setTarget: function (e) {
+      document.getElementById('target-frame').classList.add('show');
+      document.getElementById('target-name').textContent = e.name + (e.type === 'elite' ? ' ☠' : '');
+    },
+    updateTarget: function (e) {
+      var t = e || Input.targetEnemy;
+      if (!t || t.dead) { this.hideTarget(); return; }
+      document.getElementById('target-hp').style.width = clamp(t.hp / t.maxHp * 100, 0, 100) + '%';
+    },
+    hideTarget: function () {
+      document.getElementById('target-frame').classList.remove('show');
+    },
+
+    updateCooldown: function (k, remain, max) {
+      var slot = document.querySelector('.skill-slot[data-skill="' + k + '"]');
+      if (!slot) return;
+      if (remain > 0) {
+        slot.classList.add('cooldown');
+        slot.querySelector('.sk-cd').textContent = Math.ceil(remain);
+      } else {
+        slot.classList.remove('cooldown');
+      }
+    },
+
+    hurtVignette: function () {
+      var v = document.getElementById('vignette');
+      v.style.boxShadow = 'inset 0 0 140px rgba(200,30,30,.55)';
+      clearTimeout(this._vt);
+      this._vt = setTimeout(function () {
+        v.style.boxShadow = 'inset 0 0 120px rgba(200,30,30,0)';
+      }, 220);
+    }
+  };
+
+  /* ================= MINI MAP ================= */
+  var MiniMap = {
+    ctx: null,
+    init: function () {
+      this.ctx = document.getElementById('minimap').getContext('2d');
+    },
+    update: function () {
+      var ctx = this.ctx;
+      if (!ctx) return;
+      var W = 170, H = 170;
+      var mw = CFG.MAP_W, mh = CFG.MAP_H;
+      ctx.clearRect(0, 0, W, H);
+      /* nền tuyết */
+      ctx.fillStyle = '#26314a';
+      ctx.fillRect(0, 0, W, H);
+      function dot(wx, wy) {
+        return [wx / mw * W, wy / mh * H];
+      }
+      /* đường */
+      ctx.strokeStyle = '#4a5570';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      var p1 = dot(30, 30), p2 = dot(30, 56);
+      ctx.moveTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]);
+      var p3 = dot(16, 36), p4 = dot(46, 36);
+      ctx.moveTo(p3[0], p3[1]); ctx.lineTo(p4[0], p4[1]);
+      ctx.stroke();
+      /* temple */
+      var tp = dot(World.TEMPLE.x, World.TEMPLE.y);
+      ctx.fillStyle = '#c9a94f';
+      ctx.fillRect(tp[0] - 10, tp[1] - 8, 20, 14);
+      ctx.strokeStyle = '#ffd76a';
+      ctx.strokeRect(tp[0] - 10, tp[1] - 8, 20, 14);
+      /* NPCs vàng nhạt */
+      World.npcs.forEach(function (n) {
+        var d = dot(n.wx, n.wy);
+        ctx.fillStyle = '#9fb2d0';
+        ctx.fillRect(d[0] - 1.5, d[1] - 1.5, 3, 3);
+      });
+      /* enemies đỏ */
+      EnemySystem.enemies.forEach(function (e) {
+        if (e.dead) return;
+        var d = dot(e.wx, e.wy);
+        ctx.fillStyle = e.type === 'boss' ? '#ff5838' : '#e03848';
+        ctx.beginPath();
+        ctx.arc(d[0], d[1], e.type === 'boss' ? 4 : 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      /* party xanh */
+      Party.members.forEach(function (m, i) {
+        if (m.dead) return;
+        var d = dot(m.wx, m.wy);
+        ctx.fillStyle = i === 0 ? '#7fe0ff' : '#48c860';
+        ctx.beginPath();
+        ctx.arc(d[0], d[1], i === 0 ? 4 : 3, 0, Math.PI * 2);
+        ctx.fill();
+        if (i === 0) {
+          ctx.strokeStyle = '#ffffff';
+          ctx.stroke();
+        }
+      });
+      /* viền */
+      ctx.strokeStyle = 'rgba(200,170,90,.5)';
+      ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
+    }
+  };
+
+  /* ================= GAME — main orchestration ================= */
+  var Game = {
+    started: false,
+
+    boot: function () {
+      var self = this;
+      var fill = document.getElementById('load-fill');
+      AudioMan.init();
+
+      Engine.init(function (p) { fill.style.width = p + '%'; }).then(function () {
+        fill.style.width = '75%';
+        setTimeout(function () {
+          var t0 = performance.now();
+          TileMap.build();
+          console.log('[WUXIA] tilemap: ' + Math.round(performance.now() - t0) + 'ms');
+          fill.style.width = '80%';
+          setTimeout(function () {
+            var t1 = performance.now();
+            World.build();
+            console.log('[WUXIA] world: ' + Math.round(performance.now() - t1) + 'ms');
+            fill.style.width = '88%';
+            setTimeout(function () {
+              Party.init();
+              EnemySystem.startWave(1);
+              Particles.build();
+              UIManager.init();
+              MiniMap.init();
+              Input.init();
+              fill.style.width = '100%';
+
+              setTimeout(function () {
+                document.getElementById('loading').classList.add('hide');
+              }, 300);
+
+              self.started = true;
+              self.toast('⚔ Trường Bạch — Quan Ải Long Ngâm! Tiêu diệt địch, mở đường tiến quân!');
+
+              /* main loop */
+              var last = performance.now();
+              Engine.app.ticker.add(function () {
+                var now = performance.now();
+                var dt = Math.min(0.05, (now - last) / 1000);
+                last = now;
+                Engine.time += dt;
+
+                if (self.started) {
+                  Input.update(dt);
+                  Party.update(dt);
+                  EnemySystem.update(dt);
+                  Skills.update(dt);
+                  LootSystem.update(dt);
+                  Camera.update(dt);
+                  Particles.update(dt);
+                  MiniMap.update();
+                }
+              });
+            }, 40);
+          }, 40);
+        }, 40);
+      });
+    },
+
+    toast: function (msg) {
+      var el = document.getElementById('game-toast');
+      el.textContent = msg;
+      el.classList.add('show');
+      clearTimeout(this._toastT);
+      this._toastT = setTimeout(function () { el.classList.remove('show'); }, 2600);
+    },
+
+    playerDown: function () {
+      this.toast('☠ Bạn đã ngã! Đồng đội đang cầm cự… Hồi sinh sau 6s');
+      document.getElementById('vignette').style.boxShadow = 'inset 0 0 200px rgba(200,30,30,.75)';
+      var p = Party.player;
+      setTimeout(function () {
+        p.dead = false;
+        p.hp = p.maxHp;
+        p.state = 'idle';
+        p.parts.body.rotation = 0;
+        p.container.alpha = 1;
+        p.wx = Party.members[1].wx;
+        p.wy = Party.members[1].wy;
+        p.invuln = 2;
+        document.getElementById('vignette').style.boxShadow = 'inset 0 0 120px rgba(200,30,30,0)';
+        Game.toast('Bạn đã hồi sinh! Cẩn thận hơn nhé.');
+        UIManager.updatePlayer();
+      }, 6000);
+    },
+
+    questComplete: function () {
+      QuestSystem.complete();
+      Party.player.gold += 500;
+      UIManager.updatePlayer();
+      EnemySystem.hideBoss();
+      /* victory banner */
+      var v = document.createElement('div');
+      v.style.cssText = 'position:fixed;top:38%;left:50%;transform:translate(-50%,-50%);z-index:50;text-align:center;pointer-events:none;';
+      v.innerHTML = '<div style="font-size:44px;font-weight:900;color:#ffd76a;text-shadow:0 0 30px rgba(255,200,80,.8), 0 2px 8px #000;letter-spacing:.12em;">⚔ CHIẾN THẮNG ⚔</div>' +
+        '<div style="font-size:16px;color:#ffe9a8;margin-top:8px;text-shadow:0 1px 4px #000;">Quan Ải Long Ngâm đã được giải phóng · +500 vàng · +300 EXP</div>';
+      document.body.appendChild(v);
+      Camera.shake(10, 0.4);
+      Effects.flashWhite();
+      setTimeout(function () { v.remove(); }, 5000);
+      /* endless mode */
+      setTimeout(function () {
+        Game.toast('🔄 Chế độ vô tận: địch tiếp tục kéo tới!');
+        EnemySystem.questGoal = 999;
+        QuestSystem.goal = 999;
+        EnemySystem.startWave(1);
+      }, 6000);
+    }
+  };
+
+  /* ================= BOOT ================= */
+  window.addEventListener('load', function () {
+    Game.boot();
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+﻿{
+  "note": "Ket qua do tu tools/qa-gizmo*.mjs (chay lai de tai lap). Moi truc keo bang chuot that cua Playwright.",
+  "translateGizmo": {
+    "X": { "dragPixels": 96, "delta": [0.648, 0, 0], "moved": true },
+    "Y": { "dragPixels": 96, "delta": [0, 0.666, 0], "moved": true },
+    "Z": { "dragPixels": 96, "delta": [0, 0, 0.845], "moved": true }
+  },
+  "modes": { "move": "translate/visible", "rotate": "rotate/visible", "scale": "scale/visible", "select": "hidden/disabled" },
+  "pageErrors": 0
+}

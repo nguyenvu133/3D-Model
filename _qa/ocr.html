@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>ocr</title></head>
+<body>
+<img id="im" src="http://127.0.0.1:8099/.zwork/attachments/dda87f8b-fe41-43dc-a68b-257808d98954/image.png" style="display:none">
+<pre id="out">...</pre>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+<script>
+Tesseract.recognize(document.getElementById('im'), 'eng', { logger: m => { if (m.status === 'recognizing text') document.getElementById('out').textContent = 'progress ' + Math.round(m.progress*100) + '%'; } })
+  .then(r => { document.getElementById('out').textContent = 'TEXT:\n' + r.data.text; })
+  .catch(e => { document.getElementById('out').textContent = 'ERR ' + e.message; });
+</script>
+</body></html>

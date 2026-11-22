@@ -1,0 +1,215 @@
+/* ============================================================
+   responsive.css — Hỗ trợ MỌI kích cỡ màn hình
+   Breakpoints: ≥2560 / 1600 / 1280 / 1024 / 768 / 480 + touch
+   ============================================================ */
+
+/* ============ ≥ 2560px — 2K / 4K Desktop ============ */
+@media (min-width: 2560px) {
+  :root {
+    --toolbar-w: 74px;
+    --left-w: 360px;
+    --right-w: 380px;
+    --bottom-h: 260px;
+    --topbar-h: 58px;
+    font-size: 14px;
+  }
+  body { font-size: 14px; }
+  .tool-btn { width: 58px; height: 60px; }
+  .asset-card .a-name { font-size: 11px; }
+}
+
+/* ============ 1600 – 2559px — Desktop chuẩn (bố cục ảnh tham chiếu) ============ */
+@media (min-width: 1600px) and (max-width: 2559px) {
+  :root { --left-w: 320px; --right-w: 336px; }
+}
+
+/* ============ 1280 – 1599px — Laptop ============ */
+@media (min-width: 1280px) and (max-width: 1599px) {
+  :root { --left-w: 260px; --right-w: 290px; --bottom-h: 204px; }
+  .tagline { display: none; }
+  .ws-tab { padding: 6px 8px; }
+  .ws-tab .ic { width: 13px; height: 13px; }
+  #bottom-row { grid-template-columns: 1fr 240px 216px; }
+  .tripo-card { width: 208px; }
+  #tripo-card { width: 208px; }
+}
+
+/* ============ 1024 – 1279px — Laptop nhỏ ============ */
+@media (min-width: 1024px) and (max-width: 1279px) {
+  :root { --left-w: 224px; --right-w: 262px; --bottom-h: 190px; }
+  .tagline { display: none; }
+  .brand-name span { display: none; }
+  .ws-tab { padding: 6px 8px; font-size: 11.5px; }
+  .ws-tab .ic { width: 12px; height: 12px; }
+  #bottom-row { grid-template-columns: 1fr 226px; }
+  #bottom-right-2 { display: none; }   /* Game Ready card gộp vào modal khi hẹp */
+  #tripo-card { width: 196px; padding: 10px; }
+  .tripo-list { gap: 5px; }
+  .tripo-item { font-size: 11px; }
+}
+
+/* ============ 768 – 1023px — Tablet: Panel chuyển sang DRAWER ============ */
+@media (max-width: 1023px) {
+  :root { --topbar-h: 48px; --bottom-h: 168px; --toolbar-w: 56px; }
+
+  /* Panels thành drawer overlay */
+  #left-panel, #right-panel {
+    position: fixed;
+    top: var(--topbar-h);
+    bottom: var(--statusbar-h);
+    width: min(320px, 84vw);
+    z-index: 500;
+    box-shadow: var(--shadow-pop);
+    transition: transform var(--t-med) var(--ease);
+  }
+  #left-panel  { left: 0; transform: translateX(-105%); }
+  #right-panel { right: 0; transform: translateX(105%); }
+  body.left-drawer-open  #left-panel  { transform: translateX(0); }
+  body.right-drawer-open #right-panel { transform: translateX(0); }
+
+  .drawer-backdrop {
+    position: fixed; inset: 0;
+    top: var(--topbar-h); bottom: var(--statusbar-h);
+    background: rgba(10,10,14,.55);
+    z-index: 490;
+    opacity: 0; pointer-events: none;
+    transition: opacity var(--t-med);
+  }
+  body.left-drawer-open .drawer-backdrop,
+  body.right-drawer-open .drawer-backdrop { opacity: 1; pointer-events: auto; }
+
+  #main-row { grid-template-columns: var(--toolbar-w) 0px 1fr 0px !important; }
+  #left-panel, #right-panel { grid-column: auto; }
+  #rz-left, #rz-right { display: none; }
+  .resizer-h { display: none; }
+
+  /* Drawer toggle buttons hiện trong topbar */
+  .drawer-toggle { display: inline-flex !important; }
+
+  .tagline, .brand-name span { display: none; }
+  #workspace-nav { max-width: 40vw; }
+  #bottom-row { grid-template-columns: 1fr; }
+  #bottom-right-1, #bottom-right-2 { display: none; }
+
+  /* Tripo card thu nhỏ */
+  #tripo-card { width: 184px; padding: 9px; top: 8px; right: 8px; }
+  .tripo-list { margin-bottom: 8px; }
+}
+
+/* ============ 480 – 767px — Mobile lớn ============ */
+@media (max-width: 767px) {
+  :root { --toolbar-w: 48px; --bottom-h: 150px; }
+  body { font-size: 12px; }
+
+  .brand-cluster b { font-size: 12px; }
+  .badge.pro, .tagline { display: none; }
+  #workspace-nav { max-width: 34vw; margin: 0 4px; }
+  .ws-tab { padding: 6px 8px; font-size: 11.5px; gap: 4px; }
+  .ws-tab .ic { display: none; }
+  .topbar-actions .btn { padding: 0 9px; font-size: 11.5px; }
+  .topbar-actions .btn .lbl { display: none; }
+  .topbar-actions .btn { width: 32px; padding: 0; justify-content: center; }
+
+  #viewport-topbar { gap: 5px; padding: 0 8px; }
+  .vp-chip { padding: 0 7px; font-size: 11px; height: 27px; }
+
+  #toolbar { padding: 6px 0 8px; }
+  .tool-btn { width: 42px; height: 46px; }
+  .tool-btn span { font-size: 8px; }
+
+  #asset-grid { grid-template-columns: repeat(2, 1fr); }
+  .mt-grid { grid-template-columns: repeat(3, 1fr); }
+
+  #viewport-tools { left: 6px; }
+  .vtool { width: 30px; height: 30px; }
+  #tripo-card { width: 158px; }
+  .tripo-head b { font-size: 12px; }
+  .tripo-item { font-size: 10.5px; }
+
+  .stat-grid { grid-template-columns: 1fr 1fr; }
+  #toast-root { width: min(300px, calc(100vw - 20px)); right: 10px; }
+
+  #tl-left-col { width: 130px; }
+  .playback-row { gap: 5px; padding: 3px 8px 6px; }
+  .pb-select { width: 60px; }
+  .frame-counter { padding: 0 8px; font-size: 11px; }
+
+  #statusbar { gap: 8px; font-size: 10px; padding: 0 8px; }
+  #statusbar .sb-hide-sm { display: none; }
+
+  /* Nút toast nhỏ lại */
+  .toast { padding: 8px 10px; }
+}
+
+/* ============ < 480px — Mobile nhỏ: COMPACT MODE ============ */
+@media (max-width: 479px) {
+  :root { --bottom-h: 132px; --toolbar-w: 44px; }
+
+  .brand-logo { width: 28px; height: 28px; border-radius: 7px; }
+  .brand-logo svg { width: 16px; height: 16px; }
+  .brand-name b { font-size: 11px; }
+  .badge { display: none; }
+  .win-controls { display: none; }
+  #workspace-nav { max-width: 30vw; }
+  .ws-tab { padding: 6px 6px; font-size: 10.5px; }
+
+  #asset-grid { grid-template-columns: repeat(2, 1fr); gap: 6px; }
+  .mt-grid { grid-template-columns: repeat(2, 1fr); }
+
+  #viewport-tools { display: none; }     /* gizmo modes dùng phím/quay screen */
+  #tripo-card { width: 148px; top: 6px; right: 6px; }
+  .tripo-item span.lbl { display: none; }
+
+  #tl-left-col { width: 108px; }
+  .tl-track-row { font-size: 10px; padding: 0 4px 0 6px; }
+
+  .modal { width: calc(100vw - 24px); }
+  #task-loading { width: calc(100vw - 24px); }
+
+  /* Gợi ý xoay ngang */
+  #rotate-hint {
+    display: flex;
+    position: fixed; inset: 0; z-index: 9700;
+    background: var(--bg);
+    flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; text-align: center; padding: 30px;
+  }
+  #rotate-hint .rh-icon { font-size: 54px; }
+  #rotate-hint b { font-size: 16px; }
+  #rotate-hint p { color: var(--text-3); font-size: 12.5px; max-width: 300px; line-height: 1.6; }
+  #rotate-hint .rh-skip { margin-top: 8px; }
+}
+@media (orientation: landscape) and (max-height: 479px) {
+  #rotate-hint { display: none !important; }
+}
+
+/* ============ TOUCH optimization (pointer coarse) ============ */
+@media (pointer: coarse) {
+  .tool-btn, .btn, .tab, .chip, .vtool, .pb-btn, .win-btn, .icon-btn {
+    min-height: 34px;
+  }
+  .tl-key { width: 15px; height: 15px; }
+  .tree-row { padding: 7px 8px; }
+  .input, .select { height: 34px; }
+  [data-tooltip]::before, [data-tooltip]::after { display: none; }
+}
+
+/* ============ Bố cục dọc cực nhỏ (viewport cao hạn chế) ============ */
+@media (max-height: 640px) and (min-width: 1024px) {
+  :root { --bottom-h: 150px; --topbar-h: 46px; }
+  .tool-btn { height: 46px; }
+  .asset-card { aspect-ratio: 1 / 0.92; }
+}
+
+/* ============ Drawer toggle mặc định ẩn (chỉ hiện tablet/mobile) ============ */
+.drawer-toggle { display: none; }
+
+/* ============ In / Presentation mode ============ */
+@media print {
+  #toolbar, #left-panel, #right-panel, #bottom-row, #statusbar { display: none; }
+}
+
+/* ============ Reduce motion (a11y) ============ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

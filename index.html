@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="description" content="PixiJS Studio × Tripo3D AI Studio v10.0 — All-in-One 3D Game Creation Environment">
+<title>PixiJS Studio × Tripo3D AI Studio — v10.0</title>
+
+<link rel="stylesheet" href="css/main.css">
+<link rel="stylesheet" href="css/layout.css">
+<link rel="stylesheet" href="css/components.css">
+<link rel="stylesheet" href="css/panels.css">
+<link rel="stylesheet" href="css/timeline.css">
+<link rel="stylesheet" href="css/responsive.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%23713BFF'/%3E%3Cpath d='M12 5l7 4v6l-7 4-7-4V9l7-4z' fill='none' stroke='white' stroke-width='1.6'/%3E%3C/svg%3E">
+</head>
+<body>
+
+<!-- ============ BOOT OVERLAY ============ -->
+<div id="boot-overlay">
+  <div class="boot-logo">
+    <svg viewBox="0 0 24 24" fill="none"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" stroke="#fff" stroke-width="1.7"/><path d="M12 3v9m0 0l8-4.5M12 12l-8-4.5" stroke="#fff" stroke-width="1.1" opacity=".75"/></svg>
+  </div>
+  <div class="boot-title">PixiJS Studio × Tripo3D AI Studio</div>
+  <div class="boot-sub">v10.0 — 3D Studio · Rig · Animation · Mesh2Motion · AI Generation</div>
+  <div class="boot-bar"><i id="boot-bar-fill"></i></div>
+  <div class="boot-status" id="boot-status">Initializing engine…</div>
+</div>
+
+<!-- ============ GLOBAL DROPZONE ============ -->
+<div id="global-dropzone">
+  <div class="dz-icon">📦</div>
+  <div class="dz-text">Drop files để Import vào Studio</div>
+  <div class="dz-hint">GLB · GLTF · OBJ · STL · PNG · JPG · WebP · SVG · MP3 · WAV</div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="app">
+
+  <!-- ================= TOP NAVIGATION BAR ================= -->
+  <header id="topbar">
+    <div class="brand-cluster">
+      <div class="brand-logo">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" stroke="#fff" stroke-width="1.7"/><path d="M12 3v9m0 0l8-4.5M12 12l-8-4.5" stroke="#fff" stroke-width="1.1" opacity=".75"/></svg>
+      </div>
+      <div class="brand-name">
+        <b>PixiJS <span style="color:#b79bff">Studio</span></b>
+        <span>Tripo3D.AI Studio <span class="badge pro">Pro</span></span>
+      </div>
+      <span class="badge">v10.0</span>
+    </div>
+
+    <div class="tagline">3D Studio • Rig • Animation • Game Ready</div>
+
+    <nav id="workspace-nav" aria-label="Workspace tabs">
+      <!-- Tabs render bởi ui/topbar.js -->
+    </nav>
+
+    <div class="topbar-actions">
+      <button class="btn sm ghost drawer-toggle" id="drawer-left-toggle" data-tooltip="Asset panel" data-tooltip-side="left"><i data-ic="panel-left"></i></button>
+      <button class="btn sm ghost drawer-toggle" id="drawer-right-toggle" data-tooltip="Inspector panel" data-tooltip-side="left"><i data-ic="panel-right"></i></button>
+      <a class="btn sm" id="btn-mesh2motion" href="mesh2motion.html" data-tooltip="Mở Mesh2Motion — 3D Animation Engine (326 motion CC0)"><i data-ic="animation"></i><span class="lbl">Mesh2Motion</span></a>
+      <button class="btn sm" id="btn-local-model" data-tooltip="Local AI Model Selector"><i data-ic="cloud"></i><span class="lbl">Local</span></button>
+      <button class="btn sm" id="btn-save-mixamo-rig" data-tooltip="Save Mixamo Rig — FBX 2013 (version 7300) có xương mixamorig + skin + bind pose, cùng cấu trúc file X Bot.fbx → upload mixamo.com"><i data-ic="model"></i><span class="lbl">Save Mixamo Rig</span></button>
+      <button class="btn sm" id="btn-save-objzip" data-tooltip="Save OBJ ZIP — xuất ZIP gồm .obj + .mtl + ảnh texture (map_Kd) nên OBJ có màu"><i data-ic="scene"></i><span class="lbl">Save OBJ ZIP</span></button>
+      <button class="btn sm" id="btn-save-mixamo" data-tooltip="Save Mixamo — xuất FBX 2013 mesh-only + texture nhúng (có màu) để upload lên mixamo.com"><i data-ic="wand"></i><span class="lbl">Save Mixamo</span></button>
+      <button class="btn sm" id="btn-save" data-tooltip="Save Project (Ctrl+S)"><i data-ic="save"></i><span class="lbl">Save</span></button>
+      <button class="btn sm primary" id="btn-export-top" data-tooltip="Export (GLB/JSON/Image)"><i data-ic="export"></i><span class="lbl">Export</span></button>
+      <button class="btn sm warning" id="btn-upgrade" data-tooltip="Upgrade Plan"><i data-ic="crown"></i><span class="lbl">Upgrade</span></button>
+      <div class="win-controls">
+        <button class="win-btn" id="win-min" data-tooltip="Minimize" data-tooltip-side="left"><i data-ic="win-min"></i></button>
+        <button class="win-btn" id="win-max" data-tooltip="Maximize"><i data-ic="win-max"></i></button>
+        <button class="win-btn close" id="win-close" data-tooltip="Close"><i data-ic="win-close"></i></button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= MAIN ROW ================= -->
+  <div id="main-row">
+
+    <!-- ---- LEFT ICON TOOLBAR ---- -->
+    <nav id="toolbar" aria-label="Module toolbar">
+      <!-- Tool buttons render bởi ui/toolbar.js -->
+    </nav>
+
+    <!-- ---- LEFT PANEL (nội dung đổi theo module) ---- -->
+    <aside id="left-panel" class="side-panel">
+      <div class="panel-header">
+        <h3 id="left-panel-title">Asset Library</h3>
+        <div class="grow">
+          <button class="icon-btn" id="left-collapse-btn" data-tooltip="Collapse panel (Tab)" data-tooltip-side="right"><i data-ic="chevron-left"></i></button>
+        </div>
+      </div>
+
+      <!-- ===== PAGE: ASSETS (Asset Library) ===== -->
+      <div class="lp-page" id="page-assets">
+        <div id="asset-lib-head" style="flex:none;">
+          <div class="ah-row">
+            <div class="search-box grow">
+              <i data-ic="search" class="ic"></i>
+              <input type="text" class="input" id="asset-search" placeholder="Search models, animations…">
+            </div>
+            <button class="icon-btn" id="asset-filter-btn" data-tooltip="Filters"><i data-ic="filter"></i></button>
+            <button class="icon-btn" id="asset-refresh-btn" data-tooltip="Refresh"><i data-ic="refresh"></i></button>
+          </div>
+        </div>
+
+        <div class="panel-body" style="padding:0 0 6px;min-height:0;">
+          <div id="asset-filter-chips" style="position:sticky;top:0;z-index:2;background:var(--panel);padding:2px 12px 8px;">
+            <div class="chip-row" id="asset-chip-row">
+              <!-- Chips render bởi assets/asset-library.js -->
+            </div>
+          </div>
+
+          <div id="asset-grid">
+            <!-- Asset cards render bởi assets/asset-library.js -->
+          </div>
+
+          <div id="import-btn-zone">
+            <button class="btn primary block" id="btn-import">
+              <i data-ic="import"></i>&nbsp; Import 3D / Image / FBX / GLB
+            </button>
+            <div class="dim small" style="text-align:center;margin-top:6px;">
+              Kéo &amp; thả file vào đây — hoặc dùng Import · <span class="state-badge off">FBX ⏸ cần converter</span>
+            </div>
+          </div>
+
+          <div class="section-block" id="model-tools-block" style="margin:10px 12px 14px;">
+            <div class="section-head" data-toggle-section>
+              <i data-ic="caret" class="caret ic-sm"></i>
+              <i data-ic="wand"></i> Model Tools
+            </div>
+            <div class="section-content">
+              <div class="mt-grid" id="model-tools-grid">
+                <!-- Tool buttons render bởi assets/asset-library.js -->
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== PAGE: MODEL ===== -->
+      <div class="lp-page hidden" id="page-model">
+        <div class="panel-body" id="model-page-body"><!-- model-manager.js render --></div>
+      </div>
+
+      <!-- ===== PAGE: RIG ===== -->
+      <div class="lp-page hidden" id="page-rig">
+        <div class="panel-body" id="rig-page-body"><!-- rig-manager.js render --></div>
+      </div>
+
+      <!-- ===== PAGE: RIGGING STUDIO (Meshy-style) ===== -->
+      <div class="lp-page hidden" id="page-rigging">
+        <div class="panel-body" id="rigging-page-body"><!-- meshy-rigging.js render --></div>
+      </div>
+
+      <!-- ===== PAGE: ANIMATION ===== -->
+      <div class="lp-page hidden" id="page-animation">
+        <div class="panel-body" id="animation-page-body"><!-- animation presets render --></div>
+      </div>
+
+      <!-- ===== PAGE: MATERIAL ===== -->
+      <div class="lp-page hidden" id="page-material">
+        <div class="panel-body" id="material-page-body"><!-- material-manager render --></div>
+      </div>
+
+      <!-- ===== PAGE: SCENE ===== -->
+      <div class="lp-page hidden" id="page-scene">
+        <div class="panel-body" id="scene-page-body"><!-- scene-manager render --></div>
+      </div>
+
+      <!-- ===== PAGE: RENDER ===== -->
+      <div class="lp-page hidden" id="page-render">
+        <div class="panel-body" id="render-page-body"><!-- exporter/render settings render --></div>
+      </div>
+
+      <!-- ===== PAGE: EXPORT ===== -->
+      <div class="lp-page hidden" id="page-export">
+        <div class="panel-body" id="export-page-body"><!-- exporter render --></div>
+      </div>
+
+      <!-- ===== PAGE: AI TOOLS ===== -->
+      <div class="lp-page hidden" id="page-ai">
+        <div class="panel-body" id="ai-page-body"><!-- ai-panel render --></div>
+      </div>
+    </aside>
+
+    <!-- ---- CENTRAL VIEWPORT ---- -->
+    <main id="viewport-area">
+      <div id="viewport-topbar">
+        <button class="icon-btn" id="vp-menu-btn" data-tooltip="Viewport menu"><i data-ic="cube"></i></button>
+        <div class="select-wrap" style="width:150px;">
+          <select class="select" id="view-mode-select" title="Camera view">
+            <option value="perspective" selected>Perspective</option>
+            <option value="quad">Quad View (4 góc)</option>
+            <option value="ortho">Orthographic</option>
+            <option value="front">Front View</option>
+            <option value="back">Back View</option>
+            <option value="left">Left View</option>
+            <option value="right">Right View</option>
+            <option value="top">Top View</option>
+            <option value="bottom">Bottom View</option>
+          </select>
+        </div>
+        <div class="select-wrap" style="width:104px;">
+          <select class="select" id="shading-select" title="Shading mode">
+            <option value="lit">Lit</option>
+            <option value="solid">Solid</option>
+            <option value="wireframe">Wireframe</option>
+            <option value="xray">X-Ray</option>
+            <option value="material">Material Preview</option>
+            <option value="render">Render Preview</option>
+          </select>
+        </div>
+        <div class="vp-topbar-gap"></div>
+        <button class="icon-btn" id="vp-grid-btn" data-tooltip="Grid (G)"><i data-ic="grid"></i></button>
+        <button class="icon-btn" id="vp-bones-btn" data-tooltip="Skeleton / Bones preview"><i data-ic="bone"></i></button>
+        <button class="icon-btn" id="vp-cam-btn" data-tooltip="Camera reset / Free cam"><i data-ic="camera"></i></button>
+        <button class="icon-btn" id="vp-focus-btn" data-tooltip="Focus selected (F)"><i data-ic="focus"></i></button>
+        <button class="icon-btn" id="vp-screenshot-btn" data-tooltip="Screenshot PNG"><i data-ic="image"></i></button>
+        <button class="icon-btn" id="vp-fullscreen-btn" data-tooltip="Fullscreen viewport"><i data-ic="expand"></i></button>
+      </div>
+
+      <div id="viewport-canvas-wrap">
+        <canvas id="three-canvas"></canvas>
+        <canvas id="pixi-overlay"></canvas>
+
+        <!-- Overlay HUD layers -->
+        <div class="vp-hud" id="quad-labels">
+          <span class="quad-label tl">Front</span>
+          <span class="quad-label tr">Right</span>
+          <span class="quad-label bl">Left</span>
+          <span class="quad-label br">Back</span>
+        </div>
+
+        <div class="vp-hud" id="perf-hud">
+          <span class="perf-chip" id="hud-fps">FPS <b>60</b></span>
+          <span class="perf-chip" id="hud-calls">Calls <b>0</b></span>
+          <span class="perf-chip" id="hud-tris">Tris <b>0</b></span>
+        </div>
+
+        <div class="vp-hud" id="axis-gizmo-zone"><!-- axis triad render 3D bằng scissor --></div>
+
+        <div id="viewport-tools">
+          <button class="vtool active" data-tool="select" data-tooltip="Select (Q)"><i data-ic="cursor"></i></button>
+          <button class="vtool" data-tool="move" data-tooltip="Move (W)"><i data-ic="move"></i></button>
+          <button class="vtool" data-tool="rotate" data-tooltip="Rotate (E)"><i data-ic="rotate"></i></button>
+          <button class="vtool" data-tool="scale" data-tooltip="Scale (R)"><i data-ic="scale"></i></button>
+          <div class="vtool-sep"></div>
+          <button class="vtool" data-tool="focus" data-tooltip="Focus (F)"><i data-ic="focus"></i></button>
+          <button class="vtool" data-tool="bones" data-tooltip="Skeleton preview"><i data-ic="bone"></i></button>
+        </div>
+
+        <!-- Tripo AI floating card -->
+        <div class="vp-hud" id="tripo-card">
+          <div class="tripo-head">
+            <div class="tripo-logo">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M12 2l9.5 16.5h-19L12 2z" stroke="#fff" stroke-width="1.6"/><path d="M12 9l4.5 8h-9L12 9z" fill="#fff" opacity=".85"/></svg>
+            </div>
+            <div>
+              <b>Tripo 3D AI</b>
+              <span>AI 3D Generation</span>
+            </div>
+            <button class="collapse-x" id="tripo-collapse" data-tooltip="Hide card"><i data-ic="win-close"></i></button>
+          </div>
+          <div class="tripo-list" id="tripo-checklist">
+            <!-- Checklist render bởi ai/ai-panel.js -->
+          </div>
+          <button id="tripo-generate"><i data-ic="wand"></i> Generate ✨</button>
+        </div>
+      </div>
+    </main>
+
+    <!-- ---- RIGHT INSPECTOR PANEL ---- -->
+    <aside id="right-panel" class="side-panel">
+      <div id="inspector-tabs" class="tab-row">
+        <div class="tab active" data-inspector-tab="inspector">Inspector</div>
+        <div class="tab" data-inspector-tab="scene">Scene</div>
+        <div class="tab" data-inspector-tab="properties">Properties</div>
+        <div class="tab" data-inspector-tab="performance">Perf</div>
+      </div>
+      <div id="inspector-body">
+        <!-- Render bởi inspector/inspector.js -->
+      </div>
+      <div id="scene-body" class="hidden" style="flex:1;min-height:0;display:flex;flex-direction:column;">
+        <div id="scene-tree" class="grow"><!-- scene-manager render --></div>
+        <div style="padding:8px 12px 12px;flex:none;">
+          <button class="btn sm block" id="scene-add-btn"><i data-ic="plus"></i> Create Object</button>
+        </div>
+      </div>
+      <div id="properties-body" class="hidden panel-body" style="flex:1;"><!-- properties --></div>
+      <div id="performance-body" class="hidden panel-body" style="flex:1;"><!-- perf monitor render --></div>
+    </aside>
+
+    <div class="resizer-v" id="rz-left"></div>
+    <div class="resizer-v" id="rz-right"></div>
+  </div>
+
+  <!-- ================= BOTTOM ROW ================= -->
+  <div class="resizer-h" id="rz-bottom"></div>
+
+  <div id="bottom-row">
+    <!-- ---- TIMELINE ---- -->
+    <section id="bottom-center">
+      <div id="timeline-panel">
+        <div id="timeline-toolbar">
+          <div class="tab-row" id="timeline-tabs">
+            <div class="tab active" data-tl_tab="timeline">Timeline</div>
+            <div class="tab" data-tl_tab="graph">Animation Graph</div>
+            <div class="tab" data-tl_tab="blend">Blend Shapes</div>
+            <div class="tab" data-tl_tab="constraints">Constraints</div>
+            <div class="tab" data-tl_tab="sequencer">Sequencer</div>
+            <div class="tab" data-tl_tab="statemachine">State Machine</div>
+          </div>
+          <div class="tl-gap"></div>
+          <div class="select-wrap pb-select">
+            <select class="select" id="tl-fps-select">
+              <option value="12">12 FPS</option>
+              <option value="24">24 FPS</option>
+              <option value="30">30 FPS</option>
+              <option value="60" selected>60 FPS</option>
+            </select>
+          </div>
+          <button class="icon-btn" id="tl-loop-btn" data-tooltip="Loop playback"><i data-ic="loop"></i></button>
+          <button class="btn sm primary" id="add-keyframe-btn" data-tooltip="Add keyframe (K)"><i data-ic="key"></i> Add Keyframe</button>
+        </div>
+
+        <div class="playback-row">
+          <button class="pb-btn" id="pb-start" data-tooltip="To start"><i data-ic="skip-start"></i></button>
+          <button class="pb-btn" id="pb-prev" data-tooltip="Frame backward"><i data-ic="prev"></i></button>
+          <button class="pb-btn main" id="pb-play" data-tooltip="Play / Pause (Space)"><i data-ic="play"></i></button>
+          <button class="pb-btn" id="pb-next" data-tooltip="Frame forward"><i data-ic="next"></i></button>
+          <button class="pb-btn" id="pb-end" data-tooltip="To end"><i data-ic="skip-end"></i></button>
+          <div class="frame-counter"><b id="fc-cur">0</b><span>/</span><b id="fc-end" style="color:var(--text-2)">120</b></div>
+          <div class="pb-gap"></div>
+          <button class="btn sm" id="tl-sequence-btn">Sequence</button>
+          <button class="btn sm" id="tl-gif-btn">GIF <span class="state-badge off" style="margin-left:4px">⏸</span></button>
+          <button class="btn sm" id="tl-video-btn">Video <span class="state-badge ok" style="margin-left:4px">WebM</span></button>
+        </div>
+
+        <div id="timeline-body">
+          <div id="tl-left-col">
+            <div id="tl-left-head"></div>
+            <div id="tl-track-list">
+              <!-- Tracks render bởi timeline/timeline.js -->
+            </div>
+          </div>
+          <div id="tl-right-col">
+            <div id="tl-ruler">
+              <canvas id="tl-ruler-canvas"></canvas>
+              <div class="playhead-flag" id="tl-ruler-head"></div>
+            </div>
+            <div id="tl-lanes">
+              <!-- Lanes + keyframes render bởi timeline/timeline.js -->
+              <div id="tl-playhead"></div>
+            </div>
+            <div id="tl-graph-wrap">
+              <canvas id="tl-graph-canvas"></canvas>
+              <div class="graph-legend" id="tl-graph-legend"></div>
+            </div>
+            <div class="tl-placeholder" id="tl-ph-blend">
+              <div class="ph-icon">😊</div><b>Blend Shapes</b>
+              <span class="dim">Cần model có morph targets (GLB hỗ trợ).</span>
+              <span class="state-badge off">Not available on current model</span>
+            </div>
+            <div class="tl-placeholder" id="tl-ph-constraints">
+              <div class="ph-icon">🔗</div><b>Constraints</b>
+              <span class="dim">IK / Copy-Rotation / Track-To constraints.</span>
+              <span class="state-badge pending">Planned — v5.1</span>
+            </div>
+            <div class="tl-placeholder" id="tl-ph-sequencer">
+              <div class="ph-icon">🎬</div><b>Sequencer</b>
+              <span class="dim">Dựng cảnh theo shot multi-camera.</span>
+              <span class="state-badge pending">Planned — v5.1</span>
+            </div>
+            <div class="tl-placeholder" id="tl-ph-statemachine">
+              <div class="ph-icon">🧭</div><b>Animation State Machine</b>
+              <span class="dim">Idle → Run → Attack với blend time.</span>
+              <span class="state-badge pending">Planned — v5.1</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="bottom-bar-mini">
+        <span class="mini-title">Timeline</span>
+        <span id="mini-frame" class="mono dim">0 / 120</span>
+        <span class="grow"></span>
+        <button class="btn sm primary" id="mini-play-btn"><i data-ic="play"></i></button>
+      </div>
+    </section>
+
+    <!-- ---- RENDER & EXPORT ---- -->
+    <section id="bottom-right-1">
+      <div class="bottom-card-head">
+        <i data-ic="aperture" class="ic" style="color:#b79bff"></i> Render &amp; Export
+      </div>
+      <div class="bottom-card-body" id="render-export-body">
+        <div class="tab-row" style="margin-bottom:10px;" id="re-tabs">
+          <div class="tab active" data-re_tab="render">Render</div>
+          <div class="tab" data-re_tab="sequence">Sequence</div>
+          <div class="tab" data-re_tab="gif">GIF</div>
+          <div class="tab" data-re_tab="video">Video</div>
+        </div>
+        <div id="re-body">
+          <!-- Render settings render bởi exporter.js -->
+        </div>
+        <div class="re-actions">
+          <button class="btn primary grow" id="re-render-btn"><i data-ic="aperture"></i> Render</button>
+          <button class="btn grow" id="re-export-btn"><i data-ic="export"></i> Export</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---- GAME READY ---- -->
+    <section id="bottom-right-2">
+      <div class="bottom-card-head">
+        <i data-ic="gamepad" class="ic" style="color:var(--success)"></i> Game Ready
+      </div>
+      <div class="bottom-card-body" id="game-ready-body">
+        <div id="gr-checklist">
+          <!-- Checklist render bởi exporter.js / game module -->
+        </div>
+        <button class="btn success block lg" id="build-game-btn"><i data-ic="rocket"></i> Build Game</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- ================= STATUS BAR ================= -->
+  <footer id="statusbar">
+    <span class="sb-item"><span class="dot" id="sb-engine-dot"></span> <b id="sb-engine">Three.js r128 · WebGL</b></span>
+    <span class="sb-item sb-hide-sm">FPS <b id="sb-fps">60</b></span>
+    <span class="sb-item sb-hide-sm">Tris <b id="sb-tris">0</b></span>
+    <span class="sb-item sb-hide-sm">Objects <b id="sb-objects">0</b></span>
+    <span class="sb-item sb-hide-sm">Selected <b id="sb-selected">—</b></span>
+    <span class="sb-grow"></span>
+    <span class="sb-item sb-hide-sm" id="sb-view">View: Quad</span>
+    <span class="sb-item"><span class="dot off" id="sb-ai-dot"></span> AI: <b id="sb-ai-state">Not connected</b></span>
+    <span class="sb-item" id="sb-autosave">Autosave: <b>ready</b></span>
+    <span class="sb-item sb-hide-sm">Zoom <b id="sb-zoom">100%</b></span>
+  </footer>
+</div>
+
+<!-- ============ GLOBAL UI ROOTS ============ -->
+<div id="toast-root"></div>
+<div id="task-loading">
+  <div class="tl-head">
+    <div class="spinner"></div>
+    <b id="task-loading-title">Loading model…</b>
+    <span class="tl-pct" id="task-loading-pct">0%</span>
+  </div>
+  <div class="progress stripe"><i id="task-loading-bar"></i></div>
+</div>
+<div class="drawer-backdrop" id="drawer-backdrop"></div>
+<div id="context-menu"></div>
+<div id="dropdown-root" class="dropdown"></div>
+<div id="modal-root"></div>
+<input type="file" id="hidden-file-input" multiple class="hidden"
+       accept=".glb,.gltf,.obj,.stl,.fbx,.png,.jpg,.jpeg,.webp,.svg,.mp3,.wav,.ogg,.bin,.zip">
+
+<!-- ============ LIBRARIES (CDN + fallback) ============ -->
+<!-- Tải offline: đặt file vào js/vendor/ và đổi src. Xem README mục 3. -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"
+        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/build/three.min.js\x27\x3E\x3C/script\x3E')"></script>
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@7.3.2/dist/pixi.min.js"
+        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/pixi.js@7.3.2/dist/pixi.min.js\x27\x3E\x3C/script\x3E')"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"
+        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js\x27\x3E\x3C/script\x3E')"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"
+        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/loaders/OBJLoader.js\x27\x3E\x3C/script\x3E')"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"
+        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/loaders/STLLoader.js\x27\x3E\x3C/script\x3E')"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"
+        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js\x27\x3E\x3C/script\x3E')"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"
+        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/exporters/GLTFExporter.js\x27\x3E\x3C/script\x3E')"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/OBJExporter.js"
+        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/exporters/OBJExporter.js\x27\x3E\x3C/script\x3E')"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/STLExporter.js"
+        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/exporters/STLExporter.js\x27\x3E\x3C/script\x3E')"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/BufferGeometryUtils.js"
+        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/utils/BufferGeometryUtils.js\x27\x3E\x3C/script\x3E')"></script>
+<!-- Meshopt decoder — cần cho kiemhiep.glb (Meshopt-compressed) -->
+<script src="https://cdn.jsdelivr.net/npm/meshoptimizer@0.18.1/meshopt_decoder.js"
+        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/meshoptimizer@0.18.1/meshopt_decoder.js\x27\x3E\x3C/script\x3E')"></script>
+<!-- fflate + FBXLoader — đọc file FBX Meshy (skinning + animation) -->
+<script src="https://cdn.jsdelivr.net/npm/fflate@0.6.10/umd/index.js"
+        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/fflate@0.6.10/umd/index.js\x27\x3E\x3C/script\x3E')"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"
+        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/loaders/FBXLoader.js\x27\x3E\x3C/script\x3E')"></script>
+
+<!-- ============ CORE ============ -->
+<script src="js/core/utils.js"></script>
+<script src="js/core/events.js"></script>
+<script src="js/core/state.js"></script>
+<script src="js/core/storage.js"></script>
+<script src="js/core/history.js"></script>
+<script src="js/core/app.js"></script>
+
+<!-- ============ RENDERER ============ -->
+<script src="js/renderer/three-renderer.js"></script>
+<script src="js/renderer/pixi-renderer.js"></script>
+<script src="js/renderer/renderer-manager.js"></script>
+
+<!-- ============ VIEWPORT ============ -->
+<script src="js/viewport/camera.js"></script>
+<script src="js/viewport/grid.js"></script>
+<script src="js/viewport/lighting.js"></script>
+<script src="js/viewport/gizmo.js"></script>
+<script src="js/viewport/controls.js"></script>
+<script src="js/viewport/viewport.js"></script>
+<script src="js/viewport/interaction.js"></script>
+
+<!-- ============ MODELS & ASSETS ============ -->
+<script src="js/models/sample-model.js"></script>
+<script src="js/models/model-manager.js"></script>
+<script src="js/assets/importers.js"></script>
+<script src="js/assets/asset-library.js"></script>
+
+<!-- ============ RIGGING & ANIMATION ============ -->
+<script src="js/rigging/skeleton.js"></script>
+<script src="js/rigging/rig-manager.js"></script>
+<script src="js/rigging/bone-editor.js"></script>
+<script src="js/rigging/rig-auto-gen.js"></script>
+<script src="js/rigging/mixamo-skeleton-data.js"></script>
+<script src="js/rigging/mixamo-skeleton.js"></script>
+<script src="js/rigging/creature-rigs.js"></script>
+<script src="js/rigging/meshy-rigging.js"></script>
+<script src="js/animation/presets.js"></script>
+<script src="js/animation/anim-library.js"></script>
+<script src="js/animation/animate-studio.js"></script>
+<script src="js/animation/m2m-motion.js"></script>
+<script src="js/animation/mesh2motion-studio.js"></script>
+<script src="js/animation/animation-manager.js"></script>
+<script src="js/animation/anim-auto-gen.js"></script>
+<script src="js/animation/fbx-rig-import.js"></script>
+
+<!-- ============ MATERIAL / TEXTURE / SCENE / PHYSICS ============ -->
+<script src="js/materials/material-manager.js"></script>
+<script src="js/textures/texture-manager.js"></script>
+<script src="js/scene/scene-manager.js"></script>
+<script src="js/physics/physics-manager.js"></script>
+
+<!-- ============ AI ============ -->
+<script src="js/ai/tripo-adapter.js"></script>
+<script src="js/ai/ai-panel.js"></script>
+
+<!-- ============ TIMELINE ============ -->
+<script src="js/timeline/keyframes.js"></script>
+<script src="js/timeline/playback.js"></script>
+<script src="js/timeline/timeline.js"></script>
+
+<!-- ============ INSPECTOR / EXPORTER / PERFORMANCE ============ -->
+<script src="js/inspector/inspector.js"></script>
+<script src="js/exporter/exporter.js"></script>
+<script src="js/exporter/anim-glb-export.js"></script>
+<script src="js/exporter/fbx-binary.js"></script>
+<script src="js/exporter/glb-writer.js"></script>
+<script src="js/exporter/zip-writer.js"></script>
+<script src="js/exporter/save-manager.js"></script>
+<script src="js/performance/monitor.js"></script>
+
+<!-- ============ UI ============ -->
+<script src="js/ui/notifications.js"></script>
+<script src="js/ui/modals.js"></script>
+<script src="js/ui/toolbar.js"></script>
+<script src="js/ui/topbar.js"></script>
+<script src="js/ui/panels.js"></script>
+<script src="js/ui/shortcuts.js"></script>
+
+<!-- ============ BOOT ============ -->
+<script src="js/main.js"></script>
+</body>
+</html>

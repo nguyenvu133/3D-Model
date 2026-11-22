@@ -1,0 +1,190 @@
+/* ============================================================
+   PixiJS Studio × Tripo3D AI Studio v5.0
+   main.css — Design Tokens, Reset, Typography, Scrollbars
+   ============================================================ */
+
+:root {
+  /* --- Core palette (theo Master Prompt) --- */
+  --bg:            #111116;
+  --panel:         #1B1B24;
+  --panel-2:       #252530;
+  --panel-3:       #2C2C3A;
+  --border:        #343443;
+  --border-soft:   #2A2A36;
+
+  --primary:       #713BFF;
+  --primary-hover: #8552ff;
+  --primary-dim:   rgba(113, 59, 255, .16);
+  --accent:        #27BFFF;
+  --accent-dim:    rgba(39, 191, 255, .14);
+  --success:       #42DF75;
+  --success-dim:   rgba(66, 223, 117, .15);
+  --warning:       #FFC928;
+  --warning-dim:   rgba(255, 201, 40, .15);
+  --danger:        #FF4D5E;
+  --danger-dim:    rgba(255, 77, 94, .16);
+
+  --text:          #FFFFFF;
+  --text-2:        #B8B8C8;
+  --text-3:        #7C7C90;
+  --text-4:        #55556A;
+
+  --axis-x:        #FF4D5E;
+  --axis-y:        #42DF75;
+  --axis-z:        #27BFFF;
+
+  /* --- Layout metrics (responsive sẽ override) --- */
+  --topbar-h:      52px;
+  --toolbar-w:     64px;
+  --left-w:        300px;
+  --right-w:       320px;
+  --bottom-h:      224px;
+  --statusbar-h:   26px;
+  --radius:        10px;
+  --radius-sm:     7px;
+  --radius-xs:     5px;
+
+  --shadow-panel:  0 8px 28px rgba(0, 0, 0, .45);
+  --shadow-pop:    0 14px 44px rgba(0, 0, 0, .6);
+  --glow-primary:  0 0 0 1px rgba(113,59,255,.4), 0 4px 18px rgba(113,59,255,.28);
+
+  --font-ui: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, "Courier New", monospace;
+
+  --ease: cubic-bezier(.4, 0, .2, 1);
+  --t-fast: .14s;
+  --t-med:  .26s;
+}
+
+/* ---------- Reset ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+  touch-action: none;
+}
+
+img, canvas, svg { display: block; }
+button, input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  outline: none;
+}
+button { cursor: pointer; background: none; border: none; padding: 0; }
+input, textarea { user-select: text; touch-action: auto; }
+ul, ol { margin: 0; padding: 0; list-style: none; }
+h1, h2, h3, h4, p { margin: 0; font-weight: 600; }
+::-webkit-drag-and-drop { }
+
+/* ---------- Scrollbars ---------- */
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: #3a3a4c;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: #4a4a60; background-clip: padding-box; border: 2px solid transparent; }
+::-webkit-scrollbar-corner { background: transparent; }
+
+* { scrollbar-width: thin; scrollbar-color: #3a3a4c transparent; }
+
+/* ---------- Typography helpers ---------- */
+.mono { font-family: var(--font-mono); }
+.dim  { color: var(--text-3); }
+.small { font-size: 11px; }
+.label-xs {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* ---------- Focus ring ---------- */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+
+/* ---------- Utility ---------- */
+.flex      { display: flex; align-items: center; }
+.flex-col  { display: flex; flex-direction: column; }
+.grow      { flex: 1 1 auto; min-width: 0; min-height: 0; }
+.gap-4 { gap: 4px; } .gap-6 { gap: 6px; } .gap-8 { gap: 8px; }
+.hidden    { display: none !important; }
+
+/* ---------- Icon glyphs (inline SVG via CSS mask hoặc font) ----------
+   Dự án dùng bộ glyph SVG được chèn trực tiếp trong JS (utils.icon).
+   CSS chỉ đặt kích thước chuẩn. */
+.ic { width: 16px; height: 16px; flex: none; }
+.ic-lg { width: 20px; height: 20px; flex: none; }
+.ic-sm { width: 13px; height: 13px; flex: none; }
+
+/* ---------- Loading overlay (toàn màn hình) ---------- */
+#boot-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: radial-gradient(1200px 700px at 50% 30%, #1e1e2e 0%, #111116 62%);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 18px;
+  transition: opacity .5s var(--ease);
+}
+#boot-overlay.hide { opacity: 0; pointer-events: none; }
+.boot-logo {
+  width: 74px; height: 74px; border-radius: 18px;
+  background: linear-gradient(135deg, var(--primary), #9d6bff 60%, var(--accent));
+  display: grid; place-items: center;
+  box-shadow: 0 10px 40px rgba(113,59,255,.45);
+  animation: bootPulse 1.8s var(--ease) infinite;
+}
+.boot-logo svg { width: 42px; height: 42px; }
+.boot-title { font-size: 17px; font-weight: 800; letter-spacing: .02em; }
+.boot-sub   { color: var(--text-3); font-size: 12px; }
+.boot-bar {
+  width: 280px; height: 5px; border-radius: 4px;
+  background: var(--panel-2); overflow: hidden;
+}
+.boot-bar > i {
+  display: block; height: 100%; width: 0%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--primary), var(--accent));
+  transition: width .3s var(--ease);
+}
+.boot-status { font-size: 11px; color: var(--text-3); font-family: var(--font-mono); }
+@keyframes bootPulse {
+  0%, 100% { transform: scale(1);    box-shadow: 0 10px 40px rgba(113,59,255,.45); }
+  50%      { transform: scale(1.06); box-shadow: 0 14px 52px rgba(113,59,255,.65); }
+}
+
+/* ---------- Global drop zone (kéo file vào toàn app) ---------- */
+#global-dropzone {
+  position: fixed; inset: 0; z-index: 9000;
+  background: rgba(17, 17, 22, .82);
+  border: 2px dashed var(--primary);
+  border-radius: 14px;
+  margin: 14px;
+  display: none;
+  flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; pointer-events: none;
+}
+#global-dropzone.active { display: flex; }
+#global-dropzone .dz-icon { font-size: 44px; }
+#global-dropzone .dz-text { font-size: 15px; font-weight: 700; }
+#global-dropzone .dz-hint { font-size: 12px; color: var(--text-2); }
+
+/* ---------- Selection helpers ---------- */
+::selection { background: var(--primary); color: #fff; }

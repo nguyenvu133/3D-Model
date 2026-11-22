@@ -1,0 +1,217 @@
+/* ============================================================
+   timeline.css — Timeline Panel: Tabs, Playback, Ruler,
+                  Tracks, Keyframe Diamonds, Playhead, Graph
+   ============================================================ */
+
+#timeline-panel {
+  display: flex; flex-direction: column;
+  min-width: 0; min-height: 0;
+  overflow: hidden;
+}
+
+/* --- Tabs + controls hàng trên --- */
+#timeline-toolbar {
+  flex: none;
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px 6px;
+}
+#timeline-toolbar .tl-gap { flex: 1; }
+
+/* --- Playback controls --- */
+.playback-row {
+  flex: none;
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 12px 8px;
+}
+.pb-btn {
+  width: 28px; height: 28px;
+  border-radius: 7px;
+  display: grid; place-items: center;
+  color: var(--text-2);
+  background: var(--panel-2);
+  border: 1px solid var(--border-soft);
+  transition: all var(--t-fast);
+}
+.pb-btn:hover { color: var(--text); background: var(--panel-3); }
+.pb-btn.main { background: var(--primary); color: #fff; border-color: transparent; box-shadow: 0 3px 12px rgba(113,59,255,.4); }
+.pb-btn.main:hover { background: var(--primary-hover); }
+.frame-counter {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 28px; padding: 0 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 700;
+}
+.frame-counter b { color: #b79bff; min-width: 24px; text-align: right; }
+.frame-counter span { color: var(--text-4); }
+.pb-select { width: 74px; height: 28px; flex: none; }
+.pb-gap { flex: 1; }
+
+/* --- Body: ruler + tracks --- */
+#timeline-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+#tl-left-col {
+  flex: none;
+  width: 168px;
+  display: flex; flex-direction: column;
+  border-right: 1px solid var(--border-soft);
+  background: var(--panel);
+  z-index: 5;
+}
+#tl-left-head { height: 26px; flex: none; border-bottom: 1px solid var(--border-soft); }
+#tl-track-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+.tl-track-row {
+  display: flex; align-items: center; gap: 7px;
+  height: 26px;
+  padding: 0 8px 0 10px;
+  font-size: 11px; font-weight: 700;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.tl-track-row:hover { background: var(--panel-2); }
+.tl-track-row.selected { background: var(--primary-dim); color: #d3c2ff; }
+.tl-track-row .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; box-shadow: 0 0 6px currentColor; }
+.tl-track-row .name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-track-row .eye { color: var(--text-4); flex: none; }
+.tl-track-row .eye:hover { color: var(--text); }
+.tl-track-row .eye.off { color: var(--text-4); opacity: .5; }
+.tl-track-child { margin-left: 22px; font-weight: 600; font-size: 10.5px; }
+
+#tl-right-col {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  background: #14141b;
+}
+
+/* Ruler */
+#tl-ruler {
+  height: 26px;
+  flex: none;
+  position: relative;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--panel);
+  overflow: hidden;
+}
+#tl-ruler canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+#tl-ruler .playhead-flag {
+  position: absolute; top: 0;
+  transform: translateX(-50%);
+  width: 2px; height: 100%;
+  background: var(--primary);
+  pointer-events: none;
+  z-index: 4;
+}
+#tl-ruler .playhead-flag::before {
+  content: "";
+  position: absolute; top: 0; left: -5px;
+  border: 6px solid transparent;
+  border-top: 8px solid var(--primary);
+  border-bottom: none;
+}
+
+/* Track lanes area */
+#tl-lanes {
+  flex: 1;
+  position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.tl-lane {
+  height: 26px;
+  position: relative;
+  border-bottom: 1px solid rgba(52,52,67,.35);
+  background:
+    linear-gradient(90deg,
+      rgba(255,255,255,.028) 1px, transparent 1px) 0 0 / var(--tl-step, 12px) 100% repeat;
+}
+.tl-lane:nth-child(odd) { background-color: rgba(255,255,255,.012); }
+
+.tl-key {
+  position: absolute;
+  top: 50%; left: 0;
+  width: 11px; height: 11px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  border-radius: 2.5px;
+  background: var(--accent);
+  border: 1.5px solid rgba(255,255,255,.35);
+  cursor: pointer;
+  z-index: 3;
+  transition: box-shadow var(--t-fast), transform var(--t-fast);
+}
+.tl-key:hover { transform: translate(-50%, -50%) rotate(45deg) scale(1.25); box-shadow: 0 0 8px currentColor; }
+.tl-key.selected {
+  background: #fff !important;
+  box-shadow: 0 0 0 2px var(--primary), 0 0 10px var(--primary);
+  z-index: 5;
+}
+.tl-key.key-pos { background: var(--accent); color: var(--accent); }
+.tl-key.key-rot { background: var(--success); color: var(--success); }
+.tl-key.key-scl { background: var(--warning); color: var(--warning); }
+.tl-key.key-bone { background: #c44dff; color: #c44dff; }
+.tl-key.key-face { background: #ff7ab8; color: #ff7ab8; }
+.tl-key.key-cam { background: #ffffff; color: #999; }
+
+/* Playhead trong lanes */
+#tl-playhead {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 2px;
+  background: var(--primary);
+  transform: translateX(-1px);
+  z-index: 6;
+  pointer-events: none;
+  box-shadow: 0 0 8px rgba(113,59,255,.8);
+}
+
+/* --- Animation Graph view --- */
+#tl-graph-wrap {
+  position: absolute; inset: 0;
+  display: none;
+  background: #14141b;
+}
+#tl-graph-wrap.active { display: block; }
+#tl-graph-canvas { width: 100%; height: 100%; }
+.graph-legend {
+  position: absolute; top: 8px; left: 10px;
+  display: flex; gap: 12px;
+  font-size: 10.5px; font-weight: 700;
+  background: rgba(20,20,27,.8);
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-soft);
+}
+.graph-legend .g-item { display: inline-flex; align-items: center; gap: 5px; color: var(--text-2); }
+.graph-legend .g-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+/* Placeholder tab content (Blend Shapes / Constraints ...) */
+.tl-placeholder {
+  position: absolute; inset: 0;
+  display: none;
+  flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px;
+  color: var(--text-3);
+  font-size: 12px;
+  background: #14141b;
+}
+.tl-placeholder.active { display: flex; }
+.tl-placeholder .ph-icon { font-size: 30px; opacity: .55; }
+.tl-placeholder b { color: var(--text-2); font-size: 13px; }
+.tl-placeholder .state-badge { margin-top: 4px; }
+
+/* Keyframe add button (topbar phải) */
+#add-keyframe-btn { flex: none; }
+
+/* Timeline collapsed mini bar */
+#bottom-bar-mini .mini-title { font-weight: 800; }

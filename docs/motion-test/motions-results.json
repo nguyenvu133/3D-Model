@@ -1,0 +1,2344 @@
+[
+ {
+  "name": "Attack_Ground_Pound",
+  "dur": 2.9583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.958,
+  "maxTravel": 0.6129,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Consume Item",
+  "dur": 4.125,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 4.125,
+  "maxTravel": 0.4851,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Flying Forward Super",
+  "dur": 0.4167,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.417,
+  "maxTravel": 1.3179,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Flying Forward",
+  "dur": 0.4167,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.417,
+  "maxTravel": 1.6413,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Glide",
+  "dur": 0.75,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.75,
+  "maxTravel": 1.5867,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Levitate Entrance",
+  "dur": 1.9167,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.917,
+  "maxTravel": 1.5967,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Levitate Idle",
+  "dur": 1.9167,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.917,
+  "maxTravel": 1.5874,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Power_Burst",
+  "dur": 4.2083,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 4.208,
+  "maxTravel": 1.5336,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Power Up",
+  "dur": 0.6667,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.667,
+  "maxTravel": 1.4011,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Spell_Simple_Enter",
+  "dur": 0.625,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.625,
+  "maxTravel": 1.3855,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Spell_Simple_Exit",
+  "dur": 0.5,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.5,
+  "maxTravel": 1.3553,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Spell_Simple_Idle",
+  "dur": 2.625,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.625,
+  "maxTravel": 1.2614,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Spell_Simple_Shoot",
+  "dur": 0.5833,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.583,
+  "maxTravel": 1.1332,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Two-hand Blast",
+  "dur": 0.4167,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.417,
+  "maxTravel": 1.0122,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Burpee",
+  "dur": 3.2917,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 3.292,
+  "maxTravel": 0.9369,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Chest_Open",
+  "dur": 1.3333,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.333,
+  "maxTravel": 0.7827,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Chop_Tree",
+  "dur": 0.9167,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.917,
+  "maxTravel": 0.8869,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Chop_Wood",
+  "dur": 1.625,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.625,
+  "maxTravel": 0.8716,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Consume",
+  "dur": 1.2917,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.292,
+  "maxTravel": 1.0191,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Drumming",
+  "dur": 4,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 4,
+  "maxTravel": 1.0436,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Farm_Harvest",
+  "dur": 2.2917,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.292,
+  "maxTravel": 0.9069,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Farm_PlantSeed",
+  "dur": 2.75,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.75,
+  "maxTravel": 1.2012,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Farm_Watering",
+  "dur": 3.7917,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 3.792,
+  "maxTravel": 1.2212,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Fixing_Kneeling",
+  "dur": 6.4583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 6.458,
+  "maxTravel": 1.0433,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Guitar_Playing",
+  "dur": 3.9583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 3.958,
+  "maxTravel": 0.8528,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Hammering",
+  "dur": 0.9583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.958,
+  "maxTravel": 0.9719,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Interact",
+  "dur": 2.4583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.458,
+  "maxTravel": 1.0866,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Jumping Jacks",
+  "dur": 1.25,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.25,
+  "maxTravel": 1.2289,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Knock",
+  "dur": 2.875,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.875,
+  "maxTravel": 1.1717,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Mining",
+  "dur": 1.4583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.458,
+  "maxTravel": 1.1397,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Open Door",
+  "dur": 4.5417,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 4.542,
+  "maxTravel": 1.2159,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Pick Up",
+  "dur": 2.3333,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.333,
+  "maxTravel": 1.297,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "PickUp_Table",
+  "dur": 1,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1,
+  "maxTravel": 1.4612,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Push",
+  "dur": 3.2917,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 3.292,
+  "maxTravel": 1.0512,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Pushup",
+  "dur": 1.5417,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.542,
+  "maxTravel": 0.7609,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Rope Pull",
+  "dur": 1.3333,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.333,
+  "maxTravel": 0.8229,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Shovel Dig",
+  "dur": 4.0833,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 4.083,
+  "maxTravel": 0.8259,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Sitting Writing",
+  "dur": 3.9583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 3.958,
+  "maxTravel": 0.9052,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Throw Object",
+  "dur": 1.8333,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.833,
+  "maxTravel": 0.8124,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Rest Pose",
+  "dur": 0.3333,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.333,
+  "maxTravel": 0.8231,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Defend",
+  "dur": 0.9167,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.917,
+  "maxTravel": 0.7429,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Dodge_back",
+  "dur": 1,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1,
+  "maxTravel": 0.7314,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Dodge_back_RM",
+  "dur": 1,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1,
+  "maxTravel": 0.7413,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Dodge_left",
+  "dur": 1,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1,
+  "maxTravel": 0.7739,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Dodge_left_RM",
+  "dur": 1,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1,
+  "maxTravel": 0.9222,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Dodge_right",
+  "dur": 1,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1,
+  "maxTravel": 0.9174,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Dodge_right_RM",
+  "dur": 1,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1,
+  "maxTravel": 1.0797,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Idle_Shield_Break",
+  "dur": 1.0417,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.042,
+  "maxTravel": 0.8443,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Idle_Shield",
+  "dur": 2.4583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.458,
+  "maxTravel": 0.9307,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Shield_OneShot",
+  "dur": 0.7917,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.792,
+  "maxTravel": 1.0784,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Sword_Block",
+  "dur": 1.2083,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.208,
+  "maxTravel": 0.9997,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Dagger Stab",
+  "dur": 1.4167,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.417,
+  "maxTravel": 1.0464,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Dual_Wield_Combo",
+  "dur": 2.2083,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.208,
+  "maxTravel": 1.0245,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Dual_Wield_Cross_Slash",
+  "dur": 1.625,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.625,
+  "maxTravel": 1.0406,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Idle_Sword",
+  "dur": 2.0417,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.042,
+  "maxTravel": 1.1257,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Attack_Jump",
+  "dur": 2.4167,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.417,
+  "maxTravel": 1.1129,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "One_Hand_Slash_Combo",
+  "dur": 1.75,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.75,
+  "maxTravel": 1.1128,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "One Hand Weapon Idle",
+  "dur": 2.5833,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.583,
+  "maxTravel": 1.0904,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Polearm Idle",
+  "dur": 2.5833,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.583,
+  "maxTravel": 1.0882,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Polearm_Run",
+  "dur": 0.7917,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.792,
+  "maxTravel": 1.1214,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Shield_Dash_RM",
+  "dur": 1.0833,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.083,
+  "maxTravel": 0.8083,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Spear_Thrust",
+  "dur": 1.3333,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.333,
+  "maxTravel": 0.7003,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Staff_Combo",
+  "dur": 2.9583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.958,
+  "maxTravel": 0.7545,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Staff_Spin",
+  "dur": 0.7917,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.792,
+  "maxTravel": 0.7145,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Sword_Attack_Air_Vertical",
+  "dur": 4.8333,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 4.833,
+  "maxTravel": 0.8193,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Sword_Attack",
+  "dur": 1.875,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.875,
+  "maxTravel": 0.9918,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Sword_Attack_RM",
+  "dur": 1.875,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.917,
+  "maxTravel": 1.1292,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Sword_Dash_RM",
+  "dur": 1.5833,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.583,
+  "maxTravel": 1.2414,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Sword_Regular_A_Rec",
+  "dur": 0.9167,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.917,
+  "maxTravel": 1.1606,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Sword_Regular_A",
+  "dur": 0.4167,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.417,
+  "maxTravel": 0.9389,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Sword_Regular_B_Rec",
+  "dur": 0.9583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.958,
+  "maxTravel": 0.9345,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Sword_Regular_B",
+  "dur": 0.5417,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.542,
+  "maxTravel": 1.0127,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Sword_Regular_C",
+  "dur": 1.6667,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.667,
+  "maxTravel": 1.0522,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Sword_Regular_C_RM",
+  "dur": 1.6667,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.667,
+  "maxTravel": 0.9865,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Sword_Regular_Combo",
+  "dur": 2.9583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.958,
+  "maxTravel": 0.9859,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Two_Handed_Horizontal_Swing",
+  "dur": 1.625,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.625,
+  "maxTravel": 0.9341,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Two_Handed_Overhead_Slam",
+  "dur": 1.7917,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.792,
+  "maxTravel": 0.9372,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Weapon_Block",
+  "dur": 1.875,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.875,
+  "maxTravel": 0.8135,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Weapon_Draw",
+  "dur": 1.5,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.5,
+  "maxTravel": 0.9403,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Bow Pull Hold",
+  "dur": 2.4583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.458,
+  "maxTravel": 0.9811,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Bow Pull Back",
+  "dur": 2.5,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.5,
+  "maxTravel": 0.9952,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Bow Release",
+  "dur": 1,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1,
+  "maxTravel": 0.8855,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Bow",
+  "dur": 3.6667,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 3.667,
+  "maxTravel": 0.9041,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Grenade_Throw",
+  "dur": 1.9167,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.917,
+  "maxTravel": 0.942,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Knife_Throw",
+  "dur": 1.1667,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.167,
+  "maxTravel": 0.982,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "OverhandThrow",
+  "dur": 1.2917,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.292,
+  "maxTravel": 0.8278,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Pistol_Aim_Down",
+  "dur": 0.125,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.125,
+  "maxTravel": 0.8901,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Pistol_Aim_Neutral",
+  "dur": 0.125,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.125,
+  "maxTravel": 0.9648,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Pistol_Aim_Up",
+  "dur": 0.125,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.125,
+  "maxTravel": 0.9732,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Pistol Fire",
+  "dur": 0.9583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.958,
+  "maxTravel": 0.986,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Pistol_Idle_Aim",
+  "dur": 1.9167,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.917,
+  "maxTravel": 0.9957,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Pistol_Idle",
+  "dur": 2.0417,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.042,
+  "maxTravel": 1.075,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Pistol_Prone",
+  "dur": 2.4583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.458,
+  "maxTravel": 0.9352,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Pistol_Reload_2",
+  "dur": 2.0417,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.042,
+  "maxTravel": 0,
+  "probeBones": 5,
+  "ok": false,
+  "error": "bone travel below threshold"
+ },
+ {
+  "name": "Pistol_Reload",
+  "dur": 2.5,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.5,
+  "maxTravel": 0.8415,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Pistol_Shoot",
+  "dur": 0.75,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.75,
+  "maxTravel": 0.7452,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Pistol Walk",
+  "dur": 1.2917,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.292,
+  "maxTravel": 0,
+  "probeBones": 5,
+  "ok": false,
+  "error": "bone travel below threshold"
+ },
+ {
+  "name": "Rifle_Fire",
+  "dur": 1.2083,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.208,
+  "maxTravel": 1.0637,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Rifle_Idle",
+  "dur": 1.9167,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.917,
+  "maxTravel": 0.9121,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Rifle_Reload",
+  "dur": 2.7083,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.708,
+  "maxTravel": 0.8138,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Rifle_Run",
+  "dur": 0.7917,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.792,
+  "maxTravel": 0.8537,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Rifle_Walk",
+  "dur": 1.2917,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.292,
+  "maxTravel": 1.0005,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Spear_Throw",
+  "dur": 1.3333,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.333,
+  "maxTravel": 1.0506,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Death_A",
+  "dur": 4.5833,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 4.583,
+  "maxTravel": 1.0268,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Death_B",
+  "dur": 2,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2,
+  "maxTravel": 1.0582,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Death_C",
+  "dur": 2.5,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.5,
+  "maxTravel": 1.1392,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Death_D",
+  "dur": 2.1667,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.167,
+  "maxTravel": 1.0408,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Spin_Death",
+  "dur": 4.9167,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 4.917,
+  "maxTravel": 0.9432,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Dizzy",
+  "dur": 2.375,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.375,
+  "maxTravel": 0.9006,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Hit_Chest",
+  "dur": 0.375,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.375,
+  "maxTravel": 0.9168,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Hit_Head",
+  "dur": 0.5,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.5,
+  "maxTravel": 1.0866,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Hit_Knockback",
+  "dur": 0.7917,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.792,
+  "maxTravel": 0.9476,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Hit_Knockback_RM",
+  "dur": 0.625,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.625,
+  "maxTravel": 1.0708,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "LayToIdle",
+  "dur": 1.5417,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.542,
+  "maxTravel": 0.8868,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Fighting Idle",
+  "dur": 1.625,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.625,
+  "maxTravel": 0.9408,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Fighting Left Jab",
+  "dur": 0.875,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.875,
+  "maxTravel": 0.9962,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Fighting Right Jab",
+  "dur": 0.8333,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.833,
+  "maxTravel": 1.0909,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Kick Front",
+  "dur": 1.3333,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.333,
+  "maxTravel": 0.9732,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Kick Roundhouse",
+  "dur": 1.3333,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.333,
+  "maxTravel": 1.1968,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Kick Side",
+  "dur": 1.3333,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.333,
+  "maxTravel": 1.0529,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Kick_Spin",
+  "dur": 1.875,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.875,
+  "maxTravel": 0.9075,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Melee_Hook_Rec",
+  "dur": 0.5833,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.583,
+  "maxTravel": 0.919,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Melee_Hook",
+  "dur": 0.4583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.458,
+  "maxTravel": 0.9356,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Punch_Cross",
+  "dur": 1.2083,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.208,
+  "maxTravel": 1.1135,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Punch_Jab",
+  "dur": 1.0417,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.042,
+  "maxTravel": 1.1424,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Clapping",
+  "dur": 1.4583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.458,
+  "maxTravel": 1.1438,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Dab",
+  "dur": 1.9167,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.917,
+  "maxTravel": 1.1332,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Dance_Arm_Pump",
+  "dur": 1.9583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.958,
+  "maxTravel": 1.117,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Dance Body Roll",
+  "dur": 6.4167,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 6.417,
+  "maxTravel": 0.9324,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Dance Charleston",
+  "dur": 2.25,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.25,
+  "maxTravel": 0.8557,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Dance Reach Hip",
+  "dur": 2.5,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.5,
+  "maxTravel": 0.9519,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Dance_Simple",
+  "dur": 1.2083,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.208,
+  "maxTravel": 0.9555,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Greeting",
+  "dur": 4.9167,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 4.917,
+  "maxTravel": 0.9493,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Head Nod",
+  "dur": 0.7917,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.792,
+  "maxTravel": 0.9499,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Moonwalk",
+  "dur": 0.9583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.958,
+  "maxTravel": 0.9397,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Singing",
+  "dur": 3.9583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 3.958,
+  "maxTravel": 0.9467,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Yes",
+  "dur": 2.4583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.458,
+  "maxTravel": 1.0091,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Angry",
+  "dur": 0.75,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.75,
+  "maxTravel": 1.0542,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Confused",
+  "dur": 2.8333,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.833,
+  "maxTravel": 1.0382,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Reject",
+  "dur": 3.7083,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 3.708,
+  "maxTravel": 1.038,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Shivering",
+  "dur": 0.1667,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.167,
+  "maxTravel": 1.0171,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Sit_Ground_Crying",
+  "dur": 2.4583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.458,
+  "maxTravel": 1.0328,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Tired Hunched",
+  "dur": 0.9583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.958,
+  "maxTravel": 0.9722,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Kneeling Tired",
+  "dur": 0.75,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.75,
+  "maxTravel": 1.0954,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Victory Fist Pump",
+  "dur": 2.4583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.458,
+  "maxTravel": 0.9914,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Victory",
+  "dur": 1.8333,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.833,
+  "maxTravel": 1.0168,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Crouch_Idle",
+  "dur": 3.625,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 3.625,
+  "maxTravel": 1.0053,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Driving",
+  "dur": 2,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2,
+  "maxTravel": 0.9603,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Idle_A",
+  "dur": 3.0833,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 3.083,
+  "maxTravel": 0.7059,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Idle_FoldArms",
+  "dur": 2.4583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.458,
+  "maxTravel": 0.7738,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Idle Hurt",
+  "dur": 1.625,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.625,
+  "maxTravel": 0.7833,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Idle_Lantern",
+  "dur": 2.4583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.458,
+  "maxTravel": 0.8515,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Idle Listening",
+  "dur": 1.625,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.625,
+  "maxTravel": 0.9076,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Idle_Rail_Call",
+  "dur": 2.4583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.458,
+  "maxTravel": 1.0212,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Idle_Rail",
+  "dur": 2.4583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.458,
+  "maxTravel": 1.1369,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Idle_ShakeOff",
+  "dur": 2.4583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.458,
+  "maxTravel": 1.2013,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Idle_Subtle",
+  "dur": 2.5417,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.542,
+  "maxTravel": 1.186,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Idle_Talking",
+  "dur": 3.625,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 3.625,
+  "maxTravel": 1.2108,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Idle_TalkingPhone",
+  "dur": 2.875,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.875,
+  "maxTravel": 1.2229,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Idle_Torch",
+  "dur": 1.5417,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.542,
+  "maxTravel": 1.2015,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Kneel",
+  "dur": 2.9167,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.917,
+  "maxTravel": 1.2076,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Meditate",
+  "dur": 1.4167,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.417,
+  "maxTravel": 1.1325,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Mount_Idle",
+  "dur": 3.7083,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 3.708,
+  "maxTravel": 1.1325,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Pray",
+  "dur": 3.9583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 3.958,
+  "maxTravel": 1.1419,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Sit_Ground_Idle",
+  "dur": 2.9583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.958,
+  "maxTravel": 1.1317,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Sitting_Enter",
+  "dur": 1.625,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.625,
+  "maxTravel": 1.0905,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Sitting_Exit",
+  "dur": 1.2917,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.292,
+  "maxTravel": 1.1517,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Sitting_Idle",
+  "dur": 2.0417,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.042,
+  "maxTravel": 1.2744,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Sitting_Talking",
+  "dur": 3.625,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 3.625,
+  "maxTravel": 1.2311,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Sleeping",
+  "dur": 1.5833,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.583,
+  "maxTravel": 0.845,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Backflip",
+  "dur": 2.5,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.5,
+  "maxTravel": 1.12,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Climb Ladder",
+  "dur": 3.5833,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 3.583,
+  "maxTravel": 1.0367,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Pipe Climb",
+  "dur": 1.8333,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.833,
+  "maxTravel": 0.936,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Climb Wall",
+  "dur": 2.0417,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.042,
+  "maxTravel": 0.7185,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "ClimbUp_1m_RM",
+  "dur": 0.625,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.625,
+  "maxTravel": 0.6926,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Crawl RM",
+  "dur": 1.6667,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.667,
+  "maxTravel": 0.902,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Crawl",
+  "dur": 1.6667,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.667,
+  "maxTravel": 1.3817,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Crouch_Walk",
+  "dur": 2.4583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.458,
+  "maxTravel": 1.1834,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Drunk Walk",
+  "dur": 1.625,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.625,
+  "maxTravel": 1.17,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Freefall",
+  "dur": 1.4583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.458,
+  "maxTravel": 1.1866,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Jog",
+  "dur": 1.1667,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.167,
+  "maxTravel": 1.2235,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Jump_2",
+  "dur": 1.6667,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.667,
+  "maxTravel": 1.0932,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Jump_2_RM",
+  "dur": 1.6667,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.667,
+  "maxTravel": 0.9719,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Jump_air",
+  "dur": 3.0833,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 3.083,
+  "maxTravel": 0.9741,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Jump_Land",
+  "dur": 1.5833,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.583,
+  "maxTravel": 1.0429,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Run Jump",
+  "dur": 1.2083,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.208,
+  "maxTravel": 1.1072,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Jump_Start",
+  "dur": 1.6667,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.667,
+  "maxTravel": 1.0783,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Ladder_Idle",
+  "dur": 2.4583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.458,
+  "maxTravel": 1.1127,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Land_Three_Point",
+  "dur": 1.4583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.458,
+  "maxTravel": 1.0558,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Ledge Climb Up",
+  "dur": 3.4583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 3.458,
+  "maxTravel": 1.0584,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Ledge Hang",
+  "dur": 1.8333,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.833,
+  "maxTravel": 1.1633,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "NinjaJump_Idle",
+  "dur": 1.9583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.958,
+  "maxTravel": 0.8753,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "NinjaJump_Land",
+  "dur": 1.25,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.25,
+  "maxTravel": 0.9995,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "NinjaJump_Start",
+  "dur": 0.9583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.958,
+  "maxTravel": 0.8939,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Roll",
+  "dur": 1.8333,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.833,
+  "maxTravel": 1.2579,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Roll_RM",
+  "dur": 1.8333,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.833,
+  "maxTravel": 1.4369,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Rope_Hang",
+  "dur": 2.9583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.958,
+  "maxTravel": 1.2046,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Rope Swing",
+  "dur": 2,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2,
+  "maxTravel": 1.2176,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Run_Anime",
+  "dur": 0.7083,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.708,
+  "maxTravel": 1.2909,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Run_Female",
+  "dur": 0.8333,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.833,
+  "maxTravel": 1.0253,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Run_Stealth",
+  "dur": 0.5,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.5,
+  "maxTravel": 0.9762,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Slide_Exit",
+  "dur": 0.5,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.5,
+  "maxTravel": 0.851,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Slide_Start",
+  "dur": 0.7917,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.792,
+  "maxTravel": 0.7811,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Slide",
+  "dur": 1.9583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.958,
+  "maxTravel": 0.9708,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Sprint",
+  "dur": 0.7917,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.792,
+  "maxTravel": 1.0283,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Strafe_left",
+  "dur": 0.9583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.958,
+  "maxTravel": 1.0346,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Strafe_right",
+  "dur": 0.9583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.958,
+  "maxTravel": 1.0085,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Swim_2",
+  "dur": 2,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2,
+  "maxTravel": 1.0621,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Swim_Fwd",
+  "dur": 1.625,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.625,
+  "maxTravel": 1.0859,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Swim_Idle",
+  "dur": 4.125,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 4.125,
+  "maxTravel": 1.1928,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Walk_Texting",
+  "dur": 1.125,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.125,
+  "maxTravel": 1.2272,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Walk_Tightrope",
+  "dur": 2.2917,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.292,
+  "maxTravel": 1.2433,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Fall_Tumbling",
+  "dur": 1.5,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.5,
+  "maxTravel": 1.0368,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Walk_Backwards",
+  "dur": 0.9583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.958,
+  "maxTravel": 1.0065,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Walk_Carry",
+  "dur": 1.9583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.958,
+  "maxTravel": 1.1105,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Walk_Cautious",
+  "dur": 1.7917,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.792,
+  "maxTravel": 1.0347,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Walk_Female",
+  "dur": 1.3333,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.333,
+  "maxTravel": 1.1007,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Walk_Formal",
+  "dur": 1.625,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.625,
+  "maxTravel": 1.2816,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Walk_Happy",
+  "dur": 1.0417,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.042,
+  "maxTravel": 1.2507,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Walk Injured",
+  "dur": 1.625,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.625,
+  "maxTravel": 1.0061,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Walk_Large",
+  "dur": 1.4167,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.417,
+  "maxTravel": 0.9893,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Walk_Relaxed",
+  "dur": 1.375,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.375,
+  "maxTravel": 1.1382,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Walk_Stealth",
+  "dur": 1.4583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.458,
+  "maxTravel": 1.2258,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Walk",
+  "dur": 1.625,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.625,
+  "maxTravel": 0.9705,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Wall_Run",
+  "dur": 0.7083,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.708,
+  "maxTravel": 0.9103,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Zombie_Idle",
+  "dur": 1.2917,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.292,
+  "maxTravel": 0.8848,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Zombie_Idle_Crouch",
+  "dur": 2.9583,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.958,
+  "maxTravel": 0.9602,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Zombie_Rise",
+  "dur": 3.75,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 3.75,
+  "maxTravel": 0.9473,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Zombie Run",
+  "dur": 0.75,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 0.75,
+  "maxTravel": 0.9335,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Zombie_Scratch",
+  "dur": 1.75,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.75,
+  "maxTravel": 1.0652,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Zombie_Walk_2",
+  "dur": 2.875,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.875,
+  "maxTravel": 0.875,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Zombie_Walk_3",
+  "dur": 2.0417,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 2.042,
+  "maxTravel": 0.9657,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Zombie_Walk",
+  "dur": 1.3333,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 1.333,
+  "maxTravel": 0.9298,
+  "probeBones": 5,
+  "ok": true
+ },
+ {
+  "name": "Zombie Yell",
+  "dur": 3.6667,
+  "srcTracks": 198,
+  "outTracks": 23,
+  "outDur": 3.667,
+  "maxTravel": 0.9538,
+  "probeBones": 5,
+  "ok": true
+ }
+]

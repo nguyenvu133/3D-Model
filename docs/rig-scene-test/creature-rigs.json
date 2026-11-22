@@ -1,0 +1,254 @@
+{
+ "testedAt": "2026-11-22T04:18:35.363Z",
+ "model": "assets/models/tripo_convert_monter1.glb",
+ "rigCount": 8,
+ "okCount": 8,
+ "rigs": [
+  {
+   "rigId": "fox",
+   "family": "quadruped",
+   "bones": 53,
+   "skinned": 1,
+   "mode": "identity-by-name",
+   "animations": 21,
+   "avgTravel": 1.5706,
+   "ok": true,
+   "tests": [
+    {
+     "name": "Bark",
+     "tracks": 48,
+     "dur": 2.75,
+     "travel": 0.6815
+    },
+    {
+     "name": "Bite",
+     "tracks": 48,
+     "dur": 0.83,
+     "travel": 1.2406
+    },
+    {
+     "name": "Death",
+     "tracks": 48,
+     "dur": 1.42,
+     "travel": 2.7898
+    }
+   ]
+  },
+  {
+   "rigId": "horse",
+   "family": "quadruped",
+   "bones": 56,
+   "skinned": 1,
+   "mode": "identity-by-name",
+   "animations": 14,
+   "avgTravel": 2.1941,
+   "ok": true,
+   "tests": [
+    {
+     "name": "Death",
+     "tracks": 51,
+     "dur": 1.5,
+     "travel": 1.857
+    },
+    {
+     "name": "Eating",
+     "tracks": 51,
+     "dur": 2.63,
+     "travel": 2.3816
+    },
+    {
+     "name": "Head_But",
+     "tracks": 51,
+     "dur": 0.97,
+     "travel": 2.3436
+    }
+   ]
+  },
+  {
+   "rigId": "kaiju",
+   "family": "quadruped",
+   "bones": 58,
+   "skinned": 1,
+   "mode": "identity-by-name",
+   "animations": 10,
+   "avgTravel": 1.9474,
+   "ok": true,
+   "tests": [
+    {
+     "name": "Attack",
+     "tracks": 54,
+     "dur": 1.03,
+     "travel": 1.745
+    },
+    {
+     "name": "Death",
+     "tracks": 54,
+     "dur": 4.53,
+     "travel": 1.8127
+    },
+    {
+     "name": "Hit",
+     "tracks": 54,
+     "dur": 0.97,
+     "travel": 2.2846
+    }
+   ]
+  },
+  {
+   "rigId": "dragon",
+   "family": "dragon",
+   "bones": 99,
+   "skinned": 1,
+   "mode": "identity-by-name",
+   "animations": 12,
+   "avgTravel": 4.3712,
+   "ok": true,
+   "tests": [
+    {
+     "name": "Attack",
+     "tracks": 95,
+     "dur": 1.63,
+     "travel": 2.3809
+    },
+    {
+     "name": "Death",
+     "tracks": 95,
+     "dur": 4.17,
+     "travel": 4.969
+    },
+    {
+     "name": "Fire_Breath",
+     "tracks": 95,
+     "dur": 3.13,
+     "travel": 5.7636
+    }
+   ]
+  },
+  {
+   "rigId": "bird",
+   "family": "bird",
+   "bones": 55,
+   "skinned": 1,
+   "mode": "identity-by-name",
+   "animations": 9,
+   "avgTravel": 5.5499,
+   "ok": true,
+   "tests": [
+    {
+     "name": "Hop",
+     "tracks": 52,
+     "dur": 0.83,
+     "travel": 4.4598
+    },
+    {
+     "name": "Death",
+     "tracks": 52,
+     "dur": 1.67,
+     "travel": 5.8734
+    },
+    {
+     "name": "Flap",
+     "tracks": 52,
+     "dur": 0.54,
+     "travel": 6.3164
+    }
+   ]
+  },
+  {
+   "rigId": "snake",
+   "family": "serpent",
+   "bones": 28,
+   "skinned": 1,
+   "mode": "identity-by-name",
+   "animations": 8,
+   "avgTravel": 43.8787,
+   "ok": true,
+   "tests": [
+    {
+     "name": "Bite",
+     "tracks": 25,
+     "dur": 1.21,
+     "travel": 22.4778
+    },
+    {
+     "name": "Coiled",
+     "tracks": 25,
+     "dur": 1.63,
+     "travel": 55.8625
+    },
+    {
+     "name": "Dance",
+     "tracks": 25,
+     "dur": 1.96,
+     "travel": 53.2957
+    }
+   ]
+  },
+  {
+   "rigId": "shark",
+   "family": "fish",
+   "bones": 33,
+   "skinned": 1,
+   "mode": "identity-by-name",
+   "animations": 7,
+   "avgTravel": 4.1828,
+   "ok": true,
+   "tests": [
+    {
+     "name": "Bite",
+     "tracks": 30,
+     "dur": 2.96,
+     "travel": 1.0703
+    },
+    {
+     "name": "Dead Floating",
+     "tracks": 30,
+     "dur": 3.29,
+     "travel": 5.5378
+    },
+    {
+     "name": "Hit",
+     "tracks": 30,
+     "dur": 0.79,
+     "travel": 5.9402
+    }
+   ]
+  },
+  {
+   "rigId": "spider",
+   "family": "arachnid",
+   "bones": 56,
+   "skinned": 1,
+   "mode": "identity-by-name",
+   "animations": 11,
+   "avgTravel": 4.4072,
+   "ok": true,
+   "tests": [
+    {
+     "name": "Attack",
+     "tracks": 54,
+     "dur": 1.21,
+     "travel": 4.6542
+    },
+    {
+     "name": "Bite",
+     "tracks": 54,
+     "dur": 1.21,
+     "travel": 5.7016
+    },
+    {
+     "name": "Death 2",
+     "tracks": 54,
+     "dur": 1.21,
+     "travel": 2.8657
+    }
+   ]
+  }
+ ],
+ "rigModel": {
+  "name": "M2M_fox",
+  "meshes": 1,
+  "tris": 1654
+ },
+ "pageErrors": []
+}

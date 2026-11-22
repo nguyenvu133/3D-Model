@@ -1,0 +1,28 @@
+{
+ "model": "assets/models/tripo_convert_monter1.glb",
+ "rigBones": 23,
+ "rigPreset": "Studio Humanoid",
+ "skinnedMeshes": 1,
+ "boundCount": 1,
+ "testedAt": "2026-11-22T03:53:12.593Z",
+ "total": 234,
+ "passed": 232,
+ "failed": 2,
+ "avgTracks": 23,
+ "avgTravel": 1.0286,
+ "minTravel": 0.4851,
+ "maxTravel": 1.6413,
+ "failures": [
+  {
+   "name": "Pistol_Reload_2",
+   "error": "bone travel below threshold",
+   "outTracks": 23
+  },
+  {
+   "name": "Pistol Walk",
+   "error": "bone travel below threshold",
+   "outTracks": 23
+  }
+ ],
+ "pageErrors": []
+}

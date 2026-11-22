@@ -1,0 +1,80 @@
+{
+ "catalog": {
+  "badge": "326 motions · CC0",
+  "rigChips": 9,
+  "modelCards": 30,
+  "animCards": 234,
+  "animCount": "234 / 234"
+ },
+ "loadModel": {
+  "name": "QA human",
+  "tris": 13757,
+  "bones": 66,
+  "clips": 0
+ },
+ "play": [
+  {
+   "name": "Run_Anime",
+   "tracks": 65,
+   "dur": 0.71,
+   "travel": 0.9463,
+   "clipName": "— chưa chọn animation —",
+   "timecode": "0.62 / 0.71s"
+  },
+  {
+   "name": "Sword_Regular_A",
+   "tracks": 65,
+   "dur": 0.42,
+   "travel": 1.467,
+   "clipName": "— chưa chọn animation —",
+   "timecode": "0.40 / 0.42s"
+  },
+  {
+   "name": "Dance_Simple",
+   "tracks": 65,
+   "dur": 1.21,
+   "travel": 1.2712,
+   "clipName": "— chưa chọn animation —",
+   "timecode": "0.41 / 1.21s"
+  }
+ ],
+ "select": {
+  "selected": 5,
+  "rows": 0,
+  "tabOn": true
+ },
+ "remix": {
+  "steps": 3,
+  "rows": 0
+ },
+ "exportJson": {
+  "clips": 2,
+  "jsonBytes": 122495
+ },
+ "settings": {
+  "open": true,
+  "fieldsets": 4
+ },
+ "diag": {
+  "clip": "Attack_Ground_Pound",
+  "mode": "identity-by-name",
+  "src": 65,
+  "tgt": 66,
+  "match": 65,
+  "out": 65
+ },
+ "ai": {
+  "tabOn": true,
+  "state": "not connected",
+  "prompt": true,
+  "tasks": 1
+ },
+ "perf": {
+  "fps": 10,
+  "tris": 13757,
+  "meshes": 1,
+  "bones": 66,
+  "calls": 3
+ },
+ "pageErrors": []
+}

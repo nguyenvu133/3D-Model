@@ -1,0 +1,1 @@
+kiểm tra để fps về 60 fps và animation ấn vào play bị đơ khi chọn animation Presets và thanh menu lựa chọn bị hỏng sửa lại như cũ cho tôi

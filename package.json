@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "meshoptimizer": "^1.3.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "wt": "powershell -NoProfile -ExecutionPolicy Bypass -File ./start-studio.ps1",
+    "verify:anim": "node tools/verify-anim.js"
+  }
+}
