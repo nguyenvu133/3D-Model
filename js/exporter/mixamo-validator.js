@@ -30,7 +30,10 @@
     root.updateMatrixWorld(true);
     root.traverse(function (o) {
       if (o.isBone) { bones.push(o); return; }
-      if (o.userData && (o.userData.isBoneVisual || o.userData.skipSkin)) {
+      /* Chỉ bỏ visual xương (joint sphere / octahedron). Mesh đã skin
+         (skipSkin) VẪN là mesh thật phải đếm — trước đây bị bỏ qua nên
+         validator báo "Không có mesh nào" trên model vừa rig xong. */
+      if (o.userData && o.userData.isBoneVisual) {
         if (o.isMesh) boneVisualSkipped++;
         return;
       }

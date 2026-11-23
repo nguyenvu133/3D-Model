@@ -775,6 +775,14 @@
       const material = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
       const skinned = new THREE.SkinnedMesh(geometry, material);
       skinned.name = mesh.name;
+      /* FIX (Rig 1 Lượt): giữ nguyên transform của mesh gốc (position/
+         rotation/scale). Trước đây SkinnedMesh thay thế được tạo ở origin
+         nên model nhiều mảnh (thân/đầu/tay/chân đặt riêng) bị sập về gốc
+         tọa độ — mesh lệch hẳn so với xương. Model 1 mesh (GLB thường)
+         có transform identity nên không đổi. */
+      skinned.position.copy(mesh.position);
+      skinned.rotation.copy(mesh.rotation);
+      skinned.scale.copy(mesh.scale);
       skinned.castShadow = mesh.castShadow;
       skinned.frustumCulled = false;
       skinned.userData = Object.assign({}, mesh.userData, { skipSkin: true, __sourceMesh: mesh });
@@ -1059,6 +1067,9 @@
     section.appendChild(sc);
     /* chèn lên đầu panel (sau header page) */
     body.insertBefore(section, body.firstChild);
+
+    /* Rig 1 Lượt (kiểu Meshy) — section riêng, luôn nằm trên cùng */
+    if (PixiStudio.RigOneClick) PixiStudio.RigOneClick.renderPanel();
   };
 
   window.PixiStudio.RigAutoGen = RigAutoGen;
