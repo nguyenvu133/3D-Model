@@ -374,20 +374,18 @@ var World = {
     });
   },
   buildStatue: function () {
-    /* tượng kiếm hiệp — model GLB thật của repo (meshopt), đặt trước đền */
-    var loader = new THREE.GLTFLoader();
-    if (window.MeshoptDecoder && loader.setMeshoptDecoder) {
-      try { loader.setMeshoptDecoder(window.MeshoptDecoder); } catch (e) { }
-    }
+    /* tượng kiếm hiệp — model GLB thật của repo (meshopt), đặt trước đền;
+     * loadGLB tự fallback sang link công khai nếu file chưa có trong repo */
     var pedestal = this.box(3, 1, 3, 0x7a7264, wX(28), 0.5, wZ(10));
-    loader.load('models/kiem-hiep.glb', function (gltf) {
-      var m = gltf.scene;
+    loadGLB('models/kiem-hiep.glb', function (err, res) {
+      if (err || !res) return; /* lỗi thì thôi — vẫn có bệ đá */
+      var m = res.group;
       m.position.set(wX(28), 1, wZ(10));
       m.scale.set(1.4, 1.4, 1.4);
       m.traverse(function (o) { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
       Engine.scene.add(m);
       World.statue = m;
-    }, undefined, function () { /* lỗi thì thôi — vẫn có bệ đá */ });
+    });
   },
   buildSnow: function () {
     var N = 900;
@@ -550,20 +548,34 @@ function buildMonster(o) {
   return { group: g, parts: { armL: armL, armR: armR, legL: legL, legR: legR, head: head }, height: 2 * S };
 }
 
+/* Model thật: thử models/ trong repo trước, lỗi thì tải từ link công khai (CDN),
+ * để game trên GitHub Pages vẫn có nhân vật 3D thật dù file .glb chưa lên repo.
+ * Lỗi cả 2 thì gọi cb(err) để dùng nhân vật procedural. */
+var MODEL_CDN = {
+  'models/RobotExpressive.glb': 'https://raw.githubusercontent.com/mrdoob/three.js/r128/examples/models/gltf/RobotExpressive/RobotExpressive.glb',
+  'models/Fox.glb': 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Fox/glTF-Binary/Fox.glb',
+  'models/CesiumMan.glb': 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/CesiumMan/glTF-Binary/CesiumMan.glb',
+  'models/kiem-hiep.glb': 'https://raw.githubusercontent.com/nguyenvu133/3D-Model/main/kiem%20hiep.glb'
+};
 /* nạp GLB thật — lỗi thì gọi cb(err) để dùng procedural */
 function loadGLB(url, cb) {
   var loader = new THREE.GLTFLoader();
   if (window.MeshoptDecoder && loader.setMeshoptDecoder) {
     try { loader.setMeshoptDecoder(window.MeshoptDecoder); } catch (e) { }
   }
-  loader.load(url, function (gltf) {
+  function done(gltf) {
     var g = gltf.scene;
     g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
     var mixer = new THREE.AnimationMixer(g);
     var clips = {};
     gltf.animations.forEach(function (a) { clips[a.name] = a; });
     cb(null, { group: g, mixer: mixer, clips: clips });
-  }, undefined, function () { cb(new Error('load failed: ' + url)); });
+  }
+  loader.load(url, done, undefined, function () {
+    var cdn = MODEL_CDN[url];
+    if (cdn) loader.load(cdn, done, undefined, function () { cb(new Error('load failed: ' + url)); });
+    else cb(new Error('load failed: ' + url));
+  });
 }
 
 /* ================= GAME STATE ================= */
