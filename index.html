@@ -456,7 +456,7 @@
 <div id="dropdown-root" class="dropdown"></div>
 <div id="modal-root"></div>
 <input type="file" id="hidden-file-input" multiple class="hidden"
-       accept=".glb,.gltf,.obj,.stl,.fbx,.png,.jpg,.jpeg,.webp,.svg,.mp3,.wav,.ogg,.bin,.zip">
+       accept=".glb,.gltf,.obj,.mtl,.stl,.fbx,.png,.jpg,.jpeg,.webp,.svg,.mp3,.wav,.ogg,.bin,.zip">
 
 <!-- ============ LIBRARIES (CDN + fallback) ============ -->
 <!-- Tải offline: đặt file vào js/vendor/ và đổi src. Xem README mục 3. -->
@@ -468,6 +468,8 @@
         onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js\x27\x3E\x3C/script\x3E')"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"
         onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/loaders/OBJLoader.js\x27\x3E\x3C/script\x3E')"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/MTLLoader.js"
+        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/loaders/MTLLoader.js\x27\x3E\x3C/script\x3E')"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"
         onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/loaders/STLLoader.js\x27\x3E\x3C/script\x3E')"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"
@@ -516,6 +518,7 @@
 
 <!-- ============ MODELS & ASSETS ============ -->
 <script src="js/models/sample-model.js"></script>
+<script src="js/models/obj-texture-core.js"></script>
 <script src="js/models/model-manager.js"></script>
 <script src="js/assets/importers.js"></script>
 <script src="js/assets/asset-library.js"></script>

@@ -15,7 +15,7 @@
 
   const TYPE_MAP = {
     'glb': 'model', 'gltf': 'model', 'obj': 'model', 'stl': 'model',
-    'fbx': 'fbx',
+    'fbx': 'fbx', 'mtl': 'mtl',
     'png': 'image', 'jpg': 'image', 'jpeg': 'image', 'webp': 'image', 'svg': 'image', 'gif': 'image',
     'mp3': 'audio', 'wav': 'audio', 'ogg': 'audio',
     'bin': 'bin', 'zip': 'bin'
@@ -49,9 +49,17 @@
     const results = [];
     let chain = Promise.resolve();
 
+    /* Batch context: OBJ tự tra MTL + ảnh đi kèm trong cùng lần import
+       (kéo-thả/chọn nhiều file). Tra cứu không phân biệt hoa/thường. */
+    const batch = { files: files, byName: {}, fileNames: [] };
+    files.forEach(function (f) {
+      batch.byName[(f.name || '').toLowerCase()] = f;
+      batch.fileNames.push(f.name);
+    });
+
     files.forEach(function (file) {
       chain = chain.then(function () {
-        return Importers.importOne(file).then(function (r) {
+        return Importers.importOne(file, batch).then(function (r) {
           results.push(r);
         }).catch(function (err) {
           results.push({ name: file.name, ok: false, error: String(err && err.message || err) });
@@ -63,7 +71,7 @@
     return chain.then(function () { return results; });
   };
 
-  Importers.importOne = function (file) {
+  Importers.importOne = function (file, batch) {
     const ext = Importers.extOf(file.name);
     const type = TYPE_MAP[ext] || 'unknown';
     const name = file.name.replace(/\.[^.]+$/, '');
@@ -73,7 +81,9 @@
         if (ext === 'glb' || ext === 'gltf') {
           return PixiStudio.Models.loadGLBFromBuffer(buf, name, file.size);
         } else if (ext === 'obj') {
-          return PixiStudio.Models.loadOBJFromBuffer(buf, name);
+          /* kèm batch: model-manager tự tra MTL + ảnh đi kèm */
+          return PixiStudio.Models.loadOBJFromBuffer(buf, name, batch
+            ? { filesByName: batch.byName, fileNames: batch.fileNames } : null);
         } else {
           return PixiStudio.Models.loadSTLFromBuffer(buf, name);
         }
@@ -86,6 +96,21 @@
         bus.emit('asset:imported', { name: file.name, type: 'model', size: file.size });
         return { name: file.name, ok: true, type: 'model' };
       });
+    }
+
+    if (type === 'mtl') {
+      /* .mtl đi kèm OBJ: OBJ import đã tự đọc từ batch (không phụ thuộc thứ tự file).
+         MTL lẻ không có OBJ cùng tên thì chỉ nhắc, không lỗi. */
+      const hasObj = batch && batch.files.some(function (f) {
+        return Importers.extOf(f.name) === 'obj' &&
+          f.name.replace(/\.[^.]+$/, '').toLowerCase() === name.toLowerCase();
+      });
+      if (hasObj) return Promise.resolve({ name: file.name, ok: true, type: 'mtl', consumed: true });
+      bus.emit('notify', {
+        type: 'info', title: 'File .mtl',
+        message: file.name + ' cần đi kèm file .obj cùng tên — kéo-thả cả hai file cùng lúc.'
+      });
+      return Promise.resolve({ name: file.name, ok: false, type: 'mtl' });
     }
 
     if (type === 'image') {

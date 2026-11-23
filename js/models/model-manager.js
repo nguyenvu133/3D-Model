@@ -216,17 +216,117 @@
   };
 
   /* OBJ / STL loaders */
-  Manager.loadOBJFromBuffer = function (arrayBuffer, name) {
+  Manager.loadOBJFromBuffer = function (arrayBuffer, name, extras) {
     return new Promise(function (resolve, reject) {
       if (!THREE.OBJLoader) { reject(new Error('OBJLoader chưa load (CDN)')); return; }
+      var obj, text;
       try {
-        const text = new TextDecoder().decode(arrayBuffer);
-        const obj = new THREE.OBJLoader().parse(text);
+        text = new TextDecoder().decode(arrayBuffer);
+        obj = new THREE.OBJLoader().parse(text);
         Manager.normalize(obj);
         obj.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
+      } catch (err) { reject(err); return; }
+      /* AUTO-TEXTURE: MTL kèm theo → ảnh rời theo tên (xem _applyOBJTextures).
+         Lỗi texture không chặn model load. */
+      Manager._applyOBJTextures(obj, text, name, extras).then(function (summary) {
+        /* FIX IAB BLOCK: downscale texture display — như GLB */
+        if (summary && PixiStudio.Textures) PixiStudio.Textures.optimizeDisplay(obj, (PixiStudio.State.settings && PixiStudio.State.settings.displayTextureMax) || 512);
+        var entry = registerModel(obj, { name: name || 'OBJ Model', isGLB: false });
+        if (summary) {
+          entry.textureSummary = summary;
+          bus.emit('notify', { type: 'success', title: 'Đã áp texture cho OBJ', message: summary.message });
+        }
+        /* refresh material panel (texture slots) nếu đang mở + viewport shading */
+        if (summary && PixiStudio.Materials) {
+          var page = document.getElementById('page-material');
+          if (page && !page.classList.contains('hidden')) PixiStudio.Materials.renderPanel();
+        }
+        if (PixiStudio.Viewport && PixiStudio.Viewport.invalidateShading) PixiStudio.Viewport.invalidateShading();
+        resolve(entry);
+      }).catch(function (err) {
+        console.warn('[ModelManager] OBJ texture lỗi (model vẫn load):', err);
         resolve(registerModel(obj, { name: name || 'OBJ Model', isGLB: false }));
-      } catch (err) { reject(err); }
+      });
     });
+  };
+
+  /* Áp texture tự động cho OBJ đã parse.
+     extras = { filesByName: { lowercaseName: File }, fileNames: [originalName] }
+     Trả Promise<summary|null>. summary = { source, mtl, materials, textures, missing, message } */
+  Manager._applyOBJTextures = function (obj, text, name, extras) {
+    var OBJTexture = PixiStudio.OBJTexture;
+    if (!OBJTexture) return Promise.resolve(null);
+    var filesByName = (extras && extras.filesByName) || null;
+    if (!filesByName) return Promise.resolve(null);
+    var available = (extras && extras.fileNames) || Object.keys(filesByName);
+    var plan = OBJTexture.resolveCompanions({ objText: text, objName: name, availableNames: available });
+    var imageFiles = available.filter(function (n) { return OBJTexture.isImageName(n); });
+    if (!plan.mtl && imageFiles.length === 0) return Promise.resolve(null);
+
+    /* texture theo basename (lower) — tạo 1 lần, dùng chung cho MTL + ảnh rời */
+    var texByName = {};
+    imageFiles.forEach(function (fname) {
+      var file = filesByName[fname.toLowerCase()];
+      if (!file) return;
+      try {
+        var url = URL.createObjectURL(file);
+        var tex = new THREE.TextureLoader().load(url,
+          function () { URL.revokeObjectURL(url); },
+          undefined,
+          function () { URL.revokeObjectURL(url); });
+        texByName[OBJTexture.basename(fname).toLowerCase()] = tex;
+      } catch (e) { /* bỏ qua ảnh lỗi */ }
+    });
+    function resolveTexture(ref) {
+      if (!ref) return null;
+      return texByName[OBJTexture.basename(ref).toLowerCase()] || null;
+    }
+
+    function applyImagesFallback() {
+      /* (2) không MTL: gán ảnh theo tên material / tên file / 1 ảnh duy nhất */
+      var mats = OBJTexture.collectMaterialNames(obj);
+      if (!mats.length) mats = OBJTexture.parseMaterialNames(text);
+      var assignments = {}, details = [];
+      mats.forEach(function (matName) {
+        var slots = plan.byMaterial[matName];
+        if (!slots) return;
+        var texSlots = {};
+        Object.keys(slots).forEach(function (slot) {
+          var tex = resolveTexture(slots[slot]);
+          if (tex) texSlots[slot] = tex;
+        });
+        if (Object.keys(texSlots).length) {
+          assignments[matName] = texSlots;
+          details.push(matName + ' ← ' + Object.keys(texSlots).map(function (s) { return slots[s]; }).join(', '));
+        }
+      });
+      if (!Object.keys(assignments).length) return null;
+      var res = OBJTexture.applyTextures(obj, assignments);
+      return {
+        source: 'images', mtl: null,
+        materials: res.materials, textures: res.textures, missing: [],
+        message: 'Ảnh đi kèm: ' + res.materials.length + ' material, ' + res.textures + ' texture — ' + details.join('; ')
+      };
+    }
+
+    /* (1) MTL kèm theo (mtllib trong OBJ hoặc cùng tên file) */
+    if (plan.mtl) {
+      var mtlFile = filesByName[plan.mtl.toLowerCase()];
+      if (mtlFile) {
+        return U.readFileAsText(mtlFile).then(function (mtlText) {
+          try {
+            var res = OBJTexture.applyMtl(obj, mtlText, resolveTexture);
+            var msg = 'MTL ' + plan.mtl + ': ' + res.materials.length + ' material, ' + res.textures + ' texture' +
+              (res.missing.length ? ' — thiếu file: ' + res.missing.slice(0, 3).join(', ') : '');
+            return { source: 'mtl', mtl: plan.mtl, materials: res.materials, textures: res.textures, missing: res.missing, message: msg };
+          } catch (e) {
+            console.warn('[ModelManager] parse MTL lỗi, fallback ảnh rời:', e);
+            return applyImagesFallback();
+          }
+        }).catch(function () { return applyImagesFallback(); });
+      }
+    }
+    return Promise.resolve(applyImagesFallback());
   };
 
   Manager.loadSTLFromBuffer = function (arrayBuffer, name) {

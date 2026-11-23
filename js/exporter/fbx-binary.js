@@ -1,8 +1,7 @@
 /* exporter/fbx-binary.js — FBX Binary 7.4 writer có SKELETON + SKIN + BIND POSE
  *
  * Vì sao cần: bộ xuất FBX cũ trong save-manager chỉ ghi ASCII, chỉ có geometry —
- * không có bone, không có skin weight. Mixamo (và cả Blender) từ chối file đó:
- * Mixamo chỉ nhận FBX BINARY 7.4 có mesh đã skin vào skeleton.
+ * không có bone, không có skin weight. Mixamo (và cả Blender) từ chối file đó.
  *
  * File này ghi đúng định dạng:
  *   header "Kaydara FBX Binary  \0\x1a\0" + u32 7400
@@ -12,7 +11,14 @@
  *            SubDeformer::Cluster (Indexes/Weights/Transform/TransformLink),
  *            Pose (BindPose), Material
  *   Connections, Takes
- *   footer 16-byte magic
+ *   footer chuẩn FBX SDK / Blender (xem buildFooter): foot-id
+ *   FA BC AB 09... + 4B 0 + padding 1..16B để version u32 nằm ở offset
+ *   chia hết cho 16 + 120B 0 + magic 16B. Footer sai là nguyên nhân
+ *   chính khiến Mixamo từ chối file trước đây (xem docs/MIXAMO_EXPORT_FIX.md).
+ *
+ * Mixamo chỉ nhận FBX 2013 trở xuống (version 7300) — các nút Mixamo
+ * phải truyền opts.version = 7300. Bản rig (có skeleton + skin) và bản
+ * mesh-only (prepareMixamo, để Mixamo tự auto-rig) đều được Mixamo nhận.
  *
  * Quy ước toạ độ: hình học được BAKE ra world tại bind pose, mọi Model geometry
  * đặt identity, TransformLink = xform * bone.matrixWorld tại bind → công thức skinning
@@ -33,25 +39,39 @@
    * Mixamo upload từ chối file > 2013 ("Please use FBX files 2013 or earlier"),
    * nên các nút cho Mixamo phải truyền opts.version = 7300. */
   const VERSION_MIXAMO = 7300;
-  /* "đuôi" file FBX SDK cho bản BINARY: [magic 16][0][u32 version][u32 0 * 30][magic 16]
-   * = 160B, đặt ngay sau null record cuối cùng. */
-  const TRAILER_BIN = (function () {
-    const b = new Uint8Array(21 + 4 + 120 + 16);
-    for (let i = 0; i < 16; i++) b[i] = FOOTER_MAGIC[i];
-    b[16] = 0;
-    new DataView(b.buffer).setUint32(21, VERSION, true);
-    for (let i = 0; i < 16; i++) b[b.length - 16 + i] = FOOTER_MAGIC[i];
-    return b;
-  })();
-  /* "đuôi" cho bản ASCII (không có phần nhị phân): vẫn dùng đúng footId
-   * để parser/3ds Max/FBX SDK nhận ra cuối file hợp lệ. */
-  const TRAILER_ASCII = (function () {
-    const b = new Uint8Array(16 + 1 + 16);
-    for (let i = 0; i < 16; i++) b[i] = FOOTER_MAGIC[i];
-    b[16] = 0;
-    for (let i = 0; i < 16; i++) b[17 + i] = FOOTER_MAGIC[i];
-    return b;
-  })();
+  /* Phần đuôi file chuẩn FBX SDK / Blender — ĐÃ KIỂM CHỨNG trên file
+   * Meshy thật (Meshy_AI_tripo_convert_monter1_20261122_texture.fbx,
+   * upload Mixamo OK, footer ở offset len-164):
+   *   [foot-id 16B: FA BC AB 09 D0 C8 D4 66 B1 76 FB 83 1C F7 26 7E]
+   *   [4B số 0]
+   *   [1..16B padding 0 — sao cho version u32 nằm ở offset chia hết
+   *    cho 16 tính từ đầu file (file Meshy: version ở footId+24,
+   *    offset len-140, chia hết cho 16)]
+   *   [u32 version] [120B số 0] [magic 16B]
+   * LỖI CŨ (nguyên nhân chính khiến Mixamo từ chối): writer ghi
+   * FOOTER_MAGIC thay cho foot-id, version ở offset cố định footer+21
+   * (không căn 16), và thêm 20B pre-footer chứa footerLength không
+   * khớp thực tế (footer 165B). FBX SDK đọc version từ đúng vị trí
+   * 16-aligned → nhận giá trị rác/0 → "Unsupported FBX type".
+   * three.js FBXLoader vẫn đọc được vì nó bỏ qua footer (dùng
+   * heuristic 160+16), nên file mở được trong three.js/Blender
+   * nhưng bị Mixamo (dùng FBX SDK) từ chối. */
+  const FOOT_ID = [0xfa, 0xbc, 0xab, 0x09, 0xd0, 0xc8, 0xd4, 0x66, 0xb1, 0x76, 0xfb, 0x83, 0x1c, 0xf7, 0x26, 0x7e];
+  function buildFooter(ver, footStart) {
+    /* footStart: offset tuyệt đối của foot-id trong file cuối. */
+    let pad = (16 - ((footStart + 20) % 16)) % 16;
+    if (pad === 0) pad = 16;
+    const foo = new Uint8Array(16 + 4 + pad + 4 + 120 + 16);
+    for (let i = 0; i < 16; i++) foo[i] = FOOT_ID[i];
+    new DataView(foo.buffer).setUint32(16 + 4 + pad, ver, true);
+    for (let i = 0; i < 16; i++) foo[foo.length - 16 + i] = FOOTER_MAGIC[i];
+    return foo;
+  }
+  /* CreationTimeStamp cố định theo Blender (1970-01-01 10:00:00.000):
+   * FBX SDK kiểm tra bộ ba CreationTime + FileId + foot-id có khớp
+   * nhau không; ghi thời gian hiện tại với FileId/foot-id cố định
+   * sẽ làm tổ hợp này lệch → SDK từ chối. */
+  const FIXED_TS = { year: 1970, month: 1, day: 1, hour: 10, minute: 0, second: 0, millisecond: 0 };
   /* Bản Binary mặc định 7400 (khớp file Meshy/Tripo đã có).
    * Bản ASCII ghi "FBX 7.3.0" (7300) = FBX 2013. */
   const VERSION_ASCII = 7300;
@@ -728,20 +748,23 @@
     }
 
     /* ---------------- header sections ---------------- */
-    const now = new Date();
+    /* CreationTimeStamp cố định 1970-01-01 10:00:00.000 như Blender
+     * (xem FIXED_TS phía trên): FBX SDK kiểm tra bộ ba CreationTime +
+     * FileId + foot-id, ghi thời gian hiện tại sẽ làm tổ hợp lệch. */
+    const now = FIXED_TS;
     const header = node('FBXHeaderExtension', [], [
       node('FBXHeaderVersion', [pI(1003)]),
       node('FBXVersion', [pI(ver)]),
       node('EncryptionType', [pI(0)]),
       node('CreationTimeStamp', [], [
         node('Version', [pI(1000)]),
-        node('Year', [pI(now.getFullYear())]),
-        node('Month', [pI(now.getMonth() + 1)]),
-        node('Day', [pI(now.getDate())]),
-        node('Hour', [pI(now.getHours())]),
-        node('Minute', [pI(now.getMinutes())]),
-        node('Second', [pI(now.getSeconds())]),
-        node('Millisecond', [pI(now.getMilliseconds())])
+        node('Year', [pI(now.year)]),
+        node('Month', [pI(now.month)]),
+        node('Day', [pI(now.day)]),
+        node('Hour', [pI(now.hour)]),
+        node('Minute', [pI(now.minute)]),
+        node('Second', [pI(now.second)]),
+        node('Millisecond', [pI(now.millisecond)])
       ]),
       node('Creator', [pS('PixiJS Studio x Tripo3D AI Studio v' + (window.PixiStudio && PixiStudio.VERSION || '20.0') + ' — FBX Binary Writer')]),
       node('SceneInfo', [pS('GlobalInfo\u0000\u0001SceneInfo'), pS('UserData')], [
@@ -794,20 +817,28 @@
       ])
     ]);
 
+    /* Definitions/Count = số object trong Objects + 1 (node gốc id 0,
+     * không nằm trong Objects) — khớp file Meshy thật (Count 12 =
+     * 11 Objects + 1). Giá trị cũ 7 + objects.length sai.
+     * Các ObjectType có count = 0 bị loại: file thật (Meshy, Blender)
+     * chỉ liệt kê type đang dùng. */
+    const defTypes = [
+      ['GlobalSettings', 1],
+      ['Model', (noSkeleton ? 0 : sc.bones.length) + models.length + (noSkeleton ? 0 : 1)],
+      ['NodeAttribute', noSkeleton ? 0 : sc.bones.length],
+      ['Geometry', geoms.length],
+      ['Material', mats.length],
+      ['Texture', texRecords.length],
+      ['Video', texRecords.length],
+      ['Deformer', noSkeleton ? 0 : clusters.length + (clusters.length ? 1 : 0)],
+      ['Pose', noSkeleton ? 0 : (sc.bones.length ? 1 : 0)]
+    ].filter(function (t) { return t[1] > 0; });
     const defs = node('Definitions', [], [
       node('Version', [pI(100)]),
-      node('Count', [pI(7 + objects.length)])
-    ].concat([
-      node('ObjectType', [pS('GlobalSettings')], [node('Count', [pI(1)])]),
-      node('ObjectType', [pS('Model')], [node('Count', [pI((noSkeleton ? 0 : sc.bones.length) + models.length + (noSkeleton ? 0 : 1))])]),
-      node('ObjectType', [pS('NodeAttribute')], [node('Count', [pI(noSkeleton ? 0 : sc.bones.length)])]),
-      node('ObjectType', [pS('Geometry')], [node('Count', [pI(geoms.length)])]),
-      node('ObjectType', [pS('Material')], [node('Count', [pI(mats.length)])]),
-      node('ObjectType', [pS('Texture')], [node('Count', [pI(texRecords.length)])]),
-      node('ObjectType', [pS('Video')], [node('Count', [pI(texRecords.length)])]),
-      node('ObjectType', [pS('Deformer')], [node('Count', [pI(noSkeleton ? 0 : clusters.length + (clusters.length ? 1 : 0))])]),
-      node('ObjectType', [pS('Pose')], [node('Count', [pI(noSkeleton ? 0 : (sc.bones.length ? 1 : 0))])])
-    ]));
+      node('Count', [pI(objects.length + 1)])
+    ].concat(defTypes.map(function (t) {
+      return node('ObjectType', [pS(t[0])], [node('Count', [pI(t[1])])]);
+    })));
 
     const connNode = node('Connections', [], connections.map(function (c) {
       const props = [pS(c.type), pL(c.child), pL(c.parent)];
@@ -822,8 +853,8 @@
     /* ---------------- assemble ---------------- */
     const roots = [header,
       node('FileId', [pR(new Uint8Array([0x28, 0xb3, 0x2a, 0xeb, 0xb6, 0x24, 0xcc, 0xc2, 0xbf, 0x52, 0xbe, 0x8b, 0x6f, 0xa0, 0xb5, 0x2d]))]),
-      node('CreationTime', [pS(now.toISOString())]),
-      node('Creator', [pS('Blender (FBX Binary 7.4.0)')]),
+      node('CreationTime', [pS('1970-01-01 10:00:00:000')]),
+      node('Creator', [pS('Blender (FBX Binary ' + (ver === 7300 ? '7.3.0' : '7.4.0') + ')')]),
       globalSettings, documents,
       node('References', [], []),
       defs, node('Objects', [], objects), connNode, takes];
@@ -845,23 +876,20 @@
       lines.push('\tEncryptionType: 0');
       lines.push('\tCreationTimeStamp:  {');
       lines.push('\t\tVersion: 1000');
-      lines.push('\t\tYear: ' + now.getFullYear() + '\n\t\tMonth: ' + (now.getMonth() + 1) + '\n\t\tDay: ' + now.getDate());
-      lines.push('\t\tHour: ' + now.getHours() + '\n\t\tMinute: ' + now.getMinutes() + '\n\t\tSecond: ' + now.getSeconds() + '\n\t\tMillisecond: ' + now.getMilliseconds());
+      lines.push('\t\tYear: ' + now.year + '\n\t\tMonth: ' + now.month + '\n\t\tDay: ' + now.day);
+      lines.push('\t\tHour: ' + now.hour + '\n\t\tMinute: ' + now.minute + '\n\t\tSecond: ' + now.second + '\n\t\tMillisecond: ' + now.millisecond);
       lines.push('\t}');
       lines.push('\tCreator: "PixiJS Studio x Tripo3D AI Studio v' + (window.PixiStudio && PixiStudio.VERSION || '20.0') + ' (Mixamo-ready)"');
       lines.push('}');
       /* toàn bộ cây còn lại trừ FBXHeaderExtension/Creator (đã viết tay phía trên) */
       roots.filter(function (n) { return n.name !== 'FBXHeaderExtension'; })
         .forEach(function (n) { asciiNode(n, 0, lines); });
-      /* đuôi file: null + magic + foo (FBX SDK cũng đọc đuôi ở bản ASCII) */
+      /* đuôi file: null record + footer chuẩn SDK (buildFooter: foot-id
+       * + version ở offset chia hết cho 16 + magic) */
       const enc = new TextEncoder();
       const head = enc.encode(lines.join('\n') + '\n');
       const tailNull = new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-      const tailFoo = new Uint8Array(16 + 1 + 4 + 120 + 16);
-      for (let i = 0; i < 16; i++) tailFoo[i] = FOOTER_MAGIC[i];
-      tailFoo[16] = 0;
-      new DataView(tailFoo.buffer).setUint32(17, vi, true);
-      for (let i = 0; i < 16; i++) tailFoo[tailFoo.length - 16 + i] = FOOTER_MAGIC[i];
+      const tailFoo = buildFooter(vi, head.length + tailNull.length);
       const asc = new Uint8Array(head.length + tailNull.length + tailFoo.length);
       asc.set(head, 0); asc.set(tailNull, head.length); asc.set(tailFoo, head.length + tailNull.length);
       return {
@@ -895,22 +923,14 @@
     });
     pos += 13;   /* null record */
     /* --- phần đuôi file (FBX SDK trailer) ---
-     * Ngay sau null record: u32 0, 0, refId, encrypted0, footerLen(160) rồi foo:
-     *   [magic 16] [\0 + pad] [u32 VERSION] [era 0*120] [magic 16]
-     * Một số công cụ dùng FBX SDK (3ds Max, Mixamo pipeline) dựa vào phần này để xác
-     * nhận file không cụt — thiếu thì báo "Unsupported FBX type" dù cây node hợp lệ.
-     * -------------------------------------------------------------------------- */
-    const foo = new Uint8Array(25 + 4 + 120 + 16);
-    for (let i = 0; i < 16; i++) foo[i] = FOOTER_MAGIC[i];
-    foo[16] = 0;
-    new DataView(foo.buffer).setUint32(21, ver, true);
-    for (let i = 0; i < 16; i++) foo[foo.length - 16 + i] = FOOTER_MAGIC[i];
-    const trailer = new Uint8Array(20 + foo.length);
-    new DataView(trailer.buffer).setUint32(16, foo.length, true);
-    trailer.set(foo, 20);
-    const bytes = new Uint8Array(out.length + trailer.length);
+     * buildFooter: [foot-id FA BC AB 09... 16B] [0×4] [padding 1..16B
+     * để version u32 nằm ở offset chia hết cho 16 tính từ đầu file]
+     * [u32 VERSION] [0×120B] [magic 16B]. Đặt ngay sau null record,
+     * KHÔNG có pre-footer 20B — xem giải thích chi tiết ở buildFooter. */
+    const foo = buildFooter(ver, out.length);
+    const bytes = new Uint8Array(out.length + foo.length);
     bytes.set(out, 0);
-    bytes.set(trailer, out.length);
+    bytes.set(foo, out.length);
 
     return {
       bytes: bytes,
