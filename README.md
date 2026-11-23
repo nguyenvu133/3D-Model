@@ -1,10 +1,10 @@
-# PixiJS Studio × Tripo3D AI Studio — v20.1 “Meshy Animate”
+# PixiJS Studio × Tripo3D AI Studio — v21.0 “Smart Studio”
 
 > **All-in-One 3D Game Creation Environment** — Môi trường phát triển game 2D/3D Hybrid chạy hoàn toàn trên trình duyệt, không cần build tool, không cần TypeScript, 100% JavaScript thuần (Vanilla JS).
 
 | | |
 |---|---|
-| **Phiên bản** | v20.1.0 (“Meshy Animate”, 2026-11-22 — nâng cấp từ v20.0.0) |
+| **Phiên bản** | v21.0.0 (“Smart Studio”, 2026-11-23 — nâng cấp từ v20.1.0) |
 | **Engine** | PixiJS v7 (2D Overlay / Game Layer) + Three.js r128 (3D Viewport) |
 | **Render** | WebGL 2.0 / WebGL 1.0 (WebGPU auto-detect — sẵn sàng khi trình duyệt hỗ trợ) |
 | **Model mẫu chuẩn** | `assets/models/kiemhiep.glb` — 10.94 MB, 1 nhân vật võ hiệp chibi (đã xoá 3 bản sao, −38.8%) |
@@ -24,6 +24,20 @@
 - **PixiJS engine v20.0:** studio dùng PixiJS **7.4.3** (bản vá mới nhất dòng v7, từ 7.3.2); game `WUXIAMMORPG.html` dùng PixiJS **8.23.0**. Mới thêm **PixiJS Effects Engine** (`js/renderer/pixi-effects.js`): particle emitter (burst/lửa/phép/khói, chung 1 texture nên ít draw call), vòng xung kích, chữ nổi 2D, flash màn hình — click chọn model giờ hiện tên nổi 2D tại vị trí click. Studio vẫn ở dòng v7 vì v8 đổi API khởi tạo bất đồng bộ và Graphics (v8 chỉ dùng cho trang game riêng đã viết theo v8).
 - **Tripo API v3 (studio.tripo3d.ai):** adapter đã chuyển từ API v2 (Tripo tắt v2 ngày 2026-10-31) sang **OpenAPI v3** (`openapi.tripo3d.ai/v3`): Text/Image/Multi-view-to-3D với model H3.1 (chi tiết) / P2 (game-ready, quad), Texturing, Convert FBX/USDZ/OBJ, Decimate, Smart UV, Segment, Mesh Repair, Auto Rig đúng chuẩn docs (rig-check → rig, spec `mixamo`) và Auto Animate bằng preset retarget. Link model hết hạn sau 5 phút nên studio tải ngay khi task xong. Cần API key Tripo (300 credit thử, sau đó $0.01/credit); xem `docs/TRIPO_V20.md`.
 - **Kiểm thử:** `npm run qa:mixamo` (validator FBX), `npm run check` (verify cuối), `npm run verify:anim`. Xem chi tiết trong `docs/V20_UPGRADE_REPORT.md`.
+
+## ✨ Có gì mới trong v21.0 “Smart Studio” (2026-11-23)
+
+- **IK Solver hai xương** (`js/animation/ik-solver.js`): tay/chân chạm đúng điểm target (luật cosin), pole vector điều hướng khuỷu/gối, **Foot Planting** giữ bàn chân chạm đất, giữ target mỗi frame khi animation chạy.
+- **Animation Blender** (`js/animation/anim-blender.js`): crossfade mượt A→B trong N giây, **mask blend** (clip thân trên + clip thân dưới chạy cùng lúc), **additive** (vung tay trong lúc chạy) — trừ pose gốc rồi phát Additive.
+- **Pose Library** (`js/animation/pose-library.js`): lưu/khôi phục/nội suy tư thế xương (localStorage), pose mẫu T-Pose / A-Pose / Crouch.
+- **Export Presets** (`js/exporter/export-presets.js`): 1 click xuất đúng chuẩn Mixamo (FBX 2013) / Unity (FBX 2014+, Y-up) / Unreal (FBX 2014+, Z-up) / Godot (GLB) / Roblox (FBX 2013) — áp vào lần xuất FBX generic.
+- **Auto-LOD local** (`js/mesh/lod-generator.js`): giảm đa giác bằng vertex clustering, sinh LOD0/1/2 ngay trong trình duyệt, không cần cloud.
+- **Turntable** (`js/renderer/turntable.js`): xoay model 360° chụp từng khung hình làm thumbnail/preview.
+- **Character Controller** (`js/rigging/character-controller.js`): điều khiển nhân vật đã rig đi thử bằng WASD (Shift chạy, Space nhảy), tự đổi clip Idle/Walk/Run.
+- **Scene Director** (`js/scene/scene-director.js`): 1 click dựng sân khấu — snap mặt đất + xếp hàng/vòng tròn/lưới + frame camera (OrbitCam) vừa khung.
+- **Undo/Redo khôi phục cả pose** (`js/core/history.js`): snapshot giờ kèm quaternion xương; **Perf monitor** (`js/performance/monitor.js`) thêm ngân sách tris/draw call/FPS và cảnh báo.
+- **Smart Studio Panel** (`js/ui/smart-panel.js`): gom cả 8 tính năng vào tab Animation. Xem chi tiết + giới hạn trong `docs/V21_SMART_REPORT.md`.
+- **Phiên bản thống nhất 21.0.0:** `js/core/version.js` là nguồn duy nhất; index.html, mesh2motion.html, server banner, package.json, GLB/FBX generator strings đều theo v21.0.
 
 ## ✨ Có gì mới trong v20.1 “Meshy Animate” (2026-11-22)
 

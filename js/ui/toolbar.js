@@ -123,6 +123,7 @@
         if (PixiStudio.AnimLibrary) PixiStudio.AnimLibrary.renderPanel();
         if (PixiStudio.AnimateStudio) PixiStudio.AnimateStudio.renderPanel();
         if (PixiStudio.MotionLibrary) PixiStudio.MotionLibrary.renderPanel();
+        if (PixiStudio.SmartPanel) PixiStudio.SmartPanel.render();
         if (PixiStudio.Mesh2Motion) PixiStudio.Mesh2Motion.renderPanel();
         break;
       case 'material':

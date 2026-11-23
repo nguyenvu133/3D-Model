@@ -286,3 +286,31 @@ chắc chắn). Báo cáo đầy đủ: `/tmp/meshy-research.md`, tóm tắt + h
 - Marker chưa kéo trực tiếp trên viewport 3D (nhập số %); chưa có template
   Maya HumanIK / Blender Rigify / CC5 / DAZ; Text to Motion local chỉ ghép clip
   thật có sẵn, không sinh motion mới.
+
+## 11. Bổ sung v21.0 “Smart Studio” (2026-11-23): 10 tính năng thông minh local
+
+Chi tiết: `docs/V21_SMART_REPORT.md`. Panel gom chung: tab Animation →
+🧠 Smart Studio (`js/ui/smart-panel.js`).
+
+- **IK Solver** (`js/animation/ik-solver.js`, mới) — hai xương luật cosin +
+  pole + Foot Planting + giữ target mỗi frame (App tick).
+- **Animation Blender** (`js/animation/anim-blender.js`, mới) — crossfade
+  ramp weight, mask blend (trên/dưới thân), additive (trừ pose gốc).
+- **Pose Library** (`js/animation/pose-library.js`, mới) — lưu/khôi phục/
+  nội suy pose, localStorage, mẫu T/A/Crouch.
+- **Export Presets** (`js/exporter/export-presets.js`, mới) — Mixamo /
+  Unity / Unreal (Z-up) / Godot (GLB) / Roblox; `SaveManager.setExportPreset`
+  áp vào xuất FBX generic (mặc định null = hành vi cũ; nút Mixamo giữ 7300/Y).
+- **Auto-LOD** (`js/mesh/lod-generator.js`, mới) — vertex clustering,
+  LOD0/1/2, apply/restore.
+- **Turntable** (`js/renderer/turntable.js`, mới) — xoay 360° chụp từng khung.
+- **Character Controller** (`js/rigging/character-controller.js`, mới) —
+  WASD/Shift/Space, tự đổi clip Idle/Walk/Run.
+- **Scene Director** (`js/scene/scene-director.js`, mới) — snap đất,
+  layout hàng/vòng/lưới, frame OrbitCam + camera thường.
+- **Mở rộng:** `history.js` snapshot kèm pose xương; `monitor.js` ngân
+  sách tris/calls/fps + cảnh báo.
+- **Nối:** `app.js` tick (IK/Blender/Controller), `toolbar.js` (SmartPanel),
+  `index.html` 8 script tag mới, version 21.0.0.
+- **Test:** `test-smart-v21.js` (mới) + regression test-meshy 73/73 +
+  test-rig-anim 80/80 + server smoke.

@@ -31,7 +31,19 @@
         };
       }
     }
-    return { label: label || 'change', time: Date.now(), entries: entries };
+    /* v21.0 — kèm pose xương của rig hiện tại (nếu có) để Undo/Redo
+       khôi phục cả tư thế, không chỉ transform của object. */
+    let pose = null;
+    const RAG = PixiStudio.RigAutoGen;
+    if (RAG && RAG.current && RAG.current.bones) {
+      pose = { bones: {}, root: null };
+      for (const name in RAG.current.bones) {
+        const b = RAG.current.bones[name];
+        if (b && b.quaternion) pose.bones[name] = [b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w];
+      }
+      if (RAG.current.rootBone) pose.root = [RAG.current.rootBone.position.x, RAG.current.rootBone.position.y, RAG.current.rootBone.position.z];
+    }
+    return { label: label || 'change', time: Date.now(), entries: entries, pose: pose };
   }
 
   History.push = function (label, customSnapshot) {
@@ -59,9 +71,28 @@
       o.visible = e.v;
       o.name = e.name || o.name;
     }
+    /* v21.0 — khôi phục pose xương kèm theo snapshot (nếu có). */
+    if (snap.pose && snap.pose.bones) {
+      const RAG = PixiStudio.RigAutoGen;
+      if (RAG && RAG.current && RAG.current.bones) {
+        for (const name in snap.pose.bones) {
+          const b = RAG.current.bones[name] || RAG.current.bones['mixamorig:' + name];
+          if (!b) continue;
+          const q = snap.pose.bones[name];
+          b.quaternion.set(q[0], q[1], q[2], q[3]);
+        }
+        if (snap.pose.root && RAG.current.rootBone) RAG.current.rootBone.position.set(snap.pose.root[0], snap.pose.root[1], snap.pose.root[2]);
+        if (RAG.current.target) RAG.current.target.updateMatrixWorld(true);
+      }
+    }
     bus.emit('transform:changed', { source: 'history' });
     bus.emit('history:applied', { label: snap.label });
   }
+
+  /* v21.0 — tiện ích: push snapshot đặt tên rõ là pose. */
+  History.pushPose = function (label) {
+    return History.push(label || 'pose');
+  };
 
   History.undo = function () {
     if (!History._undo.length) return false;

@@ -11,14 +11,14 @@
   'use strict';
 
   window.PixiStudio = window.PixiStudio || {};
-  window.PixiStudio.VERSION = '20.1.0';
-  window.PixiStudio.VERSION_NAME = '20.1';
+  window.PixiStudio.VERSION = '21.0.0';
+  window.PixiStudio.VERSION_NAME = '21.0';
   window.PixiStudio.RELEASE = {
-    version: '20.1.0',
-    name: '20.1',
-    codename: 'Meshy Animate',
-    date: '2026-11-22',
-    previous: '20.0.0'
+    version: '21.0.0',
+    name: '21.0',
+    codename: 'Smart Studio',
+    date: '2026-11-23',
+    previous: '20.1.0'
   };
   /* Có gì mới v20.0 — hiển thị 1 lần sau khi nâng cấp (xem App.boot). */
   window.PixiStudio.CHANGELOG_V20 = [
@@ -40,6 +40,15 @@
     'v20.1: 4 clip AutoGen mới — Wave (vẫy tay), Punch (jab-cross), Kick, Bow (cúi chào); AutoGen giờ 10 clips.',
     'v20.1: Meshy API adapter — Rigging (5cr), Animations 1–10 preset (3cr/action), Text to Motion Prime 10cr / Swift 3cr, Library 631 preset, Balance; clip FBX cloud retarget thẳng lên rig.',
     'v20.1: Smart Rig — tự nhận diện humanoid/4 chân, Align (Rotate/Offset/Height mét), marker khớp cằm/vai/khuỷu/cổ tay/háng/gối/mắt cá, Symmetry, Re-rig, Rig QA báo cáo số.',
-    'v20.1: Rig AutoGen thêm preset UE5 Mannequin (pelvis/spine_01…) + tùy chọn Fingers (+20 bone); skeleton.js thêm UE5 Mannequin và Unity Humanoid.'
+    'v20.1: Rig AutoGen thêm preset UE5 Mannequin (pelvis/spine_01…) + tùy chọn Fingers (+20 bone); skeleton.js thêm UE5 Mannequin và Unity Humanoid.',
+    'v21.0 — Smart Studio: IK Solver hai xương (tay/chân chạm đúng điểm, pole điều hướng khuỷu/gối) + Foot Planting giữ bàn chân chạm đất.',
+    'v21.0: Animation Blender — crossfade mượt A→B, mask blend (clip trên thân + clip dưới thân chạy cùng lúc), additive (vung tay trong lúc chạy).',
+    'v21.0: Pose Library — lưu/khôi phục/nội suy tư thế xương (localStorage), pose mẫu T-Pose / A-Pose / Crouch.',
+    'v21.0: Export Presets — 1 click xuất đúng chuẩn Mixamo / Unity / Unreal (Z-up) / Godot (GLB) / Roblox.',
+    'v21.0: Auto-LOD local — giảm đa giác bằng vertex clustering, sinh LOD0/1/2 ngay trong trình duyệt, không cần cloud.',
+    'v21.0: Turntable — xoay model 360° chụp từng khung hình làm thumbnail/preview.',
+    'v21.0: Character Controller — điều khiển nhân vật đã rig đi thử bằng WASD (Shift chạy, Space nhảy), tự đổi clip Idle/Walk/Run.',
+    'v21.0: Scene Director — 1 click dựng sân khấu: snap mặt đất + xếp hàng/vòng/lưới + frame camera vừa khung.',
+    'v21.0: Undo/Redo giờ khôi phục cả tư thế xương (pose snapshot); Perf monitor thêm ngân sách tris/draw call/FPS và cảnh báo.'
   ];
 })();

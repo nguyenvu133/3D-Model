@@ -19,7 +19,36 @@
     dangerFps: 15,
     renderTimeMs: 0,
     loadingTimeMs: 0,
-    startedAt: 0
+    startedAt: 0,
+    /* v21.0 — ngân sách hiệu năng (tris / draw calls / fps). */
+    budgets: { tris: 50000, calls: 150, fps: 30 },
+    _lastBudgetKey: '',
+    _lastBudgetNotify: 0
+  };
+
+  /* v21.0 — kiểm tra ngân sách, trả danh sách cảnh báo (hàm thuần). */
+  Monitor.checkBudgets = function (fps, calls, tris) {
+    const w = [];
+    const b = Monitor.budgets;
+    if (typeof tris === 'number' && tris > b.tris) w.push('Tam giác ' + tris.toLocaleString('vi-VN') + ' vượt ngân sách ' + b.tris.toLocaleString('vi-VN') + ' — cân nhắc Auto-LOD hoặc Decimate.');
+    if (typeof calls === 'number' && calls > b.calls) w.push('Draw call ' + calls + ' vượt ngân sách ' + b.calls + ' — gộp mesh / tắt object thừa.');
+    if (typeof fps === 'number' && fps > 0 && fps < b.fps) w.push('FPS ' + fps + ' dưới ngân sách ' + b.fps + ' — giảm quality PixiJS / LOD.');
+    return w;
+  };
+  /* v21.0 — gọi từ tick: emit + notify khi cảnh báo đổi (chống spam). */
+  Monitor.checkBudgetsLive = function (fps, calls, tris) {
+    const w = Monitor.checkBudgets(fps, calls, tris);
+    const key = w.join('|');
+    if (key !== Monitor._lastBudgetKey) {
+      Monitor._lastBudgetKey = key;
+      bus.emit('perf:budget', { ok: !w.length, warnings: w });
+      const now = Date.now();
+      if (w.length && now - Monitor._lastBudgetNotify > 8000) {
+        Monitor._lastBudgetNotify = now;
+        bus.emit('notify', { type: 'warning', title: 'Ngân sách hiệu năng', message: w.join(' ') });
+      }
+    }
+    return w;
   };
 
   Monitor.start = function () {
@@ -53,6 +82,7 @@
       }
 
       bus.emit('perf:sample', { fps: Monitor.fps, calls: info.calls, tris: info.triangles });
+      Monitor.checkBudgetsLive(Monitor.fps, info.calls, info.triangles);
     }
   };
 
