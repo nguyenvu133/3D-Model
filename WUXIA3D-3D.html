@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>WUXIA 3D — Quan Ải Long Ngâm | three.js (Nhân vật 3D thật)</title>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/libs/meshopt_decoder.js"></script>
+<link rel="stylesheet" href="WUXIA3D.css">
+</head>
+<body>
+<div id="stage"></div>
+<div id="dmgLayer"></div>
+
+<!-- Top bar -->
+<div class="hud" id="topbar">
+  <div class="panel" id="playerCard">
+    <div id="lvlBadge">1</div>
+    <div class="barWrap">
+      <div id="playerName">Lâm Phong · Kiếm Khách</div>
+      <div class="bar"><div id="hpFill"></div></div>
+      <div class="barLabel"><span>HP <span id="hpText">100/100</span></span><span>MP <span id="mpText">100/100</span></span></div>
+      <div class="bar"><div id="mpFill"></div></div>
+      <div class="bar" id="xpBar"><div id="xpFill"></div></div>
+    </div>
+  </div>
+  <div class="panel" id="mapTitle">
+    <div class="t1">❄ TRƯỜNG BẠCH ❄</div>
+    <div class="t2">Quan Ải Long Ngâm · Tuyết Sơn</div>
+    <div id="bossBarWrap"><div class="bname">🐉 LONG NGÂM LÃO TỔ</div><div class="bar"><div id="bossFill"></div></div></div>
+  </div>
+  <div class="panel" id="topRight">
+    <span id="goldBox">🪙 <span id="goldText">0</span></span>
+    <button class="iconBtn" id="btnZoomOut" title="Thu nhỏ">−</button>
+    <button class="iconBtn" id="btnZoomIn" title="Phóng to">+</button>
+    <button class="iconBtn" id="btnSound" title="Âm thanh">🔊</button>
+    <button class="iconBtn" id="btnHelp" title="Hướng dẫn">?</button>
+  </div>
+</div>
+
+<!-- Party -->
+<div class="hud" id="partyBox"></div>
+
+<!-- Phải -->
+<div class="hud" id="rightBox">
+  <canvas id="minimap" width="208" height="132"></canvas>
+  <div class="panel" id="questBox">
+    <h3>📜 NHIỆM VỤ</h3>
+    <div id="questTitle">—</div>
+    <div id="questDesc">—</div>
+    <div id="questProg">—</div>
+  </div>
+  <div class="panel" id="actBox">
+    <h3>⚔ HOẠT ĐỘNG · QUAN ẢI LONG NGÂM</h3>
+    <div id="actProg">—</div>
+  </div>
+</div>
+
+<div class="hud" id="comboBox">COMBO ×<span id="comboNum">0</span></div>
+
+<!-- Skill bar -->
+<div class="hud panel" id="skillBar">
+  <button class="skillBtn" id="btnAtk" title="Đánh thường">⚔<small>Đánh</small><span class="key">J</span></button>
+  <button class="skillBtn" data-skill="0" title="Kiếm Khí">🗡<small>Kiếm Khí</small><span class="key">1</span><span class="cd"></span></button>
+  <button class="skillBtn" data-skill="1" title="Kim Cương Hoàn">⭕<small>Kim Hoàn</small><span class="key">2</span><span class="cd"></span></button>
+  <button class="skillBtn" data-skill="2" title="Long Kích">🐉<small>Long Kích</small><span class="key">3</span><span class="cd"></span></button>
+  <button class="skillBtn" data-skill="3" title="Hỏa Bạo">🔥<small>Hỏa Bạo</small><span class="key">4</span><span class="cd"></span></button>
+  <button class="skillBtn" data-skill="4" title="Băng Phong Bạo">❄<small>Băng Bạo</small><span class="key">5</span><span class="cd"></span></button>
+  <button class="skillBtn" data-skill="5" title="Lôi Đình">⚡<small>Lôi Đình</small><span class="key">6</span><span class="cd"></span></button>
+  <button class="skillBtn" id="btnUlt" title="Thần Long Giáng Thế">🌟<small>Tuyệt Kỹ</small><span class="key">R</span><span class="cd"></span></button>
+  <button class="skillBtn" id="btnDash" title="Lướt / Né">💨<small>Lướt</small><span class="key">Space</span></button>
+</div>
+
+<!-- Joystick cảm ứng -->
+<div id="joy"><div id="joyKnob"></div><div id="joyLabel">DI CHUYỂN</div></div>
+
+<div class="hud panel" id="banner"><div class="big"></div><div class="sub"></div></div>
+<div class="hud panel" id="toast"></div>
+<div class="hud panel" id="dialog"><div class="who"></div><div class="txt"></div><button id="dlgBtn">Tiếp tục</button></div>
+
+<!-- Start screen -->
+<div class="overlay" id="startScreen">
+  <div>
+    <h1>⚔ QUAN ẢI LONG NGÂM ⚔</h1>
+    <h2>WUXIA MMORPG · Trường Bạch Tuyết Sơn · three.js · Nhân vật 3D thật</h2>
+    <p>Tuyết phủ Trường Bạch, yêu ma hoành hành. Long Ngâm Lão Tổ thức tỉnh nơi Ải Bắc,
+    ba hiệp khách 3D thật — <b>Lâm Phong</b> (RobotExpressive, có animation đi/chạy/đánh), <b>Thiết Ngưu</b> (Thương), <b>Bạch Tuyết</b> (Pháp) —
+    cùng nhau vượt ải, diệt yêu, đoạt bảo vật. Đánh quái lên cấp, nhận nhiệm vụ từ Vệ Binh,
+    phá ải và hạ Boss để hoàn thành Quan Ải Long Ngâm.</p>
+    <button class="bigBtn" id="btnStart">▶ VÀO GAME</button>
+    <div class="controls">
+      <b>Di chuyển:</b> Joystick trái / WASD · <b>Đánh:</b> nút ⚔ / J / chạm vào quái<br>
+      <b>Skill:</b> nút 1–6 / phím 1–6 · <b>Tuyệt kỹ:</b> 🌟 / R · <b>Lướt né:</b> 💨 / Space<br>
+      <b>Zoom:</b> nút + − / lăn chuột · <b>Nhiệm vụ:</b> nói chuyện với Vệ Binh ở cổng thành
+    </div>
+  </div>
+</div>
+
+<!-- End screen -->
+<div class="overlay" id="endScreen">
+  <div>
+    <h1 id="endTitle">🏆 CHIẾN THẮNG</h1>
+    <h2 id="endSub"></h2>
+    <p id="endStats"></p>
+    <button class="bigBtn" id="btnAgain">↻ CHƠI LẠI</button>
+  </div>
+</div>
+
+<script src="WUXIA3D-3D.js"></script>
+</body>
+</html>
