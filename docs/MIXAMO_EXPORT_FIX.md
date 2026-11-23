@@ -110,6 +110,105 @@ Cross-check: `node tools/fbx-validate-mixamo.mjs out-mixamo-rig.fbx` và
 (16/16 kiểm tra của validator repo). Đường ASCII (`opts.ascii`) cũng đã
 được smoke-test: footer đúng (version 7300 ở offset chia hết cho 16).
 
+## Lần 2 — FileId sai + Object ID ghi int32 (2026-11-23, sửa sau khi user báo vẫn lỗi)
+
+Dù đã sửa footer (lần 1), Mixamo vẫn báo (ảnh chụp màn hình user):
+
+> `ERROR on mapping character: Unsupported FBX type. Please use FBX files 2013 or earlier.`
+> `Sorry, unable to map your existing skeleton.`
+
+### Bằng chứng mới: FBX SDK đọc file ra scene RỖNG
+
+Cài `fbx2gltf` (npm, dùng Autodesk FBX SDK thật — `FBX2glTF 0.9.7`,
+binary `bin/Linux/FBX2glTF`) và chạy lên các file do writer tạo:
+
+| File | Trước lần 2 | Sau lần 2 |
+|---|---|---|
+| `thandieu-Mixamo.fbx` | glTF 782B, buffer 0B, **0 mesh** | glTF 3891B, buffer 910.268B, **1 mesh `than_dieu`** |
+| `XBot-Mixamo.fbx` | glTF 782B, buffer 0B, **0 mesh** | glTF 84MB, buffer 4.979.072B, **1 mesh + 1 skin (50 joints) + 68 nodes** |
+| File Meshy thật (chuẩn) | 1 mesh, buffer 1.414.528B | — |
+| File X Bot.fbx gốc (ASCII 7700) | 2 mesh, 2 skin, 68 nodes | — |
+
+SDK đọc được file (exit 0, không lỗi) nhưng **không thấy object nào** —
+đây mới là lý do Mixamo báo "Unsupported FBX type": nó map mọi lỗi
+đọc scene thành thông báo version. three.js `FBXLoader` vẫn đọc được
+vì nó dễ tính, không phải bằng chứng file đúng chuẩn SDK.
+
+### Lỗi gốc 2a — FileId SAI (nguyên nhân chính, `fbx-binary.js`, node `FileId`)
+
+Writer lần 1 dùng FileId:
+
+```
+28 B3 2A EB B6 24 CC C2 BF 52 BE 8B 6F A0 B5 2D   ← SAI
+```
+
+FileId đúng (Blender `io_scene_fbx/encode_bin.py`: `_FILE_ID`, assimp
+`FBXExporter.cpp`: `GENERIC_FILEID`, file Meshy thật) là:
+
+```
+28 B3 2A EB B6 24 CC C2 BF C8 B0 2A A9 2B FC F1   ← ĐÚNG
+```
+
+9 byte đầu giống nhau, **7 byte cuối khác**. FBX SDK kiểm tra bộ ba
+CreationTime + FileId + foot-id theo CRC dựa trên timestamp (quy tắc
+không công khai — Blender ghi chú: "fbx has very strict CRC rules, all
+based on file timestamp... write files at a fixed time"). Tổ hợp đúng
+Blender dùng (và nay writer dùng):
+
+- `CreationTime` = `1970-01-01 10:00:00:000` (đã đúng từ lần 1)
+- `FileId` = `28 B3 2A EB B6 24 CC C2 BF C8 B0 2A A9 2B FC F1`
+- `FootId` = `FA BC AB 09 D0 C8 D4 66 B1 76 FB 83 1C F7 26 7E` (đã đúng từ lần 1)
+
+**Cách tìm ra (bisect có bằng chứng):** viết trình đọc record nghiêm ngặt
+(`~/workspace/.test-fbx/fbx-strict-reader.js`, kiểm tra endOffset mọi
+record — file của ta và file Meshy đều PASS, nên cấu trúc record không
+phải lỗi), rồi dùng công cụ ghép cây FBX (`fbx-tool.py`, parse → cây →
+serialize lại, đã kiểm chứng round-trip file Meshy vẫn đọc được):
+ghép "vỏ" (header/Definitions/Documents...) của file Meshy với
+Objects/Connections của ta → SDK đọc được mesh (vỏ ta hỏng);
+ghép ngược lại → SDK không đọc được (Objects ta không có lỗi).
+Bisect từng section của vỏ: chỉ thay **FileId** sang của Meshy là
+SDK đọc được mesh. Thay 1 byte bất kỳ trong 7 byte cuối FileId
+(đã thử 5 biến thể: đổi byte cuối, byte đầu đuôi, byte giữa, prefix
+về 0, đuôi lai) đều làm SDK trả scene rỗng → SDK kiểm tra FileId
+theo CRC chính xác từng byte.
+
+### Lỗi gốc 2b — Object ID ghi int32 thay vì int64 (đã sửa kèm)
+
+Đối chiếu kiểu property từng node với file Meshy thật: file thật ghi
+mọi object ID bằng int64 (`Geometry [LSS]`, `Model [LSS]`,
+`Material [LSS]`, `Document [LSS]`), còn writer ghi int32
+(`[ISS]`) trong khi Connections đã dùng int64 (`C [SLL]`).
+Đã đổi sang `pL` cho mọi ID object: Geometry, Model (mesh/bone/armature),
+NodeAttribute, Deformer (Skin/Cluster), PoseNode.Node, Pose, Material,
+Video, Texture, Document (13 chỗ). Các `Version`/`Count`/P-int vẫn giữ
+`pI` như file thật. Lưu ý: thí nghiệm ghép vỏ cho thấy lỗi này một mình
+không chặn SDK (file ghép E1 dùng ID int32 vẫn đọc được khi FileId đúng),
+nhưng `pL` mới đúng chuẩn SDK nên giữ.
+
+### Kiểm thử lần 2 (vòng lặp liên tục)
+
+Mỗi lần sửa xong chạy lại toàn bộ, 2 vòng đều đạt:
+
+- (a) Harness cũ: `test-thandieu-mixamo.js` **20/20**,
+  `test-xbot-mixamo.js` **39/39**, `test-fbx-mixamo.js` **73/73**
+  (chạy 2 lần).
+- (b) `tools/fbx-validate-mixamo.mjs` lên cả 2 file:
+  **"Tất cả kiểm tra ĐẠT" (16/16)**.
+- (c) `fbx2gltf` (SDK thật) — **TIÊU CHÍ CHÍNH**: thandieu 1 mesh,
+  XBot 1 mesh + 1 skin (50 joints) + 68 nodes; cả 2 file harness
+  `out-mixamo-rig.fbx` (1 mesh + 1 skin + 8 nodes) và
+  `out-mixamo-meshonly.fbx` (1 mesh) cũng đọc được.
+- (d) Trình đọc record nghiêm ngặt `fbx-strict-reader.js`: cả 2 file
+  **STRICT PARSE OK** (mọi endOffset khớp, footer version 7300 ở offset
+  chia hết cho 16); đã sửa reader 2 lần trong quá trình làm (foot-id
+  thật là `FA BC AB 09...`, không phải closing magic `F8 5A 8C 6A...`).
+
+File đã làm lại bằng exporter sửa: `~/workspace/.test-fbx/thandieu-Mixamo.fbx`
+(6.531.740 B) và `~/workspace/.test-fbx/XBot-Mixamo.fbx` (7.314.892 B),
+qua `convert-thandieu.js` và `fix-xbot-mixamo.js` (snapshot
+`fbx-binary-snapshot.js` đã cập nhật bằng exporter mới).
+
 ## Lưu ý
 
 - Việc import lên Mixamo thật vẫn cần user tự thử (cần tài khoản Adobe) —
@@ -118,3 +217,89 @@ Cross-check: `node tools/fbx-validate-mixamo.mjs out-mixamo-rig.fbx` và
   văn thông báo lỗi để đối chiếu tiếp.
 - `save-manager.js` không cần sửa; nút "Save Mixamo" (mesh-only) và
   "Save Mixamo Rig" (có skeleton) đều dùng chung writer đã sửa.
+
+## Lần 3 — Nhúng texture (màu) + giữ UV khi giảm tris (2026-11-23)
+
+**Triệu chứng user báo:** file `thandieu-Mixamo.fbx` mở được trên Mixamo rồi
+nhưng "bị mất màu, vỡ ảnh" — muốn giống hệt file GLB gốc
+(`tripo_convert_thandieu.glb`, có 3 ảnh JPEG 1024×1024: baseColor, normal,
+metallicRoughness).
+
+### 3.1. Mất màu: exporter đã hỗ trợ nhúng nhưng script chuyển đổi tắt nó
+
+- Exporter `fbx-binary.js` đã có sẵn đường nhúng texture (`Video.Content` +
+  `Texture` + connection `OP` vào Material, `opts.textureBytes` cho bytes
+  lấy sẵn, mặc định BẬT khi `opts.embedTextures !== false`).
+- Nhưng `convert-thandieu.js` xuất với `embedTextures: false` nên file ra
+  không có texture nào → Mixamo hiện màu xám.
+- Sửa: trích 3 ảnh JPEG từ GLB, đưa vào `opts.textureBytes` theo tên material
+  (`tripo_mat_b362476f-...`), xuất với `embedTextures: true`. Nhúng 2/3 ảnh:
+  baseColor → `map` (DiffuseColor, JPEG q92), normal → `normalMap`
+  (NormalMap, PNG theo quy ước của encoder — tránh lỗi nén JPEG làm sai
+  normal). RM (metallicRoughness) không nhúng vì Mixamo không dùng map PBR
+  gộp này, exporter cũng không có slot cho nó.
+- **Lật dọc ảnh trước khi nhúng:** FBX đọc ảnh bottom-up, glTF lưu top-down,
+  exporter ghi UV nguyên gốc (không lật V) nên ảnh phải lật dọc — đúng như
+  `encodeTextureToBytes` làm trong trình duyệt (canvas `flipY === false`).
+  Trong Node dùng PIL (`flip-texture.py`).
+
+### 3.2. Lỗi chặn thật: thiếu property `Path` trong Video.Properties70
+
+File vòng 1 đã có đủ `Video.Content` đúng bytes + `Texture` + `OP`, vậy mà
+`fbx2gltf` 0.9.7 (FBX SDK thật) vẫn báo `could not find a image file for
+texture` và thay bằng ảnh 1×1. Đối chiếu file Meshy thật cho thấy Video của
+nó có thêm trong Properties70:
+
+```
+P: "Path", "KString", "Url", "", "model.fbm/<file>"
+```
+
+FBX SDK (`FbxVideo::GetFileName`) đọc đường dẫn ảnh từ property `Path`
+này, KHÔNG phải từ node `Filename` — thiếu nó thì SDK không tìm được ảnh
+nhúng dù `Video.Content` đủ bytes. Chứng minh bằng bisect trên file Meshy:
+chỉ thêm `Path` vào Video là đủ để fbx2gltf trích được ảnh (không cần thêm
+`PremultiplyAlpha`/`UseMaterial` vào Texture).
+
+**Sửa exporter** (`js/exporter/fbx-binary.js`, node `Video`): Properties70
+không còn rỗng mà chứa `P: Path/KString/Url/""/<file>` (cùng đường dẫn với
+`Filename`). Không đổi API `FBXBinary.write`, không mất fix FileId/footer.
+
+### 3.3. "Vỡ ảnh": giảm tris bằng clustering theo vị trí thuần nhoè UV
+
+- Mesh Tripo có rất nhiều UV seam: đỉnh cùng vị trí nhưng UV khác xa
+  (vd. cùng vị trí (-0.025, 0.879, 0) mà UV 0.37/0.99 vs 0.43/0.04).
+  Clustering cũ gộp theo vị trí rồi lấy trung bình UV → đo được 55,7% tam
+  giác chạm cluster lệch UV > 0.05, lệch lớn nhất 0.99 (gần hết texture).
+- Sửa `decimateUV` trong `convert-thandieu.js`: key cluster = vị trí + UV
+  lượng tử hoá (uvQuant = 1/64) → chỉ gộp đỉnh có UV gần nhau. Kết quả ở
+  cell 0.006: 50.000 → **43.133 tris**, lệch UV lớn nhất **0.0051** (~5
+  texel ở 1024px), 0 tam giác chạm cluster lệch > 0.05.
+- Tác dụng phụ: đỉnh seam không gộp nữa nên vị trí trung bình lệch nhau
+  tới ~0.006 → validator đếm 10,02% cạnh hở. Thêm bước hàn vị trí
+  (`weldPositions`, eps 0.003, union-find + gán về đúng 1 centroid, không
+  động UV): cạnh hở 10,02% → **0,6%** (< 2%), dịch chuyển lớn nhất 0.008
+  (0,8 cm ở tỉ lệ 1,8 m).
+
+### 3.4. Kiểm chứng (vòng 3, đều đạt)
+
+- Harness `~/workspace/.test-fbx/test-thandieu-mixamo.js`: **30/30 ×2** (mới
+  thêm kiểm tra texture: Video.Content đúng 281.164 B JPEG + 935.709 B PNG,
+  OP DiffuseColor/NormalMap, Path, UV trong [0,1], worstUvSpread ≤ 0.01).
+- `tools/fbx-validate-mixamo.mjs`: **16/16** ("Tất cả kiểm tra ĐẠT").
+- `fbx2gltf` 0.9.7: **không còn warning**, trích được đúng 2 file ảnh
+  (md5 khớp byte với ảnh đã lật), glTF có `baseColorTexture` +
+  `normalTexture`, mesh đầy đủ. (Lưu ý: vòng 1 fbx2gltf cho ảnh 1×1 là do
+  thiếu `Path`, không phải do file sai — đã sửa ở §3.2.)
+- Strict reader: **STRICT PARSE OK**; FileId đúng + footer version 7300 ở
+  offset chia hết cho 16 vẫn còn.
+- Hồi quy: `test-fbx-mixamo.js` 73/73, `test-xbot-mixamo.js` 39/39,
+  `test-obj-texture.js` 29/29.
+
+File mới: `~/workspace/.test-fbx/thandieu-Mixamo.fbx` — **8.140.892 B**,
+binary FBX 7300, mesh-only, 43.133 tris, 2 texture nhúng (map JPEG 275 KB
++ normalMap PNG 914 KB).
+
+**Lưu ý:** Mixamo chủ yếu dùng diffuse (map); normal map có thể không được
+Mixamo hiển thị rõ trong viewer của họ (đó là giới hạn của Mixamo, không
+phải lỗi file). Ảnh RM không nhúng — trên Mixamo model sẽ dùng độ bóng
+mặc định.

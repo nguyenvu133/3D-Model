@@ -20,6 +20,17 @@
  * phải truyền opts.version = 7300. Bản rig (có skeleton + skin) và bản
  * mesh-only (prepareMixamo, để Mixamo tự auto-rig) đều được Mixamo nhận.
  *
+ * LỖI GỐC LẦN 2 (2026-11-23): mọi OBJECT ID (Geometry/Model/NodeAttribute/
+ * Deformer/Cluster/Pose/Material/Video/Texture/Document) từng ghi bằng
+ * pI = int32, trong khi FBX SDK yêu cầu int64 ('L') — Connections thì
+ * đã dùng pL. SDK đọc ID int32 không khớp với connection int64 → không
+ * nhận ra object nào → scene rỗng (FBX2glTF/FBX SDK trả về chỉ RootNode),
+ * Mixamo báo "Unsupported FBX type. Please use FBX files 2013 or earlier."
+ * three.js FBXLoader vẫn đọc được vì nó không phân biệt I/L. Đã sửa:
+ * mọi ID object + PoseNode.Node đều dùng pL; các Version/Count/P-int
+ * vẫn giữ pI như file SDK thật (Blender/Meshy). Đối chiếu:
+ * file Meshy thật ghi Geometry/Model/Material [LSS], Document [LSS].
+ *
  * Quy ước toạ độ: hình học được BAKE ra world tại bind pose, mọi Model geometry
  * đặt identity, TransformLink = xform * bone.matrixWorld tại bind → công thức skinning
  * chuẩn FBX cho ra đúng rest pose. xform (xoay trục dọc lên +Y, dịch đáy về y=0,
@@ -69,8 +80,16 @@
   }
   /* CreationTimeStamp cố định theo Blender (1970-01-01 10:00:00.000):
    * FBX SDK kiểm tra bộ ba CreationTime + FileId + foot-id có khớp
-   * nhau không; ghi thời gian hiện tại với FileId/foot-id cố định
-   * sẽ làm tổ hợp này lệch → SDK từ chối. */
+   * nhau không (CRC theo timestamp — quy tắc không công khai); Blender
+   * dùng tổ hợp cố định đã biết là SDK chấp nhận, và assimp dùng y hệt:
+   *   FileId = 28 B3 2A EB B6 24 CC C2 BF C8 B0 2A A9 2B FC F1
+   *   CreationTime = "1970-01-01 10:00:00:000"
+   *   FootId = FA BC AB 09 D0 C8 D4 66 B1 76 FB 83 1C F7 26 7E
+   * LỖI CŨ (nguyên nhân chính lần 2): writer dùng FileId đuôi
+   * ...BF 52 BE 8B 6F A0 B5 2D (sai) thay vì ...BF C8 B0 2A A9 2B FC F1.
+   * Đã chứng minh bằng bisect: chỉ thay FileId sang đuôi đúng thì
+   * FBX SDK (FBX2glTF) đọc được mesh; đổi 1 byte bất kỳ trong đuôi
+   * cũng làm SDK trả scene rỗng. Xem docs/MIXAMO_EXPORT_FIX.md. */
   const FIXED_TS = { year: 1970, month: 1, day: 1, hour: 10, minute: 0, second: 0, millisecond: 0 };
   /* Bản Binary mặc định 7400 (khớp file Meshy/Tripo đã có).
    * Bản ASCII ghi "FBX 7.3.0" (7300) = FBX 2013. */
@@ -513,12 +532,12 @@
       layerEls.push(node('LayerElement', [], [node('Type', [pS('LayerElementMaterial')]), node('TypedIndex', [pI(0)])]));
       gChildren.push(node('Layer', [pI(0)], [node('Version', [pI(100)])].concat(layerEls)));
 
-      objects.push(node('Geometry', [pI(gid), pS('Geometry::' + (mesh.name || ('mesh_' + mi))), pS('Mesh')], gChildren));
+      objects.push(node('Geometry', [pL(gid), pS('Geometry::' + (mesh.name || ('mesh_' + mi))), pS('Mesh')], gChildren));
 
       /* mesh model node — geometry đã bake world nên Lcl = identity */
       const meshModelId = id();
       models.push({ id: meshModelId, name: mesh.name || ('mesh_' + mi), matrixWorld: world });
-      objects.push(node('Model', [pI(meshModelId), pS('Model::' + (mesh.name || ('mesh_' + mi))), pS('Mesh')], [
+      objects.push(node('Model', [pL(meshModelId), pS('Model::' + (mesh.name || ('mesh_' + mi))), pS('Mesh')], [
         node('Version', [pI(232)]),
         modelProps([0, 0, 0], [0, 0, 0], [1, 1, 1]),
         node('MultiLayer', [pI(0)]),
@@ -576,10 +595,10 @@
         const pArr = lx.p, eArr = lx.e, sArr = lx.s;
 
         const attrId = id();
-        objects.push(node('NodeAttribute', [pI(attrId), pS('NodeAttribute::' + b.name), pS('LimbNode')], [
+        objects.push(node('NodeAttribute', [pL(attrId), pS('NodeAttribute::' + b.name), pS('LimbNode')], [
           node('TypeFlags', [pS('Skeleton')])
         ]));
-        objects.push(node('Model', [pI(bid), pS('Model::' + b.name), pS('LimbNode')], [
+        objects.push(node('Model', [pL(bid), pS('Model::' + b.name), pS('LimbNode')], [
           node('Version', [pI(232)]),
           modelProps(pArr, eArr, sArr)
         ]));
@@ -599,7 +618,7 @@
 
     /* --- armature (bỏ khi noSkeleton) --- */
     if (!noSkeleton) {
-      objects.push(node('Model', [pI(armatureId), pS('Model::Armature'), pS('Null')], [
+      objects.push(node('Model', [pL(armatureId), pS('Model::Armature'), pS('Null')], [
         node('Version', [pI(232)]),
         modelProps([0, 0, 0], [0, 0, 0], [1, 1, 1])
       ]));
@@ -608,7 +627,7 @@
 
     /* --- skin deformer (bỏ khi noSkeleton) --- */
     if (!noSkeleton && clusters.length) {
-      objects.push(node('Deformer', [pI(skinId), pS('Deformer::Skin'), pS('Skin')], [
+      objects.push(node('Deformer', [pL(skinId), pS('Deformer::Skin'), pS('Skin')], [
         node('Version', [pI(101)]),
         node('Link_DeformAcuracy', [pD(50)])
       ]));
@@ -624,7 +643,7 @@
       }
 
       clusters.forEach(function (c, ci) {
-        objects.push(node('Deformer', [pI(c.id), pS('SubDeformer::Cluster_' + ci), pS('Cluster')], [
+        objects.push(node('Deformer', [pL(c.id), pS('SubDeformer::Cluster_' + ci), pS('Cluster')], [
           node('Version', [pI(100)]),
           node('UserData', [pS(''), pS('')]),
           node('Indexes', [arrI(c.indexes)]),
@@ -640,11 +659,11 @@
       const poseId = id();
       const poseNodes = sc.bones.map(function (b) {
         return node('PoseNode', [], [
-          node('Node', [pI(boneIds[b.uuid])]),
+          node('Node', [pL(boneIds[b.uuid])]),
           node('Matrix', [arrD(mat4ToArray(boneWorldX[b.uuid]))])   /* bind world ĐÃ qua xform */
         ]);
       });
-      objects.push(node('Pose', [pI(poseId), pS('Pose::BIND_POSES'), pS('BindPose')], [
+      objects.push(node('Pose', [pL(poseId), pS('Pose::BIND_POSES'), pS('BindPose')], [
         node('Type', [pS('BindPose')]),
         node('Version', [pI(100)]),
         node('NbPoseNodes', [pI(poseNodes.length)])
@@ -673,7 +692,7 @@
         props.push(node('P', [pS('Opacity'), pS('Number'), pS(''), pS('A'), pD(mt.opacity)]));
       }
       if (mt.map) props.push(node('P', [pS('DiffuseFactor'), pS('Number'), pS(''), pS('A'), pD(1)]));
-      objects.push(node('Material', [pI(m.id), pS('Material::' + m.name), pS('')], [
+      objects.push(node('Material', [pL(m.id), pS('Material::' + m.name), pS('')], [
         node('Version', [pI(102)]),
         node('ShadingModel', [pS('Phong')]),
         node('MultiLayer', [pI(0)]),
@@ -724,15 +743,22 @@
         const ext = t.mime === 'image/png' ? '.png' : '.jpg';
         const vname = (t.matName || 'tex') + '_' + t.slot + '_' + i;
         const file = 'model.fbm/' + vname + ext;
-        objects.push(node('Video', [pI(vid), pS('Video::' + vname), pS('Clip')], [
+        objects.push(node('Video', [pL(vid), pS('Video::' + vname), pS('Clip')], [
           node('Type', [pS('Clip')]),
-          node('Properties70', [], []),
+          /* Path BẮT BUỘC: FBX SDK (FbxVideo::GetFileName) đọc đường dẫn ảnh từ
+             property Path này, KHÔNG phải từ node Filename — thiếu nó thì SDK
+             (fbx2gltf, Mixamo) không tìm được ảnh nhúng dù Video.Content đủ
+             bytes, và texture bị thay bằng ảnh 1x1 (đã chứng minh bằng bisect
+             với file Meshy thật: chỉ thêm Path là fbx2gltf trích được ảnh). */
+          node('Properties70', [], [
+            node('P', [pS('Path'), pS('KString'), pS('Url'), pS(''), pS(file)])
+          ]),
           node('UseMipMap', [pI(0)]),
           node('Filename', [pS(file)]),
           node('RelativeFilename', [pS(file)]),
           node('Content', [pR(t.bytes)])
         ]));
-        objects.push(node('Texture', [pI(tid), pS('Texture::' + vname), pS('')], [
+        objects.push(node('Texture', [pL(tid), pS('Texture::' + vname), pS('')], [
           node('Type', [pS('TextureVideoClip')]),
           node('Version', [pI(202)]),
           node('TextureName', [pS('Texture::' + vname)]),
@@ -808,7 +834,7 @@
     const docId = id();
     const documents = node('Documents', [], [
       node('Count', [pI(1)]),
-      node('Document', [pI(docId), pS(''), pS('Scene')], [
+      node('Document', [pL(docId), pS(''), pS('Scene')], [
         node('Properties70', [], [
           node('P', [pS('SourceObject'), pS('object'), pS(''), pS('')]),
           node('P', [pS('ActiveAnimStackName'), pS('KString'), pS(''), pS(''), pS('')])
@@ -852,7 +878,7 @@
 
     /* ---------------- assemble ---------------- */
     const roots = [header,
-      node('FileId', [pR(new Uint8Array([0x28, 0xb3, 0x2a, 0xeb, 0xb6, 0x24, 0xcc, 0xc2, 0xbf, 0x52, 0xbe, 0x8b, 0x6f, 0xa0, 0xb5, 0x2d]))]),
+      node('FileId', [pR(new Uint8Array([0x28, 0xb3, 0x2a, 0xeb, 0xb6, 0x24, 0xcc, 0xc2, 0xbf, 0xc8, 0xb0, 0x2a, 0xa9, 0x2b, 0xfc, 0xf1]))]),
       node('CreationTime', [pS('1970-01-01 10:00:00:000')]),
       node('Creator', [pS('Blender (FBX Binary ' + (ver === 7300 ? '7.3.0' : '7.4.0') + ')')]),
       globalSettings, documents,
