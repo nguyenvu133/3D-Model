@@ -59,10 +59,21 @@
   var TYPE_GROUP = {
     temple: 'Buildings', house: 'Buildings', gate: 'Buildings', bridge: 'Buildings',
     torii: 'Buildings', tower: 'Buildings',
+    pagoda: 'Buildings', torii_big: 'Buildings',
+    house_tile: 'Buildings', house_thatch: 'Buildings', house_flat: 'Buildings', stall: 'Buildings',
     pine: 'Vegetation', bamboo: 'Vegetation', rock: 'Vegetation',
+    pine_snow: 'Vegetation', pine_tall: 'Vegetation', pine_short: 'Vegetation',
+    sakura: 'Vegetation', mushroom: 'Vegetation',
     lantern: 'Props', campfire: 'Props', statue: 'Props', fence: 'Props', portal: 'Props',
     well: 'Props',
+    lantern_red: 'Props', lantern_yellow: 'Props', lantern_blue: 'Props',
+    bridge_arch: 'Props', well_stone: 'Props', fence_wood: 'Props', statue_dragon: 'Props',
+    crystal_red: 'Props', crystal_blue: 'Props', crystal_purple: 'Props',
+    stone_stove: 'Props', stream: 'Props', cloud: 'Props',
+    chest: 'Props', coin: 'Props', banner: 'Props', stone_steps: 'Props', stone_path: 'Props',
     hero: 'Characters', monster: 'Characters', boss: 'Characters',
+    bird: 'Characters', bat: 'Characters', wolf: 'Characters',
+    villager_blue: 'Characters', villager_red: 'Characters', villager_yellow: 'Characters',
     light: 'Lighting', patrol: 'Environment', waterfall: 'Environment',
     box: 'Props', sphere: 'Props', cylinder: 'Props', cone: 'Props', plane: 'Props',
     model: 'Characters'
@@ -193,6 +204,98 @@
       add('campfire', 'Campfire_0' + (i + 1), p[0], p[1], { light: { color: 0xff8a2a, intensity: 0.9, distance: 12 } });
     });
     add('portal', 'Dungeon_Entrance', 44, 4, { collider: { shape: 'box', size: [6, 5, 1] }, light: { color: 0x9d4edd, intensity: 1.2, distance: 18 } });
+    /* --- MỞ RỘNG (2026-11-24): làng + rừng + chợ + sinh vật mới, map 91 → ~178 object.
+     * Vị trí random dùng chung rnd() mulberry32(20261124) nên map mặc định
+     * vẫn xác định (deterministic) mỗi lần load. --- */
+    add('pagoda', 'Pagoda_BaTang', -38, -38, { collider: { shape: 'box', size: [9, 10, 9] } });
+    add('torii_big', 'Torii_Lon', 0, -20, { collider: { shape: 'box', size: [13, 11, 2] } });
+    add('statue_dragon', 'Statue_Dragon', 12, -38, { collider: { shape: 'box', size: [4, 5, 4] } });
+    /* làng mới: 3 kiểu nhà */
+    add('house_tile', 'Village_TileHouse_1', -32, 4, { ry: 0.3, collider: { shape: 'box', size: [7, 4, 5] } });
+    add('house_tile', 'Village_TileHouse_2', 30, -8, { ry: -0.4, collider: { shape: 'box', size: [7, 4, 5] } });
+    add('house_thatch', 'Village_ThatchHouse_1', -12, 24, { ry: 0.2, collider: { shape: 'box', size: [6, 4, 5] } });
+    add('house_thatch', 'Village_ThatchHouse_2', 34, 24, { ry: -0.3, collider: { shape: 'box', size: [6, 4, 5] } });
+    add('house_flat', 'Village_FlatHouse_1', -36, -8, { ry: 0.5, collider: { shape: 'box', size: [7, 4, 5] } });
+    add('house_flat', 'Village_FlatHouse_2', 12, 28, { ry: -0.2, collider: { shape: 'box', size: [7, 4, 5] } });
+    /* chợ */
+    [[-6, 14], [6, 14], [-10, 18], [10, 18]].forEach(function (p, i) {
+      add('stall', 'Market_Stall_0' + (i + 1), p[0], p[1], { ry: (rnd() - 0.5) * 0.5, collider: { shape: 'box', size: [3, 2, 2] } });
+    });
+    add('well_stone', 'Village_Well', -18, 18, { collider: { shape: 'box', size: [3, 2, 3] } });
+    /* hàng rào quanh làng */
+    [[-22, 8], [-22, 14], [26, 8], [26, 14]].forEach(function (p, i) {
+      add('fence_wood', 'Village_Fence_0' + (i + 1), p[0], p[1], { ry: i < 2 ? 0 : Math.PI / 2 });
+    });
+    /* đèn lồng 3 màu */
+    [[-14, -2, 'lantern_yellow'], [14, -2, 'lantern_yellow'], [-14, 26, 'lantern_yellow'],
+     [-6, -14, 'lantern_red'], [6, -14, 'lantern_red'], [-20, -18, 'lantern_red'],
+     [-28, 20, 'lantern_blue'], [28, 20, 'lantern_blue']].forEach(function (p, i) {
+      add(p[2], 'Lantern_New_0' + (i + 1), p[0], p[1], { light: { color: 0xffb347, intensity: 0.5, distance: 10 } });
+    });
+    /* rừng mới: thông tuyết / cao / lùn — tránh đường chính, đền, quảng trường, hồ */
+    function forestSpot() {
+      var x, z, ok = false, t = 0;
+      while (!ok && t++ < 100) {
+        x = -52 + rnd() * 104; z = -52 + rnd() * 104;
+        ok = !(Math.abs(x) < 12 && z > -50 && z < 38) &&
+          Math.sqrt(x * x + (z + 45) * (z + 45)) >= 12 &&
+          Math.sqrt(x * x + z * z) >= 9 &&
+          Math.sqrt((x - 30) * (x - 30) + (z - 28) * (z - 28)) >= 12;
+      }
+      return [x, z];
+    }
+    var pineNew = [];
+    for (var ps = 0; ps < 5; ps++) pineNew.push(['pine_snow', forestSpot()]);
+    for (var pt = 0; pt < 5; pt++) pineNew.push(['pine_tall', forestSpot()]);
+    for (var ph = 0; ph < 4; ph++) pineNew.push(['pine_short', forestSpot()]);
+    pineNew.forEach(function (p, i) {
+      add(p[0], 'PineNew_' + (i + 1), p[1][0], p[1][1], { s: 0.8 + rnd() * 0.55, ry: rnd() * Math.PI * 2 });
+    });
+    /* anh đào + nấm rải quanh rừng */
+    for (var sk = 0; sk < 4; sk++) { var s1 = forestSpot(); add('sakura', 'Sakura_' + (sk + 1), s1[0], s1[1], { s: 0.9 + rnd() * 0.4, ry: rnd() * Math.PI * 2 }); }
+    for (var mu = 0; mu < 4; mu++) { var s2 = forestSpot(); add('mushroom', 'Mushroom_' + (mu + 1), s2[0], s2[1], { s: 0.8 + rnd() * 0.7, ry: rnd() * Math.PI * 2 }); }
+    /* tinh thể 3 màu gần hồ băng */
+    add('crystal_red', 'Crystal_Red', 24, 34, {});
+    add('crystal_blue', 'Crystal_Blue', 36, 30, {});
+    add('crystal_purple', 'Crystal_Purple', 30, 40, {});
+    /* bếp đá + suối + mây + chim + dơi + sói */
+    add('stone_stove', 'StoneStove_1', -16, 30, { light: { color: 0xff8a2a, intensity: 0.8, distance: 10 } });
+    add('stone_stove', 'StoneStove_2', 20, -20, { light: { color: 0xff8a2a, intensity: 0.8, distance: 10 } });
+    add('stream', 'Stream_1', -44, -8, { ry: 0.4 });
+    add('bridge_arch', 'Bridge_Arch_1', -44, 26, { ry: 0.4, collider: { shape: 'box', size: [4, 1, 10] } });
+    add('cloud', 'Cloud_1', -20, -30, { y: 18 });
+    add('cloud', 'Cloud_2', 10, 10, { y: 20 });
+    add('cloud', 'Cloud_3', 30, -20, { y: 17 });
+    add('bird', 'Bird_1', -10, -10, { y: 12, anim: 'Idle' });
+    add('bird', 'Bird_2', 15, 5, { y: 14, anim: 'Idle' });
+    add('bird', 'Bird_3', -25, 15, { y: 11, anim: 'Idle' });
+    add('bat', 'Bat_1', 40, -2, { y: 8, anim: 'Idle' });
+    add('bat', 'Bat_2', 44, 12, { y: 9, anim: 'Idle' });
+    add('wolf', 'Wolf_1', -40, -20, { anim: 'Idle' });
+    add('wolf', 'Wolf_2', -42, 30, { anim: 'Idle' });
+    add('wolf', 'Wolf_3', 40, -30, { anim: 'Idle' });
+    /* dân làng 3 kiểu áo */
+    add('villager_blue', 'Villager_Blue_1', -8, 16, { anim: 'Idle' });
+    add('villager_blue', 'Villager_Blue_2', 8, 20, { anim: 'Idle' });
+    add('villager_red', 'Villager_Red_1', -4, 12, { anim: 'Idle' });
+    add('villager_red', 'Villager_Red_2', 14, 16, { anim: 'Idle' });
+    add('villager_yellow', 'Villager_Yellow_1', -14, 12, { anim: 'Idle' });
+    add('villager_yellow', 'Villager_Yellow_2', 4, 24, { anim: 'Idle' });
+    /* rương + xu + cờ + bậc đá + đường đá */
+    add('chest', 'TreasureChest_1', -30, -36, {});
+    add('chest', 'TreasureChest_2', 42, -12, {});
+    [[-2, 4], [2, 6], [-4, 20], [8, 10]].forEach(function (p, i) {
+      add('coin', 'GoldCoin_0' + (i + 1), p[0], p[1], {});
+    });
+    [[-10, 30], [10, 30], [-6, -30], [6, -30]].forEach(function (p, i) {
+      add('banner', 'Banner_0' + (i + 1), p[0], p[1], { ry: rnd() * Math.PI });
+    });
+    add('stone_steps', 'StoneSteps_1', 0, -40, {});
+    add('stone_steps', 'StoneSteps_2', 0, 30, {});
+    add('stone_path', 'StonePath_1', -2, -10, {});
+    add('stone_path', 'StonePath_2', 2, -24, {});
+    add('stone_path', 'StonePath_3', -2, 6, {});
+    add('stone_path', 'StonePath_4', 2, 24, {});
     /* Characters */
     add('hero', 'Hero_Character', 0, 0, { anim: 'Idle' });
     add('boss', 'Boss_LongNgam', 38, 8, { anim: 'Idle' });

@@ -78,6 +78,10 @@
       <button class="tool-btn" id="me-play-btn" title="Play / Pause (Space)">▶ Play</button>
       <button class="tool-btn" id="me-stop-btn" title="Stop">■ Stop</button>
     </div>
+    <div class="tool-sep"></div>
+    <div class="tool-group">
+      <span id="me-offline-badge" title="Trạng thái mạng">● Online</span>
+    </div>
   </div>
 
   <!-- ============ MAIN ============ -->
@@ -166,19 +170,67 @@
 <div id="me-toast-root"></div>
 <input type="file" id="me-file-input" accept=".json" class="hidden">
 
-<!-- ============ LIBRARIES (CDN + fallback) — cùng three r128 với Studio ============ -->
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"
-        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/build/three.min.js\x27\x3E\x3C/script\x3E')"></script>
-<script src="https://cdn.jsdelivr.net/npm/pixi.js@8.23.0/dist/pixi.min.js"
-        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/pixi.js@8.23.0/dist/pixi.min.js\x27\x3E\x3C/script\x3E')"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"
-        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js\x27\x3E\x3C/script\x3E')"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"
-        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js\x27\x3E\x3C/script\x3E')"></script>
-<script src="https://cdn.jsdelivr.net/npm/fflate@0.6.10/umd/index.js"
-        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/fflate@0.6.10/umd/index.js\x27\x3E\x3C/script\x3E')"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"
-        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/loaders/FBXLoader.js\x27\x3E\x3C/script\x3E')"></script>
+<!-- ============ LIBRARIES (local vendor trước, CDN fallback sau) — cùng three r128 với Studio ============
+     js/vendor/* là bản tải về từ jsdelivr (xem js/vendor/README.md — toàn text UTF-8, đẩy GitHub được):
+     mở MapEditor.html qua file:// trên điện thoại vẫn chạy offline. Khi file local lỗi mới
+     fallback jsdelivr → unpkg (chỉ chạy khi có mạng). -->
+<script>
+/* Fallback CDN cho thư viện local: document.write giữ đúng thứ tự tải đồng bộ. */
+window.__meLibFallback = function (cdn, unpkg) {
+  document.write('<script src="' + cdn + '" onerror="window.__meLibFallback2(\'' + unpkg + '\')"><\/script>');
+};
+window.__meLibFallback2 = function (unpkg) {
+  document.write('<script src="' + unpkg + '"><\/script>');
+};
+</script>
+<script src="js/vendor/three.min.js"
+        onerror="window.__meLibFallback('https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js','https://unpkg.com/three@0.128.0/build/three.min.js')"></script>
+<script src="js/vendor/pixi.min.js"
+        onerror="window.__meLibFallback('https://cdn.jsdelivr.net/npm/pixi.js@8.23.0/dist/pixi.min.js','https://unpkg.com/pixi.js@8.23.0/dist/pixi.min.js')"></script>
+<script src="js/vendor/GLTFLoader.js"
+        onerror="window.__meLibFallback('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js','https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js')"></script>
+<script src="js/vendor/TransformControls.js"
+        onerror="window.__meLibFallback('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js','https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js')"></script>
+<script src="js/vendor/fflate.js"
+        onerror="window.__meLibFallback('https://cdn.jsdelivr.net/npm/fflate@0.6.10/umd/index.js','https://unpkg.com/fflate@0.6.10/umd/index.js')"></script>
+<script src="js/vendor/FBXLoader.js"
+        onerror="window.__meLibFallback('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js','https://unpkg.com/three@0.128.0/examples/js/loaders/FBXLoader.js')"></script>
+<script>
+/* Kiểm tra thư viện lúc khởi động: thiếu cái nào thì báo rõ tên file +
+ * hướng dẫn, không để trang trắng lặng lẽ. */
+(function () {
+  var missing = [];
+  if (typeof THREE === 'undefined') missing.push('three.min.js (THREE)');
+  else {
+    if (typeof THREE.GLTFLoader === 'undefined') missing.push('GLTFLoader.js (THREE.GLTFLoader)');
+    if (typeof THREE.TransformControls === 'undefined') missing.push('TransformControls.js (THREE.TransformControls)');
+    if (typeof THREE.FBXLoader === 'undefined') missing.push('FBXLoader.js (THREE.FBXLoader)');
+  }
+  if (typeof PIXI === 'undefined') missing.push('pixi.min.js (PIXI)');
+  if (typeof fflate === 'undefined') missing.push('fflate.js (fflate)');
+  window.__meLibMissing = missing;
+  if (!missing.length) return;
+  var msg = 'Thiếu thư viện: ' + missing.join(', ') +
+    '. Kiểm tra thư mục js/vendor/ có đủ 6 file (three.min.js, pixi.min.js, GLTFLoader.js, ' +
+    'TransformControls.js, fflate.js, FBXLoader.js) hoặc bật mạng để tải fallback từ CDN rồi tải lại trang.';
+  window.__meLibError = msg;
+  function show() {
+    var bar = document.getElementById('me-statusbar');
+    var st = document.getElementById('me-status');
+    if (st) { st.textContent = '⚠ ' + msg; st.style.color = '#ff7a7a'; }
+    if (bar) bar.style.background = '#5c1a1a';
+    if (!document.getElementById('me-lib-error')) {
+      var d = document.createElement('div');
+      d.id = 'me-lib-error';
+      d.textContent = '⚠ ' + msg;
+      d.style.cssText = 'position:fixed;left:8px;right:8px;top:8px;z-index:999;background:#5c1a1a;color:#fff;padding:10px;border-radius:8px;font-size:13px;line-height:1.5;';
+      document.body.appendChild(d);
+    }
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show);
+  else show();
+})();
+</script>
 
 <!-- ============ MAP EDITOR ============ -->
 <script src="js/mapeditor/core/SceneData.js"></script>
@@ -198,6 +250,7 @@
 <script src="js/mapeditor/velo/VeloExport.js"></script>
 <script src="js/mapeditor/velo/VeloPanel.js"></script>
 <script src="js/mapeditor/velo/VeloProject.js"></script>
+<script src="js/mapeditor/core/OfflineMode.js"></script>
 <script src="js/mapeditor/core/MapEditor.js"></script>
 <script>
   /* scene tabs: đổi template */

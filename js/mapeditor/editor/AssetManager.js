@@ -136,20 +136,42 @@
       poly([[cx - 40, 40], [cx + 40, 40], [cx + 28, 30], [cx - 28, 30]], '#1e4d3a', '#0d2a1e');
       ctx.fillStyle = '#8a2f26'; ctx.fillRect(cx - 22, 40, 44, 22);
       ctx.fillStyle = '#c9a94f'; ctx.fillRect(cx - 5, 48, 10, 14);
-    } else if (type === 'house') {
-      poly([[cx - 28, 36], [cx + 28, 36], [cx, 18]], '#1e4d3a', '#0d2a1e');
-      ctx.fillStyle = '#7a4a2e'; ctx.fillRect(cx - 22, 36, 44, 22);
+    } else if (type === 'house' || type === 'house_tile' || type === 'house_thatch' || type === 'house_flat') {
+      var roofCol = type === 'house_tile' ? '#2a4a6a' : (type === 'house_thatch' ? '#d8b45a' : '#6a5a4a');
+      var wallCol = type === 'house_thatch' ? '#b09a72' : '#7a4a2e';
+      poly([[cx - 28, 36], [cx + 28, 36], [cx, 18]], roofCol, '#0d2a1e');
+      ctx.fillStyle = wallCol; ctx.fillRect(cx - 22, 36, 44, 22);
       ctx.fillStyle = '#ffc86e'; ctx.fillRect(cx - 14, 44, 8, 8); ctx.fillRect(cx + 6, 44, 8, 8);
+    } else if (type === 'pagoda') {
+      ctx.fillStyle = '#8a2f26'; ctx.fillRect(cx - 14, 38, 28, 24);
+      poly([[cx - 22, 40], [cx + 22, 40], [cx, 24]], '#1e4d3a', '#0d2a1e');
+      ctx.fillStyle = '#7a4a2e'; ctx.fillRect(cx - 9, 16, 18, 10);
+      poly([[cx - 15, 18], [cx + 15, 18], [cx, 6]], '#1e4d3a', '#0d2a1e');
+      ctx.fillStyle = '#ffd94d'; ctx.beginPath(); ctx.arc(cx, 4, 3, 0, Math.PI * 2); ctx.fill();
     } else if (type === 'gate') {
       ctx.fillStyle = '#6e3f2a';
       ctx.fillRect(cx - 30, 20, 7, 42); ctx.fillRect(cx + 23, 20, 7, 42);
       ctx.fillStyle = '#1e4d3a'; ctx.fillRect(cx - 34, 14, 68, 8);
       poly([[cx - 30, 14], [cx + 30, 14], [cx, 2]], '#1e4d3a', '#0d2a1e');
-    } else if (type === 'pine') {
-      ctx.fillStyle = '#4a3220'; ctx.fillRect(cx - 3, 48, 6, 14);
+    } else if (type === 'pine' || type === 'pine_snow' || type === 'pine_tall' || type === 'pine_short') {
+      var hMul = type === 'pine_tall' ? 1.25 : (type === 'pine_short' ? 0.7 : 1);
+      ctx.fillStyle = '#4a3220'; ctx.fillRect(cx - 3, 62 - 14 * hMul, 6, 14 * hMul);
       poly([[cx - 18, 50], [cx + 18, 50], [cx, 28]], '#1d4a2e', '#0d2a1e');
       poly([[cx - 13, 34], [cx + 13, 34], [cx, 16]], '#25603a', '#0d2a1e');
       poly([[cx - 8, 20], [cx + 8, 20], [cx, 8]], '#e8eef7', '#b8c8d8');
+    } else if (type === 'sakura') {
+      ctx.fillStyle = '#5a3a28'; ctx.fillRect(cx - 3, 44, 6, 18);
+      ctx.fillStyle = '#f2a8c8';
+      ctx.beginPath(); ctx.arc(cx, 30, 16, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx - 12, 36, 10, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx + 12, 36, 10, 0, Math.PI * 2); ctx.fill();
+    } else if (type === 'mushroom') {
+      ctx.fillStyle = '#e8e0c8'; ctx.fillRect(cx - 5, 44, 10, 16);
+      ctx.fillStyle = '#d83a2a';
+      ctx.beginPath(); ctx.arc(cx, 44, 16, Math.PI, 0); ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(cx - 7, 36, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx + 7, 34, 3, 0, Math.PI * 2); ctx.fill();
     } else if (type === 'bamboo') {
       ctx.strokeStyle = '#4a8a3a'; ctx.lineWidth = 4;
       for (var b = -2; b <= 2; b++) {
@@ -158,18 +180,20 @@
     } else if (type === 'rock') {
       poly([[cx - 22, 56], [cx - 14, 34], [cx + 4, 26], [cx + 22, 44], [cx + 16, 56]], '#8a8a94', '#5a5a64');
       poly([[cx - 14, 34], [cx + 4, 26], [cx + 10, 36]], '#e8eef7', '#b8c8d8');
-    } else if (type === 'lantern') {
+    } else if (type === 'lantern' || type === 'lantern_red' || type === 'lantern_yellow' || type === 'lantern_blue') {
+      var lc = type === 'lantern_yellow' ? '#ffd94d' : (type === 'lantern_blue' ? '#3a7ab5' : '#ff5a3c');
       ctx.strokeStyle = '#2a2018'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.moveTo(cx, 8); ctx.lineTo(cx, 30); ctx.stroke();
-      ctx.fillStyle = '#ff5a3c';
+      ctx.fillStyle = lc;
       ctx.beginPath(); ctx.ellipse(cx, 40, 12, 14, 0, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#ffb347';
       ctx.beginPath(); ctx.ellipse(cx, 40, 12, 14, 0, 0, Math.PI * 2); ctx.globalAlpha = 0.35; ctx.fill(); ctx.globalAlpha = 1;
-    } else if (type === 'campfire') {
+    } else if (type === 'campfire' || type === 'stone_stove') {
       ctx.fillStyle = '#6b4a2a'; ctx.fillRect(cx - 16, 54, 32, 6);
       poly([[cx - 8, 54], [cx + 8, 54], [cx, 30]], '#ff8a2a', '#cc4400');
       poly([[cx - 4, 54], [cx + 4, 54], [cx, 40]], '#ffd94d', '#cc8800');
-    } else if (type === 'bridge') {
+      if (type === 'stone_stove') { ctx.fillStyle = '#7a7a82'; ctx.fillRect(cx - 18, 54, 6, 6); ctx.fillRect(cx + 12, 54, 6, 6); }
+    } else if (type === 'bridge' || type === 'bridge_arch') {
       ctx.fillStyle = '#7d5a34';
       for (var p = 0; p < 5; p++) ctx.fillRect(cx - 30 + p * 12, 44 - Math.abs(p - 2) * 3, 10, 5);
       ctx.strokeStyle = '#6b4a2a'; ctx.lineWidth = 2;
@@ -180,18 +204,30 @@
       ctx.beginPath(); ctx.arc(cx, 38, 18, 0, Math.PI * 2); ctx.stroke();
       ctx.fillStyle = '#6a1fb0';
       ctx.beginPath(); ctx.arc(cx, 38, 13, 0, Math.PI * 2); ctx.fill();
-    } else if (type === 'statue') {
+    } else if (type === 'stream') {
+      ctx.fillStyle = '#8a8a94';
+      ctx.fillRect(cx - 22, 14, 8, 48); ctx.fillRect(cx + 14, 14, 8, 48);
+      ctx.fillStyle = '#5ab8d8'; ctx.fillRect(cx - 14, 14, 28, 48);
+      ctx.fillStyle = '#e8f4f8'; ctx.fillRect(cx - 10, 24, 20, 3); ctx.fillRect(cx - 10, 40, 20, 3);
+    } else if (type === 'statue' || type === 'statue_dragon') {
       ctx.fillStyle = '#7a7264'; ctx.fillRect(cx - 16, 54, 32, 8);
       ctx.fillStyle = '#9aa4b5'; ctx.fillRect(cx - 7, 30, 14, 24);
       ctx.beginPath(); ctx.arc(cx, 24, 8, 0, Math.PI * 2); ctx.fill();
-    } else if (type === 'hero' || type === 'monster' || type === 'boss') {
-      var col = type === 'hero' ? '#8a2f26' : (type === 'boss' ? '#5a1a6a' : '#3a5a3a');
+      if (type === 'statue_dragon') { ctx.fillStyle = '#c9a94f'; ctx.fillRect(cx - 12, 14, 4, 8); ctx.fillRect(cx + 8, 14, 4, 8); }
+    } else if (type === 'hero' || type === 'monster' || type === 'boss' || type === 'villager_blue' || type === 'villager_red' || type === 'villager_yellow' || type === 'wolf' || type === 'bat' || type === 'bird') {
+      var col = type === 'hero' ? '#8a2f26' : (type === 'boss' ? '#5a1a6a' : (type === 'monster' ? '#3a5a3a' :
+        (type === 'villager_blue' ? '#2a4a6a' : (type === 'villager_red' ? '#8a2f26' :
+        (type === 'villager_yellow' ? '#c9a94f' : (type === 'wolf' ? '#5a5a64' : (type === 'bat' ? '#2a2030' : '#9db8d9')))))));
       ctx.fillStyle = '#f2c89b';
       ctx.beginPath(); ctx.arc(cx, 24, 10, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = col; ctx.fillRect(cx - 10, 34, 20, 18);
       ctx.fillStyle = '#2c3a58';
       ctx.fillRect(cx - 9, 52, 7, 10); ctx.fillRect(cx + 2, 52, 7, 10);
       if (type === 'boss') { ctx.fillStyle = '#e8e8f2'; ctx.beginPath(); ctx.arc(cx, 14, 10, Math.PI, 0); ctx.fill(); }
+      if (type === 'bird' || type === 'bat') {
+        ctx.fillStyle = col;
+        ctx.fillRect(cx - 26, 30, 16, 5); ctx.fillRect(cx + 10, 30, 16, 5);
+      }
     } else if (type === 'light') {
       ctx.fillStyle = '#ffd94d';
       ctx.beginPath(); ctx.arc(cx, 32, 10, 0, Math.PI * 2); ctx.fill();
@@ -216,17 +252,17 @@
       [[-24, 14], [24, 14], [24, 50], [-24, 50]].forEach(function (pt) {
         ctx.beginPath(); ctx.arc(cx + pt[0], pt[1], 4, 0, Math.PI * 2); ctx.fill();
       });
-    } else if (type === 'fence') {
+    } else if (type === 'fence' || type === 'fence_wood') {
       ctx.fillStyle = '#6b4a2a';
       for (var f = 0; f < 5; f++) ctx.fillRect(cx - 28 + f * 14, 30, 5, 26);
       ctx.fillRect(cx - 30, 38, 60, 4);
-    } else if (type === 'torii') {
+    } else if (type === 'torii' || type === 'torii_big') {
       ctx.fillStyle = '#b02020';
       ctx.fillRect(cx - 28, 22, 7, 40); ctx.fillRect(cx + 21, 22, 7, 40);
       ctx.fillRect(cx - 34, 14, 68, 7);
       ctx.fillStyle = '#1a1a1a'; ctx.fillRect(cx - 38, 8, 76, 6);
       ctx.fillStyle = '#c9a94f'; ctx.fillRect(cx - 3, 12, 6, 8);
-    } else if (type === 'well') {
+    } else if (type === 'well' || type === 'well_stone') {
       ctx.fillStyle = '#8a8a94'; ctx.fillRect(cx - 20, 44, 40, 16);
       ctx.fillStyle = '#2a5a7a'; ctx.fillRect(cx - 16, 44, 32, 5);
       ctx.fillStyle = '#6b4a2a'; ctx.fillRect(cx - 22, 22, 5, 24); ctx.fillRect(cx + 17, 22, 5, 24);
@@ -237,6 +273,41 @@
       ctx.fillStyle = '#7a4a2e'; ctx.fillRect(cx - 9, 16, 18, 10);
       poly([[cx - 15, 18], [cx + 15, 18], [cx, 6]], '#1e4d3a', '#0d2a1e');
       ctx.fillStyle = '#ffd94d'; ctx.beginPath(); ctx.arc(cx, 4, 3, 0, Math.PI * 2); ctx.fill();
+    } else if (type === 'crystal_red' || type === 'crystal_blue' || type === 'crystal_purple' ||
+        type === 'stall' || type === 'cloud' || type === 'chest' || type === 'coin' ||
+        type === 'banner' || type === 'stone_steps' || type === 'stone_path') {
+      /* thumbnail riêng cho prefab mới còn lại: hình thoi/tròn/chữ nhật theo loại */
+      var tc = { crystal_red: '#d83a2a', crystal_blue: '#3a7ad8', crystal_purple: '#9d4edd',
+        stall: '#c96a2e', cloud: '#ffffff', chest: '#6b4a2a', coin: '#ffd94d',
+        banner: '#8a2f26', stone_steps: '#8a8a94', stone_path: '#9aa4b5' }[type];
+      if (type.indexOf('crystal') === 0) {
+        poly([[cx, 10], [cx + 14, 34], [cx, 58], [cx - 14, 34]], tc, '#ffffff');
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(cx - 2, 22, 4, 20);
+      } else if (type === 'coin') {
+        ctx.fillStyle = tc; ctx.beginPath(); ctx.arc(cx, 36, 16, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#8a6d1f'; ctx.lineWidth = 3; ctx.stroke();
+      } else if (type === 'cloud') {
+        ctx.fillStyle = tc;
+        ctx.beginPath(); ctx.arc(cx - 10, 38, 10, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx + 8, 36, 12, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx, 30, 11, 0, Math.PI * 2); ctx.fill();
+      } else if (type === 'banner') {
+        ctx.fillStyle = '#4a3220'; ctx.fillRect(cx - 12, 8, 4, 54);
+        ctx.fillStyle = tc; ctx.fillRect(cx - 8, 14, 22, 30);
+        ctx.fillStyle = '#ffd94d'; ctx.beginPath(); ctx.arc(cx + 3, 29, 6, 0, Math.PI * 2); ctx.fill();
+      } else if (type === 'chest') {
+        ctx.fillStyle = tc; ctx.fillRect(cx - 16, 32, 32, 22);
+        ctx.fillStyle = '#7d5a34'; ctx.fillRect(cx - 16, 24, 32, 10);
+        ctx.fillStyle = '#ffd94d'; ctx.fillRect(cx - 3, 36, 6, 8);
+      } else if (type === 'stall') {
+        ctx.fillStyle = tc; ctx.fillRect(cx - 18, 40, 36, 14);
+        poly([[cx - 20, 40], [cx + 20, 40], [cx, 22]], '#8a2f26', '#5e1f18');
+        ctx.fillStyle = '#ff8a2a'; ctx.beginPath(); ctx.arc(cx - 8, 36, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx + 8, 36, 4, 0, Math.PI * 2); ctx.fill();
+      } else {
+        ctx.fillStyle = tc; ctx.fillRect(cx - 18, 40, 36, 8);
+        ctx.fillRect(cx - 14, 32, 28, 8); ctx.fillRect(cx - 10, 24, 20, 8);
+      }
     } else if (type === 'model') {
       ctx.fillStyle = '#713bff';
       ctx.fillRect(cx - 16, 20, 32, 32);

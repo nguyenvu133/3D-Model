@@ -24,6 +24,24 @@
   var DEMO_URL = 'https://raw.githubusercontent.com/velo-engine/velo/3d/examples/demo3d/assets/scenes/main.scene';
   var HERO_MODEL_ID = 'a3d0f8b1'; /* assets/models/than_dieu_run.fbx — Thần Điêu Fast Run */
   var HERO_FBX_LOCAL = 'models/thandieu/Than_dieu_Fast_Run.fbx';
+  /* FBX thật của demo3d Velo, fetch binary trực tiếp từ repo Velo công khai
+   * (đã kiểm chứng 200, 3,797,328 B) — bước 2 của chuỗi load, xem loadHeroFBX. */
+  var HERO_FBX_CDN = 'https://raw.githubusercontent.com/velo-engine/velo/3d/examples/demo3d/assets/models/than_dieu_run.fbx';
+  var HERO_FBX_SIZE = 3797328;
+  /* Màu runner trong main.scene (SkinnedModel3D color/emissive 0–255). */
+  var RUNNER_TINTS = {
+    gold: { color: [255, 215, 120], emissive: [70, 45, 0] },
+    shadow: { color: [90, 70, 130], emissive: [40, 10, 80] }
+  };
+
+  /* Trạng thái model Hero: 'fbx' | 'chibi' | 'loading' — panel Velo đọc để hiện. */
+  var _heroStatus = { mode: 'chibi', detail: 'chưa load FBX thật' };
+  var _heroBuffer = null; /* ArrayBuffer FBX đã tải (CDN hoặc file picker) — runners parse lại */
+  function setHeroStatus(mode, detail) {
+    _heroStatus = { mode: mode, detail: detail || '' };
+    try { if (ME.VeloPanel && ME.VeloPanel.setHeroStatus) ME.VeloPanel.setHeroStatus(mode, detail); } catch (e) { }
+  }
+  function getHeroStatus() { return { mode: _heroStatus.mode, detail: _heroStatus.detail }; }
 
   /* File model thật từ thư mục project Velo (VeloProject đăng ký):
    * id (.meta) -> {file, url (blob), name}. Import ưu tiên dùng file
@@ -595,6 +613,8 @@
       if (created.length) {
         var health = comp(node, 'Health');
         if (health) created[0].velo.health = { max: num(health.max, 0) };
+        var heal = comp(node, 'HealZone');
+        if (heal) created[0].velo.healZone = { radius: num(heal.radius, 1.5) };
         if (pathRunner && !skinned) created[0].velo.pathRunner = { radius: num(pathRunner.radius, 10), speed: num(pathRunner.speed, 5), phase: num(pathRunner.phase, 0) };
         var spin = comp(node, 'Spin3D');
         if (spin) created[0].velo.spin = true;
@@ -665,6 +685,178 @@
     try { if (ME.AssetManager && ME.AssetManager.render) ME.AssetManager.render(); } catch (e) { }
   }
 
+  /* ---------- chuỗi load FBX Thần Điêu thật (NHIỆM VỤ 1) ----------
+   * Thứ tự, dừng ở bước đầu tiên thành công; mỗi bước lỗi ghi rõ vào
+   * status + warnings, KHÔNG im lặng giữ chibi:
+   *   (1) FBX từ thư mục project Velo (blob URL, đã đăng ký qua setModelFile)
+   *   (2) fetch binary từ GitHub raw velo-engine/velo (CDN) + tiến độ %/MB
+   *       → FBXLoader.parse(arrayBuffer) — không cần upload file lên repo
+   *   (3) file local models/thandieu/Than_dieu_Fast_Run.fbx trong repo
+   *   (4) nút "Chọn file FBX Thần Điêu…" trong VeloPanel (file picker,
+   *       parse ngay, chỉ lưu blob trong phiên — không upload đâu cả)
+   *   (5) tất cả thất bại → giữ chibi + panel hiện rõ lý do + 3 cách khắc phục.
+   * Runners Gold/Shadow dùng cùng model (parse lại ArrayBuffer đã tải, hoặc
+   * load lại cùng URL) với màu/emissive như main.scene. */
+  function fetchWithProgress(url, onProgress) {
+    return fetch(url).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      var total = HERO_FBX_SIZE;
+      try {
+        var cl = r.headers && r.headers.get ? r.headers.get('content-length') : null;
+        if (cl) total = parseInt(cl, 10) || total;
+      } catch (e) { }
+      if (r.body && r.body.getReader) {
+        var reader = r.body.getReader();
+        var chunks = [], loaded = 0;
+        var pump = function () {
+          return reader.read().then(function (res) {
+            if (res.done) {
+              var out = new Uint8Array(loaded);
+              var off = 0;
+              chunks.forEach(function (c) { out.set(c, off); off += c.length; });
+              return out.buffer;
+            }
+            chunks.push(res.value);
+            loaded += res.value.length;
+            if (onProgress) onProgress(loaded / total, loaded, total);
+            return pump();
+          });
+        };
+        return pump();
+      }
+      return r.arrayBuffer().then(function (ab) {
+        if (onProgress) onProgress(1, ab.byteLength, total);
+        return ab;
+      });
+    });
+  }
+  function loadRunners(source) {
+    if (!ME.MapEditor || !ME.MapEditor.data || !ME.MapEditor._loadThandieuFBX) return Promise.resolve(0);
+    var runners = ME.MapEditor.data.objects.filter(function (o) {
+      return o.velo && o.velo.modelId === HERO_MODEL_ID && /runner/i.test(o.name || '');
+    });
+    if (!runners.length) return Promise.resolve(0);
+    var jobs = runners.map(function (o) {
+      var tint = /gold/i.test(o.name) ? RUNNER_TINTS.gold : RUNNER_TINTS.shadow;
+      return ME.MapEditor._loadThandieuFBX(o.id, source, { tint: tint }).catch(function () { return false; });
+    });
+    return Promise.all(jobs).then(function (rs) {
+      return rs.filter(function (x) { return !!x; }).length;
+    });
+  }
+  function loadHeroFBX(heroId, opts) {
+    opts = opts || {};
+    if (!ME.MapEditor || !ME.MapEditor._loadThandieuFBX) return Promise.resolve(false);
+    var warnings = opts.warnings || [];
+    function progress(pct, loaded, total) {
+      var msg = 'Đang tải Thần Điêu FBX: ' + Math.round(pct * 100) + '% (' +
+        (loaded / 1048576).toFixed(1) + '/' + (total / 1048576).toFixed(1) + ' MB)…';
+      if (opts.onProgress) opts.onProgress(pct, loaded, total);
+      setHeroStatus('loading', msg);
+      if (ME.MapEditor && ME.MapEditor.setStatus) ME.MapEditor.setStatus(msg);
+    }
+    function done(ok, mode, detail) {
+      if (ok) setHeroStatus(mode, detail);
+      return ok;
+    }
+    var chain = Promise.resolve(false);
+    /* (1) thư mục project */
+    var mf = getModelFile(HERO_MODEL_ID);
+    if (mf) {
+      chain = chain.then(function () {
+        setHeroStatus('loading', 'Đang load FBX Thần Điêu từ thư mục project…');
+        return ME.MapEditor._loadThandieuFBX(heroId, mf.url).then(function (ok) {
+          if (ok) { loadRunners(mf.url); return done(true, 'fbx', 'FBX thật từ thư mục project (' + (mf.name || 'than_dieu_run.fbx') + ')'); }
+          warnings.push('FBX trong thư mục project load lỗi');
+          return false;
+        });
+      }).catch(function () { warnings.push('FBX trong thư mục project load lỗi'); return false; });
+    }
+    /* (2) GitHub raw CDN — fetch binary + parse */
+    chain = chain.then(function (ok) {
+      if (ok) return true;
+      setHeroStatus('loading', 'Đang tải Thần Điêu FBX từ GitHub (velo-engine/velo)…');
+      return fetchWithProgress(HERO_FBX_CDN, progress).then(function (ab) {
+        _heroBuffer = ab;
+        return ME.MapEditor._loadThandieuFBX(heroId, ab).then(function (ok2) {
+          if (ok2) {
+            loadRunners(ab);
+            return done(true, 'fbx', 'FBX thật từ GitHub velo-engine/velo (3,797,328 B, clip Fast Run 0.533s)');
+          }
+          warnings.push('parse FBX từ GitHub lỗi');
+          return false;
+        });
+      }).catch(function (e) {
+        warnings.push('tải FBX từ GitHub lỗi: ' + (e && e.message || e) + ' (mất mạng/CORS?)');
+        return false;
+      });
+    });
+    /* (3) file local trong repo — BỎ QUA khi chạy file:// (Chrome chặn
+     * fetch() tới file local, HEAD luôn lỗi; bỏ qua để khỏi báo lỗi giả
+     * và để chuỗi load đi tiếp tới bước (4) file picker offline). */
+    chain = chain.then(function (ok) {
+      if (ok) return true;
+      if (typeof location !== 'undefined' && location.protocol === 'file:') {
+        warnings.push('chạy file:// — bỏ qua kiểm tra file local ' + HERO_FBX_LOCAL + ' (trình duyệt chặn fetch file local)');
+        return false;
+      }
+      return fetch(HERO_FBX_LOCAL, { method: 'HEAD' }).then(function (r) {
+        if (!r.ok) {
+          warnings.push('chưa có ' + HERO_FBX_LOCAL + ' trong repo');
+          return false;
+        }
+        return ME.MapEditor._loadThandieuFBX(heroId, HERO_FBX_LOCAL).then(function (ok3) {
+          if (ok3) {
+            loadRunners(HERO_FBX_LOCAL);
+            return done(true, 'fbx', 'FBX thật từ file local ' + HERO_FBX_LOCAL);
+          }
+          warnings.push('file local ' + HERO_FBX_LOCAL + ' load lỗi');
+          return false;
+        });
+      }).catch(function () {
+        warnings.push('không kiểm tra được file local ' + HERO_FBX_LOCAL);
+        return false;
+      });
+    });
+    /* (5) tất cả thất bại → chibi + lý do + 3 cách khắc phục */
+    return chain.then(function (ok) {
+      if (ok) return true;
+      var detail = 'Hero giữ dạng chibi — ' + warnings.join('; ') +
+        '. Khắc phục: (1) bấm "📂 Chọn file FBX Thần Điêu…" trong panel Velo rồi chọn file than_dieu_run.fbx trên máy/điện thoại; ' +
+        '(2) kiểm tra mạng rồi import lại demo3d (bước tải từ GitHub); ' +
+        '(3) upload file FBX vào models/thandieu/ trong repo rồi import lại.';
+      setHeroStatus('chibi', detail);
+      warnings.push(detail);
+      return false;
+    });
+  }
+  /* (4) file picker: user chọn file FBX trên máy/điện thoại → parse ngay. */
+  function loadHeroFBXFromBuffer(buffer, name) {
+    if (!buffer) return Promise.resolve(false);
+    _heroBuffer = buffer;
+    if (!ME.MapEditor || !ME.MapEditor.data || !ME.MapEditor._loadThandieuFBX) return Promise.resolve(false);
+    var heroObj = null;
+    ME.MapEditor.data.objects.forEach(function (o) {
+      if (!heroObj && o.type === 'hero' && o.velo && o.velo.modelId === HERO_MODEL_ID) heroObj = o;
+    });
+    if (!heroObj) {
+      ME.MapEditor.data.objects.forEach(function (o) {
+        if (!heroObj && o.type === 'hero') heroObj = o;
+      });
+    }
+    if (!heroObj) return Promise.resolve(false);
+    setHeroStatus('loading', 'Đang parse ' + (name || 'file FBX') + '…');
+    return ME.MapEditor._loadThandieuFBX(heroObj.id, buffer).then(function (ok) {
+      if (ok) {
+        loadRunners(buffer);
+        setHeroStatus('fbx', 'FBX thật từ file bạn chọn (' + (name || 'than_dieu_run.fbx') + ') — chỉ lưu trong phiên, không upload đâu cả');
+        return true;
+      }
+      setHeroStatus('chibi', 'File FBX đã chọn parse lỗi — Hero giữ dạng chibi. Thử file than_dieu_run.fbx khác.');
+      return false;
+    });
+  }
+
   function importScene(text, opts) {
     opts = opts || {};
     var nodes;
@@ -688,26 +880,14 @@
         res.prefabIds.forEach(function (id) { ME.VeloPrefabLibrary.registerAsset(id); });
       }
       refreshPanels();
-      /* Thần Điêu FBX thật nếu có file local, không thì giữ hero chibi + ghi rõ.
-       * Ưu tiên 1: file model trong thư mục project Velo (blob URL).
-       * Ưu tiên 2: file local trong repo (HEAD check). */
+      /* Thần Điêu FBX thật — chuỗi load 5 bước (project → GitHub CDN →
+       * file local → file picker → chibi + lý do). Xem loadHeroFBX. */
       var heroObj = null;
       if (res.heroId) heroObj = ME.MapEditor.getObjectData(res.heroId);
       if (heroObj && ME.MapEditor._loadThandieuFBX) {
-        var heroModelId = heroObj.velo && heroObj.velo.modelId;
-        var mf = heroModelId ? getModelFile(heroModelId) : null;
-        if (mf) {
-          ME.MapEditor._loadThandieuFBX(heroObj.id, mf.url).then(function (ok) {
-            if (!ok) ME.MapEditor.notify('Thần Điêu', 'Load FBX từ thư mục project lỗi — Hero giữ dạng chibi.', 'warning');
-          });
-        } else {
-          fetch(HERO_FBX_LOCAL, { method: 'HEAD' }).then(function (r) {
-            if (r.ok) return ME.MapEditor._loadThandieuFBX(heroObj.id, HERO_FBX_LOCAL);
-            res.warnings.push('chưa có ' + HERO_FBX_LOCAL + ' trong repo — Hero giữ dạng chibi, upload file FBX rồi import lại để có Thần Điêu thật');
-            ME.MapEditor.notify('Thần Điêu', 'Chưa có ' + HERO_FBX_LOCAL + ' — Hero giữ dạng chibi.', 'warning');
-            return false;
-          }).catch(function () { /* đã notify ở trên hoặc bỏ qua */ });
-        }
+        loadHeroFBX(heroObj.id, { warnings: res.warnings }).then(function (ok) {
+          if (!ok) ME.MapEditor.notify('Thần Điêu', 'Hero giữ dạng chibi — xem panel Velo để biết lý do + cách khắc phục.', 'warning');
+        });
       }
       if (res.heroId) {
         try {
@@ -795,11 +975,15 @@
 
   ME.VeloImport = {
     DEMO_URL: DEMO_URL, HERO_MODEL_ID: HERO_MODEL_ID, HERO_FBX_LOCAL: HERO_FBX_LOCAL,
+    HERO_FBX_CDN: HERO_FBX_CDN, HERO_FBX_SIZE: HERO_FBX_SIZE, RUNNER_TINTS: RUNNER_TINTS,
     parse: parse, tokenize: tokenize, countNodes: countNodes, walkNodes: walkNodes,
     findNodes: findNodes, comp: comp, rgbToHex: rgbToHex, hexToRgb: hexToRgb,
     treeToSceneData: treeToSceneData,
     importScene: importScene, importDemo3d: importDemo3d, importFile: importFile,
     insertPrefabText: insertPrefabText,
+    loadHeroFBX: loadHeroFBX, loadHeroFBXFromBuffer: loadHeroFBXFromBuffer,
+    loadRunners: loadRunners, getHeroStatus: getHeroStatus, setHeroStatus: setHeroStatus,
+    _heroBuffer: function () { return _heroBuffer; },
     setModelFile: setModelFile, getModelFile: getModelFile, _modelFiles: _modelFiles,
     refreshPanels: refreshPanels
   };

@@ -354,7 +354,11 @@
   /* ---------- play mode ---------- */
   Viewport3D.setPlaying = function (v) {
     Viewport3D._playing = !!v;
-    if (!v) Viewport3D.resetPlayState();
+    if (!v) {
+      /* dừng Run Velo trước (nó tự khôi phục snapshot), rồi mới reset patrol */
+      if (ME.VeloPlay && ME.VeloPlay.isActive && ME.VeloPlay.isActive()) ME.VeloPlay.stop();
+      Viewport3D.resetPlayState();
+    }
   };
   Viewport3D.isPlaying = function () { return Viewport3D._playing; };
   /* camera theo hero khi Play (bật/tắt từ panel Mở rộng) */
@@ -379,6 +383,11 @@
 
   Viewport3D.updatePlay = function (dt) {
     if (!Viewport3D._playing || !ME.MapEditor) return;
+    /* Run Velo đang active → chạy game Velo, KHÔNG chạy patrol cũ */
+    if (ME.VeloPlay && ME.VeloPlay.isActive && ME.VeloPlay.isActive()) {
+      ME.VeloPlay.update(dt);
+      return;
+    }
     Viewport3D._playT += dt;
     var t = Viewport3D._playT;
     ME.MapEditor.forEachObject(function (obj) {
@@ -410,7 +419,16 @@
         }
         if (ME.Placement) ME.Placement.animateHero(obj, anim, t);
       }
-      if (type === 'campfire') {
+      if (type === 'bird' || type === 'bat') {
+        /* chim/dơi: đập cánh + bay lượn quanh độ cao gốc */
+        if (ME.Placement) ME.Placement.animateFlying(obj, t);
+      }
+      if (type === 'cloud') {
+        /* mây trôi chậm theo +x, quay lại đầu map khi ra khỏi biên */
+        obj.position.x += dt * 0.5;
+        if (obj.position.x > 56) obj.position.x = -56;
+      }
+      if (type === 'campfire' || type === 'stone_stove') {
         var flame = null;
         obj.traverse(function (c) { if (c.name === 'flame') flame = c; });
         if (flame) flame.scale.setScalar(1 + Math.sin(t * 9 + obj.position.x) * 0.15);

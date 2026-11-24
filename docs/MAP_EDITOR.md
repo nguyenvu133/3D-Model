@@ -231,3 +231,205 @@ Sửa:
 Harness mới `~/workspace/.test-mapeditor/test-velo-folder-mapeditor.js` (jsdom + three r128 thật, fixture thư mục Velo trong `~/workspace/.test-mapeditor/fixtures/velo-folder/`): **140/140 PASS × 2 vòng** (vòng 1 và vòng 2 giống nhau). Hồi quy cùng ngày: `test-mapeditor.js` 96/96, `test-velo-mapeditor.js` 69/69, `test-fbx-mixamo.js` 73/73. `node --check`: 15/15 file JS mới/sửa OK. Server smoke: 13/13 file 200.
 
 Trong quá trình viết harness đã bắt được 3 bug thật trong code mới và đã sửa: (1) `scanFiles` không đọc `f._relPath` nên file từ `showDirectoryPicker` mất đường dẫn thư mục; (2) `getUnsavedModelAssets` append `.fbx` cả khi tên đã có đuôi `.glb`; (3) nút "Scene đã đổi — Tải lại" không có `id` nên test/code khác không tìm được. Ngoài ra hook cây project vào `AssetManager.render` để cây tự cập nhật khi import model trong phiên.
+
+## 9. Object mới + "Lấp đầy map" (2026-11-24 — chưa push)
+
+### 9.1 35 prefab procedural mới
+
+Thêm vào `Placement.BUILDERS` + `ASSET_LIST` (đăng ký sẵn trong Asset Manager, có thumbnail canvas riêng — xem `AssetManager.drawThumb`). Danh sách đầy đủ trong `Placement.NEW_TYPES` (35 loại):
+
+| Prefab mới | Mô tả ngắn | Nhóm |
+|---|---|---|
+| `pagoda` | Chùa 3 tầng mái cong, đế đá 2 bậc, đỉnh vàng | Buildings |
+| `torii_big` | Cổng torii đỏ lớn (~1.6× torii thường) | Buildings |
+| `house_tile` | Nhà mái ngói cong xanh | Buildings |
+| `house_thatch` | Nhà mái rơm vàng | Buildings |
+| `house_flat` | Nhà mái bằng 2 tầng + ống khói | Buildings |
+| `stall` | Quầy hàng chợ, mái vải sọc + hàng hoá | Buildings |
+| `pine_snow` | Thông tuyết dày | Vegetation |
+| `pine_tall` | Thông cao 4 tầng tán | Vegetation |
+| `pine_short` | Thông lùn 2 tầng tán | Vegetation |
+| `sakura` | Hoa anh đào (cụm hoa hồng) | Vegetation |
+| `mushroom` | Nấm mũ đỏ chấm trắng | Vegetation |
+| `lantern_red` / `lantern_yellow` / `lantern_blue` | Đèn lồng 3 màu (đỏ/vàng/xanh) | Props |
+| `bridge_arch` | Cầu gỗ cong (vòm) | Props |
+| `well_stone` | Giếng đá có mái ngói, 4 cột | Props |
+| `fence_wood` | Hàng rào gỗ dài, cọc nhọn | Props |
+| `statue_dragon` | Tượng rồng đá uốn lượn + sừng vàng | Props |
+| `crystal_red` / `crystal_blue` / `crystal_purple` | Tinh thể 3 màu (phát sáng) | Props |
+| `stone_stove` | Bếp lửa đá (vòng đá + lửa + nồi) | Props |
+| `stream` | Suối (dải nước trong + đá 2 bờ) | Props |
+| `cloud` | Mây bay (trôi trong Play mode) | Props |
+| `chest` | Rương kho báu (nắp vòm + viền vàng) | Props |
+| `coin` | Xu vàng đứng | Props |
+| `banner` | Cờ / băng rôn đỏ + huy hiệu vàng | Props |
+| `stone_steps` | Bậc đá 4 bậc | Props |
+| `stone_path` | Đường đá 5 phiến | Props |
+| `bird` | Chim bay (cánh đập trong Play mode) | Characters |
+| `bat` | Dơi bay (cánh đập, mắt đỏ) | Characters |
+| `wolf` | Sói 4 chân, tai nhọn, đuôi | Characters |
+| `villager_blue` / `villager_red` / `villager_yellow` | Dân làng NPC 3 kiểu áo | Characters |
+
+Animation Play mode (`Viewport3D.updatePlay`): chim/dơi đập cánh qua `Placement.animateFlying` (cánh xoay sin, bay lượn quanh độ cao gốc); mây trôi chậm theo +x, quay lại đầu map khi ra biên; bếp đá cháy như lửa trại (ngọn lửa `flame` co giãn).
+
+### 9.2 Nút "🌲 Lấp đầy map"
+
+Thêm bằng JS vào `#me-toolbar` (`MapEditor._buildFillMapUI`, không sửa MapEditor.html): 1 select preset + 1 ô nhập seed + nút **"🌲 Lấp đầy map"**. Bấm 1 lần rải cả preset lên map hiện tại; `MapEditor.fillMap(preset, seed)` báo rõ bằng notify: `Preset "<tên>" (seed <số>): +<N> object — <trước> → <sau> object · Draw ~<calls> · Tris ~<số>`.
+
+4 preset scatter (`TerrainBrush.PRESETS`, mỗi preset là danh sách zone `{type, count, cx, cz, r, sMin, sMax}`) + preset `full` = Rừng + Làng:
+
+| Preset | Seed mặc định | Nội dung | Số object thêm |
+|---|---|---|---|
+| `full` — 🌲 Rừng + Làng | 20261124 | Rừng + Làng gộp lại (đầy đủ nhất) | ~114 |
+| `forest` — 🌲 Rừng | 11 | Thông 3 kiểu, anh đào, nấm, trúc, đá | 66 |
+| `village` — 🏠 Làng | 22 | Nhà 3 kiểu, giếng, hàng rào, đèn, dân làng, cờ, chùa | 48 |
+| `market` — 🏪 Chợ | 33 | Quầy hàng, đèn, rương, xu, dân làng, cờ | 38 |
+| `battlefield` — ⚔️ Chiến trường | 44 | Sói, quái, boss, dơi, đá, bếp lửa, cờ | 32 |
+
+**Deterministic:** mỗi preset dùng RNG `mulberry32(seed)` riêng, không dùng `Math.random`; vị trí/quay/scale được làm tròn 2 chữ số thập phân rồi đặt qua `MapEditor.placeObjectsBulk` (1 undo + 1 emit cho cả lần fill — undo 1 lần hoàn tác cả lần fill). Cùng seed + cùng map → cùng số object và cùng vị trí (harness kiểm tra snapshot đã sắp xếp giống nhau tuyệt đối).
+
+### 9.3 Map mặc định Trường Bạch: 91 → 179 object
+
+`SceneData.defaultObjects()` thêm 88 object mới (làng 6 nhà 3 kiểu + 4 quầy chợ + giếng đá + hàng rào + đèn 3 màu, rừng 14 thông mới + 4 anh đào + 4 nấm, 3 tinh thể, bếp đá, suối, cầu cong, mây, chim, dơi, sói, 6 dân làng, 2 rương, 4 xu, cờ, bậc đá, đường đá, chùa, torii lớn, tượng rồng) — chứa đủ 35/35 loại prefab mới. Vị trí random dùng chung `mulberry32(20261124)` nên map mặc định vẫn xác định mỗi lần load; `validate()` không lỗi, không trùng id.
+
+**Hiệu năng:** `Placement.mat()` cache material theo màu + opts (dùng chung thay vì new material mỗi mesh); `buildPrefab` clone material trước khi đổi màu/roughness riêng nên tuỳ chỉnh không rò sang object khác. `Viewport3D.computeStats()` đếm thật từ scene (mỗi mesh = 1 draw call): map mặc định 179 object → **~993 draw calls, ~90.682 tris, 993 mesh** (đo trong harness). Con số này là ước tính trên, vì renderer thật có thể gộp/frustum-cull bớt; nếu máy yếu thì giảm object bằng cách xoá bớt cây trong Hierarchy hoặc dùng preset nhỏ hơn.
+
+### 9.4 Test
+
+Harness mới `~/workspace/.test-mapeditor/test-velo-prefabs-mapeditor.js` (jsdom + three r128 thật, boot giống `test-velo-folder-mapeditor.js`): **62/62 PASS × 2 vòng**. Nội dung: (a) 35 builder đều trả `THREE.Group` ≥1 mesh + `userData.mapType` đúng, material dùng chung qua cache, color override không rò; (b) fill deterministic (cùng seed → cùng số object + cùng snapshot vị trí; seed khác → vị trí khác), 4 preset đúng loại (Rừng ≥80% cây, Làng có nhà + dân làng, Chợ có quầy + xu, Chiến trường có quái), click nút thật trên toolbar tăng object, preset lạ báo lỗi không crash, undo 1 lần hoàn tác cả lần fill; (c) map mặc định 179 object ≥150, `validate()` sạch, không trùng id, chứa đủ 35/35 loại mới; (d) AssetManager đăng ký đủ 35 prefab mới, grid 59 thẻ đều có canvas thumbnail; (e) Play mode: chim đập cánh (biên độ 0.648), mây trôi; (f) export Velo: `cone`/`sphere`/`plane`/`cylinder` + `PointLight3D` + `validate()` ok. Hồi quy cùng ngày: `test-velo-folder-mapeditor.js` 140/140, `test-mapeditor.js` 96/96, `test-velo-mapeditor.js` 69/69, `test-fbx-mixamo.js` 73/73. `node --check`: 7/7 file JS mới/sửa OK. Server smoke: 11/11 file 200.
+
+Trong quá trình viết harness đã bắt được 1 lỗi test (không phải lỗi code): đo cánh chim đúng lúc sin qua 0 nên đọc 0.000 → đã sửa test đo biên độ max qua 6 bước (0.648).
+
+### 8.6 Run Velo — chơi game demo3d trong trình duyệt (2026-11-24)
+
+Nút **▶ Run Velo** trên toolbar (hoặc phím **R** khi đã import scene Velo) chạy game
+demo3d ngay trong trình duyệt — **bản port JS chạy bằng three.js, KHÔNG chạy engine V,
+KHÔNG biên dịch code V** (logic file `.v` chỉ được đọc để port các con số/quy tắc).
+
+- Luật port từ `game.v`/`combat.v` (`js/mapeditor/velo/VeloPlay.js`, `VeloPlay.Core`):
+  Hero speed 5, dash 12/0.3s/cd 0.7s, arena 24m, clip_speed 3.6, autopilot sau 5s
+  không nhập liệu (tự chạy tới orb gần nhất, orb xa >9m thì dash, 2%/frame);
+  FollowCamera distance 7.5/height 3.2/smoothing 6, orbit Q/E 120°/s, kéo chuột
+  0.3°/px; SlimeHop/DroneHover/DroneGun/GolemWalk/GolemSlam; OrbSpawner 10 orb,
+  nhặt +1, respawn ngẫu nhiên r 3–16; HP hero 8/enemy 3, invuln 1s/0.15s, chết
+  hồi sinh sau 2s/6s, hero chết reset orbs về 0, enemy chết +1 kills; slash
+  damage 1/range 2.4/arc 120°/cd 0.4s (J hoặc click chuột, click <6px mới tính),
+  bolt damage 2/speed 16/cd 0.7s (K); HealZone 1 HP/s; thắng khi nhặt 20 orb.
+- Điều khiển: WASD/mũi tên + J/K/Shift/Space/Q/E + click chém; **điện thoại:
+  joystick ảo trái + nút Dash/Chém/Phép phải** (kiểu joystick + CSS của WUXIA3D.js),
+  camera follow + orbit bằng kéo 1 ngón. Âm thanh WebAudio beep (pattern AudioMan
+  của WUXIA3D.js, không cần file âm thanh): nhặt orb / chém trúng / bị đánh / thắng.
+- Khi chơi: editor UI thu gọn (class `velo-playing` trên body — ẩn 2 panel +
+  bottom + viewbar), hiện HUD game (Orbs, thanh HP, Defeated, FPS/draws/tris,
+  dòng Help đúng như HUD Velo). Bấm **Esc** hoặc nút **⏹ Dừng** → về editor,
+  khôi phục vị trí/trạng thái scene trước khi chạy (snapshot + `resetPlayState`) —
+  **không làm mất map đang sửa**. Kỷ lục (orbs max, kills) lưu localStorage
+  `velo-play-best`, hiện khi thắng/chết.
+- Giới hạn (PLANNED, chưa có): Trail3D/Particles3D thật (orb nổ/bụi chân hiện
+  là sphere flash đơn giản + âm thanh, chưa có hệ hạt); thanh HP 3D là plane
+  billboard đơn giản; autopilot dash dùng xác suất 2%/frame như gốc nên không
+  hoàn toàn xác định; tốc độ chạy của runner lấy từ PathRunner trong scene.
+- Test: `~/workspace/.test-mapeditor/test-velo-play-mapeditor.js` — **72/72 PASS × 2 vòng**
+  (2026-11-24). Hồi quy cùng ngày: `test-velo-folder-mapeditor.js` 140/140,
+  `test-mapeditor.js` 96/96, `test-velo-mapeditor.js` 69/69, `test-fbx-mixamo.js` 73/73.
+
+## 10. Chế độ Offline + vendor thư viện (2026-11-24 — chưa push)
+
+### 10.1 File vendor trong `js/vendor/` (tải từ jsdelivr)
+
+| File | Phiên bản / nguồn | Byte thực tế |
+|---|---|---|
+| `three.min.js` | three@0.128.0/build/three.min.js | 603.445 |
+| `pixi.min.js` | pixi.js@8.23.0/dist/pixi.min.js | 912.519 |
+| `GLTFLoader.js` | three@0.128.0/examples/js/loaders/GLTFLoader.js | 96.550 |
+| `TransformControls.js` | three@0.128.0/examples/js/controls/TransformControls.js | 45.539 |
+| `fflate.js` | fflate@0.6.10/umd/index.js | 29.679 |
+| `FBXLoader.js` | three@0.128.0/examples/js/loaders/FBXLoader.js | 100.686 |
+| **Tổng** | | **1.788.418 (~1,79 MB)** |
+
+Kích thước khớp đúng từng byte. Cả 6 file là text UTF-8 (0 byte NUL,
+`file` → JavaScript/ASCII text), `node --check` OK — **đẩy được lên
+GitHub bằng snapshot push text**, không phải binary. Xem thêm
+`js/vendor/README.md`.
+
+`MapEditor.html` tải 6 file local này làm nguồn chính, giữ nguyên thứ tự
+cũ (three → pixi → GLTFLoader → TransformControls → fflate → FBXLoader);
+khi file local lỗi mới fallback jsdelivr → unpkg qua helper
+`window.__meLibFallback` (chỉ chạy khi có mạng). Lúc khởi động, khối
+script kiểm tra trong `MapEditor.html` sẽ báo rõ tên file thiếu + hướng
+dẫn (banner đỏ + statusbar) thay vì để trang trắng lặng lẽ.
+
+### 10.2 Cách mở offline trên điện thoại
+
+1. Tải ZIP repo 1 lần (lúc còn mạng): mở repo GitHub → **Code → Download ZIP**
+   (hoặc `git clone` trên máy tính rồi copy thư mục qua điện thoại).
+2. Giải nén ZIP trên điện thoại (app Files / ZArchiver…).
+3. **Tắt WiFi + dữ liệu di động** (để kiểm tra thật là offline).
+4. Mở app **Chrome** → gõ vào thanh địa chỉ
+   `file:///sdcard/Download/3D-Model-main/MapEditor.html`
+   (đường dẫn tuỳ chỗ bạn giải nén) → Enter. Hoặc mở từ app Files:
+   chọn file `MapEditor.html` → **Mở bằng Chrome**.
+5. Map, viewport 3D, terrain, prefab, Inspector… chạy bình thường vì
+   thư viện đã nằm sẵn trong `js/vendor/`.
+
+Lưu ý: mở qua `file://` thì trình duyệt chặn `fetch()` tới file local —
+`OfflineMode.js` + guard trong `VeloImport.js` đã xử lý (bỏ qua bước
+kiểm tra HEAD file local, không báo lỗi giả).
+
+### 10.3 Nút nào dùng được offline / nút nào cần mạng
+
+Badge trên toolbar (góc phải thanh công cụ) hiện **● Offline** khi mất
+mạng hoặc khi mở qua `file://`, **● Online** khi có mạng (tự cập nhật
+khi bật/tắt mạng, `js/mapeditor/core/OfflineMode.js` tự init).
+
+| Chức năng | Offline | Ghi chú |
+|---|---|---|
+| Viewport 3D, camera, terrain, đặt/xoá object, Inspector, Hierarchy | ✅ | Chạy local hoàn toàn |
+| Play (chế độ chơi cơ bản trong MapEditor) | ✅ | Local |
+| Export `.scene` / tải `main.scene`, `.meta`, tải tất cả | ✅ | Tải file bằng Blob, không cần mạng |
+| Mở thư mục project Velo (chọn thư mục trên máy) | ✅ | Đọc file local |
+| **📂 Mở .scene từ máy (offline)** — khối "📴 Offline" trong panel Velo | ✅ | FileReader, gọi `VeloImport.importFile` |
+| **📂 Mở .fbx Thần Điêu từ máy (offline)** — khối "📴 Offline" trong panel Velo | ✅ | FileReader, gọi `VeloImport.loadHeroFBXFromBuffer` (qua `VeloPanel.onHeroFileChosen` nếu có) |
+| Chọn file `.scene` / `.fbx` có sẵn trong panel Velo | ✅ | Local, vẫn mở khi offline |
+| V Code Runner (dịch V→JS, xem VELO_INTEGRATION.md §10) | ✅ | Dịch + chạy đều local |
+| ⬇ Import demo3d Velo (tải `main.scene` từ GitHub) | ❌ | **Bị khoá khi offline** (nút mờ + tooltip "Cần mạng…"); `importDemo3d` cũng bị chặn sớm với thông báo rõ |
+| Tải FBX Thần Điêu từ GitHub raw (bước 2 chuỗi load Hero) | ❌ | Cần mạng — thay bằng nút chọn file `.fbx` offline ở trên |
+| Fetch prefab `.scene` gốc từ GitHub (`VeloPrefabLibrary`) | ❌ | Cần mạng — dùng prefab fallback nhúng sẵn / prefab trong thư mục project |
+| Run Velo (bản port JS) | ✅* | Chạy bằng JS local; *chỉ cần Hero FBX: lấy từ file `.fbx` offline hoặc đã có sẵn trong thư mục project |
+
+### 10.4 File sửa/tạo (chưa push)
+
+- Mới: `js/vendor/` — 6 file thư viện + `README.md`.
+- Mới: `js/mapeditor/core/OfflineMode.js` (~13,6 KB) — badge, khoá nút mạng,
+  khối picker offline, chặn sớm `importDemo3d`; tự init, không cần sửa `MapEditor.js`.
+- Sửa: `MapEditor.html` — 6 script tag sang local + fallback CDN, script kiểm
+  tra thư viện lúc khởi động, span badge `#me-offline-badge` trên toolbar,
+  thêm script tag `OfflineMode.js` trước `MapEditor.js`.
+- Sửa tối thiểu: `js/mapeditor/velo/VeloImport.js` — chỉ thêm guard
+  `location.protocol === 'file:'` ở bước (3) chuỗi load FBX: bỏ qua
+  `fetch HEAD` file local khi chạy `file://` (Chrome chặn fetch file local).
+
+Không đụng: `index.html` (Studio), `VeloPanel.js`, `VeloPlay.js`,
+`VCodeRunner.js`, `docs/*.md` (phần V Code ở VELO_INTEGRATION.md §10).
+
+### 10.5 Test (2026-11-24)
+
+Harness `~/workspace/.test-mapeditor/test-offline-mapeditor.js` —
+**93/93 PASS × 2 vòng** (coordinator chạy lại 1 vòng: 93/93): vendor tồn
+tại + đúng kích thước (lệch thực tế 0) + UTF-8 + header, `MapEditor.html`
+trỏ local + còn fallback CDN, badge + hàm khoá nút mạng, guard `file://`
+trong `VeloImport.js`, server smoke 200 cho 6 file vendor +
+`MapEditor.html` + `OfflineMode.js`.
+
+**Lỗi hồi quy bắt được khi gộp (đã sửa, không phải lỗi code chạy):**
+thêm 2 khối `<script>` inline vào `MapEditor.html` (lib-fallback +
+lib-check) làm 5 harness cũ crash `SyntaxError: Unexpected token '<'` —
+regex cũ trong harness lấy khối inline **đầu tiên** tới `</body>` nên
+nuốt cả các `<script src>` ở giữa. Đã sửa cả 5 harness
+(`test-mapeditor.js`, `test-velo-mapeditor.js`,
+`test-velo-folder-mapeditor.js`, `test-velo-play-mapeditor.js`,
+`test-velo-prefabs-mapeditor.js`) sang lấy khối inline **cuối cùng**
+(scene tabs + boot). Sau sửa, hồi quy: `test-velo-play` 72/72,
+`test-velo-prefabs` 62/62, `test-velo-folder` 140/140,
+`test-mapeditor` 96/96, `test-velo-mapeditor` 69/69,
+`test-fbx-mixamo` 73/73, `test-vcode-runner` 91/91.

@@ -445,10 +445,14 @@
       rotation: [0, opts.randomRot ? Math.random() * Math.PI * 2 : (opts.ry || 0), 0],
       scale: [1, 1, 1],
       color: null, material: null,
-      collider: (type === 'temple' || type === 'house' || type === 'gate' || type === 'tower' || type === 'torii') ? { shape: 'box', size: type === 'tower' ? [6, 8, 6] : (type === 'torii' ? [8, 7, 1] : [6, 4, 5]) } : null,
-      light: (type === 'lantern' || type === 'campfire' || type === 'portal') ? { color: type === 'portal' ? 0x9d4edd : 0xff8a2a, intensity: 0.8, distance: 12 } : null,
+      collider: (type === 'temple' || type === 'house' || type === 'gate' || type === 'tower' || type === 'torii' ||
+        type === 'pagoda' || type === 'torii_big' || type === 'house_tile' || type === 'house_thatch' ||
+        type === 'house_flat' || type === 'stall') ? { shape: 'box', size: type === 'tower' ? [6, 8, 6] : (type === 'torii' || type === 'torii_big' ? [8, 7, 1] : (type === 'pagoda' ? [9, 10, 9] : [6, 4, 5])) } : null,
+      light: (type === 'lantern' || type === 'campfire' || type === 'portal' || type === 'stone_stove' ||
+        type === 'lantern_red' || type === 'lantern_yellow' || type === 'lantern_blue') ? { color: type === 'portal' ? 0x9d4edd : 0xff8a2a, intensity: 0.8, distance: 12 } : null,
       path: type === 'patrol' ? [[x - 6, z - 6], [x + 6, z - 6], [x + 6, z + 6], [x - 6, z + 6]] : null,
-      anim: (type === 'hero' || type === 'monster' || type === 'boss') ? 'Idle' : null,
+      anim: (type === 'hero' || type === 'monster' || type === 'boss' || type === 'villager_blue' ||
+        type === 'villager_red' || type === 'villager_yellow' || type === 'wolf' || type === 'bat' || type === 'bird') ? 'Idle' : null,
       url: opts.url || null, veloId: opts.veloId || null,
       placeholder: false, locked: false, visible: true
     };
@@ -462,6 +466,99 @@
     MapEditor.select(dataObj.id);
     MapEditor.emitChange('place', { id: dataObj.id, type: type });
     return g;
+  };
+
+  /* đặt nhiều object 1 lần: 1 undo + 1 emit (dùng cho "Lấp đầy map").
+   * items: [{type, x, z, ry, s, y?}] — ry/s đã tính sẵn từ seed nên deterministic,
+   * không dùng Math.random ở đây. Trả {added, byType}. */
+  MapEditor.placeObjectsBulk = function (items, label) {
+    if (!MapEditor.data || !items || !items.length) return { added: 0, byType: {} };
+    MapEditor.pushUndo(label || 'Place nhiều object');
+    var byType = {}, added = 0;
+    items.forEach(function (it) {
+      var y = it.y !== undefined ? it.y : ME.TerrainEditor.heightAt(it.x, it.z);
+      var dataObj = {
+        id: ME.SceneData.newId('obj'), type: it.type,
+        name: it.name || MapEditor._nextName(it.type),
+        group: ME.SceneData.TYPE_GROUP[it.type] || 'Props',
+        position: [it.x, y, it.z],
+        rotation: [0, it.ry || 0, 0],
+        scale: [it.s || 1, it.s || 1, it.s || 1],
+        color: null, material: null,
+        collider: (it.type === 'pagoda' || it.type === 'house_tile' || it.type === 'house_thatch' ||
+          it.type === 'house_flat' || it.type === 'stall') ? { shape: 'box', size: it.type === 'pagoda' ? [9, 10, 9] : [6, 4, 5] } : null,
+        light: (it.type === 'lantern_red' || it.type === 'lantern_yellow' || it.type === 'lantern_blue' ||
+          it.type === 'stone_stove') ? { color: 0xff8a2a, intensity: 0.8, distance: 12 } : null,
+        path: null,
+        anim: (it.type === 'villager_blue' || it.type === 'villager_red' || it.type === 'villager_yellow' ||
+          it.type === 'wolf' || it.type === 'bat' || it.type === 'bird') ? 'Idle' : null,
+        url: null, veloId: null, placeholder: false, locked: false, visible: true
+      };
+      MapEditor.data.objects.push(dataObj);
+      MapEditor._addObjectMesh(dataObj);
+      byType[it.type] = (byType[it.type] || 0) + 1;
+      added++;
+    });
+    MapEditor.emitChange('fill', { added: added, byType: byType });
+    return { added: added, byType: byType };
+  };
+
+  /* "🌲 Lấp đầy map": rải 1 preset có seed lên map hiện tại, báo số object trước/sau. */
+  MapEditor.fillMap = function (preset, seed) {
+    if (!MapEditor.data || !ME.TerrainBrush || !ME.TerrainBrush.fillPreset) return null;
+    var before = MapEditor.data.objects.length;
+    var res = ME.TerrainBrush.fillPreset(preset || 'full', seed);
+    if (res.error) { MapEditor.notify('Lấp đầy map', res.error, 'error'); return res; }
+    var after = MapEditor.data.objects.length;
+    res.before = before; res.after = after;
+    var st = ME.Viewport3D ? ME.Viewport3D.computeStats() : null;
+    var statTxt = st ? ' · Draw ~' + st.calls + ' · Tris ~' + st.tris.toLocaleString() : '';
+    MapEditor.notify('🌲 Lấp đầy map',
+      'Preset "' + res.preset + '" (seed ' + res.seed + '): +' + res.added + ' object — ' +
+      before + ' → ' + after + ' object' + statTxt, 'success');
+    return res;
+  };
+
+  /* UI nút "🌲 Lấp đầy map" — thêm bằng JS vào toolbar (không sửa MapEditor.html) */
+  MapEditor._buildFillMapUI = function () {
+    var bar = document.getElementById('me-toolbar');
+    if (!bar || document.getElementById('me-fill-btn')) return;
+    var grp = document.createElement('div');
+    grp.className = 'tool-group';
+    grp.id = 'me-fill-group';
+    var label = document.createElement('span');
+    label.className = 'tool-label';
+    label.textContent = 'Lấp đầy:';
+    grp.appendChild(label);
+    var sel = document.createElement('select');
+    sel.id = 'me-fill-preset';
+    sel.title = 'Preset lấp đầy map (Rừng + Làng = đầy đủ nhất)';
+    [['full', '🌲 Rừng + Làng'], ['forest', '🌲 Rừng'], ['village', '🏠 Làng'],
+     ['market', '🏪 Chợ'], ['battlefield', '⚔️ Chiến trường']].forEach(function (p) {
+      var op = document.createElement('option');
+      op.value = p[0]; op.textContent = p[1];
+      sel.appendChild(op);
+    });
+    grp.appendChild(sel);
+    var seedInp = document.createElement('input');
+    seedInp.id = 'me-fill-seed';
+    seedInp.type = 'number';
+    seedInp.value = '20261124';
+    seedInp.title = 'Seed — cùng seed + cùng map → cùng kết quả';
+    seedInp.style.width = '90px';
+    grp.appendChild(seedInp);
+    var btn = document.createElement('button');
+    btn.id = 'me-fill-btn';
+    btn.className = 'tool-btn';
+    btn.textContent = '🌲 Lấp đầy map';
+    btn.title = 'Rải preset đã chọn (có seed) lên map hiện tại — 1 click';
+    btn.addEventListener('click', function () {
+      var preset = sel.value || 'full';
+      var seed = parseInt(seedInp.value, 10) || 20261124;
+      MapEditor.fillMap(preset, seed);
+    });
+    grp.appendChild(btn);
+    bar.appendChild(grp);
   };
 
   /* đặt 1 model đã import (GLB/FBX/OBJ) — click thẻ Import hoặc kéo-thả */
@@ -857,7 +954,18 @@
       return false;
     });
   };
-  MapEditor._loadThandieuFBX = function (heroId, baseUrl) {
+  /* _loadThandieuFBX(heroId, source, opts): source là URL string HOẶC
+   * ArrayBuffer/Uint8Array đã fetch (FBXLoader.parse). BUG CŨ ĐÃ SỬA:
+   * trước đây chỉ gom clip từ 2 file anim phụ, bỏ qua clip của chính
+   * file base — file than_dieu_run.fbx chứa sẵn clip "mixamo.com"
+   * (Fast Run 0.533s) nên giờ gom cả fbx.animations của base.
+   * opts.tint {color:[r,g,b], emissive:[r,g,b]} (0–255) — tô màu runner
+   * Gold/Shadow như main.scene. Mỗi object FBX có entry riêng trong
+   * _thandieuById {mixer, clips, runClip, idleClip, idleFrame, fbx};
+   * _thandieu giữ entry của hero để tương thích code cũ. */
+  MapEditor._thandieuById = {};
+  MapEditor._loadThandieuFBX = function (heroId, source, opts) {
+    opts = opts || {};
     var hero = MapEditor.objects[heroId];
     if (!hero) return Promise.resolve(false);
     var loader = new THREE.FBXLoader();
@@ -866,33 +974,83 @@
         loader.load(url, resolve, undefined, function (e) { reject(e || new Error('load fail ' + url)); });
       });
     }
-    return loadOne(baseUrl).then(function (fbx) {
-      var clips = {};
+    function parseBuffer(ab) {
+      return new Promise(function (resolve, reject) {
+        try { resolve(loader.parse(ab, '')); }
+        catch (e) { reject(e); }
+      });
+    }
+    var baseP;
+    if (typeof source === 'string') {
+      baseP = loadOne(source);
+    } else if (source && typeof source.byteLength === 'number') {
+      /* ArrayBuffer/Uint8Array — nhận cả buffer khác realm (test Node vs jsdom) */
+      var ab = null;
+      if (source instanceof ArrayBuffer) ab = source;
+      else if (source.buffer && source.buffer !== source && typeof source.buffer.slice === 'function') {
+        ab = source.buffer.slice(source.byteOffset || 0, (source.byteOffset || 0) + source.byteLength);
+      } else ab = source;
+      baseP = parseBuffer(ab);
+    } else {
+      return Promise.resolve(false);
+    }
+    return baseP.then(function (fbx) {
+      /* gom clip: base trước (clip "mixamo.com" Fast Run 0.533s),
+       * rồi 2 file anim phụ (mỗi file cũng có clip "mixamo.com" riêng
+       * nên lưu theo tên file để khỏi đè nhau). */
+      var clipList = [];
+      (fbx.animations || []).forEach(function (c) {
+        clipList.push({ name: c.name, clip: c, source: 'base' });
+      });
       var animFiles = ['models/thandieu/Neutral_Idle.fbx', 'models/thandieu/Than_dieu_Fast_Run.fbx'];
-      var jobs = animFiles.map(function (u) {
+      var jobs = animFiles.filter(function (u) { return u !== source; }).map(function (u) {
         return loadOne(u).then(function (o) {
-          (o.animations || []).forEach(function (c) { clips[c.name === 'mixamo.com' ? u : c.name] = c; });
+          (o.animations || []).forEach(function (c) {
+            clipList.push({ name: c.name + ' (' + u.split('/').pop() + ')', clip: c, source: u });
+          });
         }).catch(function () { /* animation thiếu thì bỏ qua */ });
       });
       return Promise.all(jobs).then(function () {
         /* thay hero chibi bằng FBX (giữ transform) */
         var parent = hero.parent;
-        var idx = parent ? parent.children.indexOf(hero) : -1;
         if (parent) parent.remove(hero);
         fbx.scale.setScalar(1.3);
         fbx.position.copy(hero.position);
         fbx.rotation.copy(hero.rotation);
         fbx.userData.mapId = heroId;
-        fbx.userData.mapType = 'hero';
+        fbx.userData.mapType = hero.userData.mapType || 'hero';
         fbx.userData.mapName = hero.name;
+        fbx.userData.mapData = hero.userData.mapData;
+        /* tô màu runner (Gold/Shadow) */
+        if (opts.tint) {
+          var col = opts.tint.color, em = opts.tint.emissive;
+          fbx.traverse(function (o) {
+            if (o.isMesh && o.material) {
+              o.material = o.material.clone();
+              if (col && o.material.color) o.material.color.setRGB(col[0] / 255, col[1] / 255, col[2] / 255);
+              if (em && o.material.emissive) o.material.emissive.setRGB(em[0] / 255, em[1] / 255, em[2] / 255);
+            }
+          });
+        }
         fbx.traverse(function (o) { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
         if (parent) parent.add(fbx);
         MapEditor.objects[heroId] = fbx;
         var mixer = new THREE.AnimationMixer(fbx);
-        var clipList = Object.keys(clips).map(function (k) { return clips[k]; });
-        MapEditor._thandieu = { mixer: mixer, clips: clipList, objectId: heroId, current: null };
-        if (clipList.length) MapEditor._thandieuPlay(0);
-        MapEditor.notify('Thần Điêu', 'Đã load Thần Điêu FBX (' + clipList.length + ' clip animation).', 'success');
+        var runClip = (clipList[0] && clipList[0].clip) || null;
+        var idleEntry = null;
+        clipList.forEach(function (e) {
+          if (!idleEntry && /Neutral_Idle/i.test(e.source || '')) idleEntry = e;
+        });
+        var entry = {
+          mixer: mixer, clips: clipList, objectId: heroId, fbx: fbx,
+          runClip: runClip, idleClip: (idleEntry && idleEntry.clip) || runClip,
+          idleFrame: null, current: null, mode: null
+        };
+        MapEditor._thandieuById[heroId] = entry;
+        if (fbx.userData.mapType === 'hero' || !MapEditor._thandieu) MapEditor._thandieu = entry;
+        if (runClip) MapEditor._thandieuPlayFor(heroId, runClip.name);
+        MapEditor.notify('Thần Điêu', 'Đã load Thần Điêu FBX (' + clipList.length + ' clip animation' +
+          (opts.tint ? ', màu ' + (hero.name || heroId) : '') + ').', 'success');
         MapEditor.emitChange('import-model', { id: heroId });
         return true;
       });
@@ -904,12 +1062,97 @@
   MapEditor._thandieuPlay = function (clipIdx) {
     var t = MapEditor._thandieu;
     if (!t || !t.clips.length) return;
-    var clip = t.clips[clipIdx % t.clips.length];
+    var e = t.clips[clipIdx % t.clips.length];
+    MapEditor._thandieuPlayFor(t.objectId, e.name);
+  };
+  /* phát clip theo tên (hoặc index số) cho 1 object FBX */
+  MapEditor._thandieuPlayFor = function (objectId, nameOrIdx) {
+    var t = MapEditor._thandieuById[objectId];
+    if (!t || !t.clips.length) return false;
+    var entry = null;
+    if (typeof nameOrIdx === 'number') entry = t.clips[nameOrIdx % t.clips.length];
+    else {
+      for (var i = 0; i < t.clips.length; i++) {
+        if (t.clips[i].name === nameOrIdx) { entry = t.clips[i]; break; }
+      }
+      if (!entry) entry = t.clips[0];
+    }
+    if (!entry) return false;
+    if (t.current) t.current.stop();
+    var action = t.mixer.clipAction(entry.clip);
+    action.setLoop(THREE.LoopRepeat);
+    action.paused = false;
+    action.timeScale = 1;
+    action.play();
+    t.current = action;
+    t.mode = 'play:' + entry.name;
+    return true;
+  };
+  /* 'run': chạy clip Fast Run, tốc độ = speed/3.6 (clip_speed game.v).
+   * 'idle': đứng yên — clip Idle nếu có, không thì dừng clip Run tại
+   * idle_frame (frame mà 2 bàn chân gần nhau nhất, xem computeThandieuIdleFrame). */
+  MapEditor._thandieuSetMode = function (objectId, mode, speedRatio) {
+    var t = MapEditor._thandieuById[objectId];
+    if (!t) return false;
+    var want = mode + ':' + (mode === 'run' ? Math.round((speedRatio || 0) * 4) : 0);
+    if (t.mode === want) return true;
+    var clip = mode === 'run' ? t.runClip : t.idleClip;
+    if (!clip) return false;
     if (t.current) t.current.stop();
     var action = t.mixer.clipAction(clip);
     action.setLoop(THREE.LoopRepeat);
-    action.play();
+    if (mode === 'idle' && clip === t.runClip) {
+      /* không có clip Idle riêng: freeze tại idle_frame + thở bằng scale (VeloPlay) */
+      if (t.idleFrame === null) t.idleFrame = MapEditor.computeThandieuIdleFrame(objectId);
+      action.time = t.idleFrame || 0;
+      action.play();
+      action.paused = true;
+    } else {
+      action.paused = false;
+      action.timeScale = mode === 'run' ? Math.max(0.2, Math.min(2.5, speedRatio || 1)) : 1;
+      action.play();
+    }
     t.current = action;
+    t.mode = want;
+    return true;
+  };
+  /* idle_frame (game.v): sample clip Run từng frame bằng AnimationMixer,
+   * đo khoảng cách world của 2 bone mixamorigLeftFoot/mixamorigRightFoot
+   * (tên Velo KHÔNG dấu hai chấm), lấy frame khoảng cách nhỏ nhất.
+   * Trả về giây trong [0, duration], hoặc null nếu không đo được. */
+  MapEditor.computeThandieuIdleFrame = function (objectId) {
+    var t = MapEditor._thandieuById[objectId];
+    if (!t || !t.runClip || !t.fbx) return null;
+    var L = t.fbx.getObjectByName('mixamorigLeftFoot');
+    var R = t.fbx.getObjectByName('mixamorigRightFoot');
+    if (!L || !R) return null;
+    var mixer = t.mixer;
+    var action = mixer.clipAction(t.runClip);
+    action.play();
+    var v1 = new THREE.Vector3(), v2 = new THREE.Vector3();
+    var best = { t: 0, d: Infinity };
+    var N = 24, dur = t.runClip.duration;
+    for (var i = 0; i <= N; i++) {
+      var tt = dur * i / N;
+      action.time = tt;
+      mixer.update(0);
+      t.fbx.updateMatrixWorld(true);
+      L.getWorldPosition(v1);
+      R.getWorldPosition(v2);
+      var d = v1.distanceTo(v2);
+      if (d < best.d) best = { t: tt, d: d };
+    }
+    action.stop();
+    t.idleFrame = best.t;
+    /* trả mixer về trạng thái trước khi đo */
+    if (t.current) { t.current.play(); t.current.paused = (t.mode || '').indexOf('idle') === 0; }
+    return best.t;
+  };
+  MapEditor._thandieuUpdateAll = function (dt) {
+    Object.keys(MapEditor._thandieuById).forEach(function (id) {
+      var e = MapEditor._thandieuById[id];
+      if (e && e.mixer) e.mixer.update(dt);
+    });
   };
 
   /* ---------- tool / gizmo ---------- */
@@ -1295,6 +1538,9 @@
         }
         return;
       }
+      /* đang Run Velo: MapEditor không xử lý phím (VeloPlay xử lý riêng
+       * WASD/J/K/Space/Q/E/Esc) — tránh Space toggle Play, Q/E/R đổi tool. */
+      if (ME.VeloPlay && ME.VeloPlay.isActive && ME.VeloPlay.isActive()) return;
       if (k === 'escape') {
         MapEditor.cancelPlacement();
         MapEditor._addWaypointFor = null;
@@ -1318,7 +1564,10 @@
       } else if (k === 'q') MapEditor.setTool('select');
       else if (k === 'w') MapEditor.setTool('move');
       else if (k === 'e') MapEditor.setTool('rotate');
-      else if (k === 'r') MapEditor.setTool('scale');
+      else if (k === 'r') {
+        /* R = Run Velo khi có scene Velo; chưa có thì notify + giữ tool Scale */
+        if (!(ME.VeloPlay && ME.VeloPlay.toggleRunKey && ME.VeloPlay.toggleRunKey())) MapEditor.setTool('scale');
+      }
       else if (k === 'f') MapEditor.focusSelected();
       else if (k === 'g') MapEditor.toggleGrid();
       else if (k === 'delete' || k === 'backspace') MapEditor.deleteSelected();
@@ -1871,6 +2120,8 @@
       ME.Viewport3D.rig.setView('iso');
       /* panel mở rộng (thêm bằng JS: chỉnh sửa, snap, bookmarks, layers, đo, terrain, play) */
       try { MapEditor._buildExtraUI(); } catch (e) { console.warn('[MapEditor] extra UI lỗi:', e); }
+      /* nút "🌲 Lấp đầy map" (thêm bằng JS vào toolbar) */
+      try { MapEditor._buildFillMapUI(); } catch (e) { console.warn('[MapEditor] fill UI lỗi:', e); }
       /* bọc các section thành thu gọn — Inspector luôn hiện, không bị khuất */
       try { MapEditor._initCollapsiblePanels(); } catch (e) { console.warn('[MapEditor] collapsible lỗi:', e); }
       /* trạng thái nối Studio (?from=studio / vừa nhận scene) */
@@ -1903,9 +2154,8 @@
         requestAnimationFrame(loop);
         var dt = Math.min(0.1, (now - last) / 1000);
         last = now;
-        if (MapEditor._thandieu && MapEditor._thandieu.mixer) {
-          MapEditor._thandieu.mixer.update(dt);
-        }
+        /* update mixer Thần Điêu cho mọi object FBX (hero + runners) */
+        MapEditor._thandieuUpdateAll(dt);
         ME.Viewport3D.render(dt);
       })(last);
       MapEditor.setStatus('Map Editor sẵn sàng — Trường Bạch, ' + MapEditor.data.objects.length + ' objects');

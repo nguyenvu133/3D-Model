@@ -87,7 +87,19 @@
   var NATIVE_MESH = {
     temple: 'cube', house: 'cube', gate: 'cube', bridge: 'cube',
     pine: 'cone', bamboo: 'cone', rock: 'sphere', lantern: 'sphere',
-    campfire: 'cube', statue: 'cube', fence: 'cube', waterfall: 'plane'
+    campfire: 'cube', statue: 'cube', fence: 'cube', waterfall: 'plane',
+    /* prefab mới (2026-11-24) — mesh gần đúng, xem docs/VELO_INTEGRATION.md §9 */
+    pagoda: 'cube', torii_big: 'cube', house_tile: 'cube', house_thatch: 'cube',
+    house_flat: 'cube', stall: 'cube', bridge_arch: 'cube', well_stone: 'cube',
+    fence_wood: 'cube', statue_dragon: 'cube', chest: 'cube', banner: 'cube',
+    stone_steps: 'cube', stone_path: 'cube', stone_stove: 'cube',
+    pine_snow: 'cone', pine_tall: 'cone', pine_short: 'cone',
+    sakura: 'sphere', mushroom: 'sphere',
+    crystal_red: 'sphere', crystal_blue: 'sphere', crystal_purple: 'sphere',
+    coin: 'cylinder', stream: 'plane', cloud: 'sphere',
+    lantern_red: 'sphere', lantern_yellow: 'sphere', lantern_blue: 'sphere',
+    bird: 'sphere', bat: 'sphere', wolf: 'cube',
+    villager_blue: 'cube', villager_red: 'cube', villager_yellow: 'cube'
   };
 
   function transformLines(o, opts) {

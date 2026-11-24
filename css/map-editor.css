@@ -253,3 +253,75 @@ input[type="color"] { padding: 1px; width: 44px; height: 22px; }
   #me-bottom.collapsed { height: 34px; }
   #hud-dom { font-size: 10px; }
 }
+
+/* === VELO PLAY (append 2026-11-24 — Nhiệm vụ 2: HUD + touch controls, class velo-playing) === */
+/* Khi đang Run Velo: thu gọn editor UI (ẩn 2 panel + bottom + viewbar). */
+body.velo-playing #me-left,
+body.velo-playing #me-right,
+body.velo-playing #me-bottom,
+body.velo-playing #me-viewbar { display: none !important; }
+body.velo-playing #me-viewport-wrap { flex: 1 1 auto; }
+.velo-hidden { display: none !important; }
+#velo-hud {
+  position: absolute; left: 0; right: 0; top: 0; z-index: 40;
+  pointer-events: none; font-family: inherit;
+}
+.velo-hud-top {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 6px 10px; background: rgba(8, 12, 24, 0.72); color: #fff;
+  font-size: 13px; pointer-events: auto;
+}
+.velo-hud-top .velo-hp {
+  display: inline-block; width: 120px; height: 12px;
+  background: rgba(255, 255, 255, 0.18); border-radius: 6px; overflow: hidden;
+}
+#velo-hud-hpbar { display: block; height: 100%; width: 100%; background: #51d96a; }
+.velo-stop-btn {
+  margin-left: auto; background: #b3261e; color: #fff; border: 0;
+  border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 13px;
+}
+#velo-hud-help {
+  padding: 4px 10px; font-size: 11px; color: #dfe6ff;
+  background: rgba(8, 12, 24, 0.55); text-shadow: 0 1px 2px #000;
+}
+#velo-hud-banner {
+  position: absolute; left: 50%; top: 34%; transform: translateX(-50%);
+  background: rgba(8, 12, 24, 0.88); color: #fff; border: 1px solid #ffd94d;
+  border-radius: 10px; padding: 16px 22px; font-size: 16px; text-align: center;
+  pointer-events: auto; line-height: 1.6; max-width: 86vw;
+}
+.velo-banner-btn {
+  margin-top: 10px; background: #ffd94d; border: 0; border-radius: 6px;
+  padding: 6px 14px; cursor: pointer; font-size: 14px;
+}
+/* Touch controls: joystick trái + 3 nút phải (kiểu WUXIA3D.js). */
+#velo-touch {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 41;
+  display: flex; justify-content: space-between; align-items: flex-end;
+  padding: 0 14px 14px; pointer-events: none;
+}
+#velo-joy {
+  width: 120px; height: 120px; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.10); border: 2px solid rgba(255, 255, 255, 0.35);
+  position: relative; pointer-events: auto; touch-action: none;
+}
+#velo-joy-knob {
+  position: absolute; left: 50%; top: 50%; width: 52px; height: 52px;
+  margin: -26px 0 0 -26px; border-radius: 50%;
+  background: rgba(255, 217, 77, 0.85); border: 2px solid #fff;
+}
+.velo-btns { display: flex; gap: 10px; pointer-events: auto; }
+.velo-touch-btn {
+  width: 68px; height: 68px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.5);
+  background: rgba(20, 30, 55, 0.65); color: #fff; font-size: 13px;
+  cursor: pointer; touch-action: none;
+}
+.velo-touch-btn:active { background: rgba(255, 217, 77, 0.75); color: #111; }
+#me-velo-run-btn { font-weight: 700; }
+@media (max-width: 700px) {
+  .velo-hud-top { font-size: 11px; gap: 6px; }
+  .velo-hud-top .velo-hp { width: 80px; }
+  #velo-hud-help { display: none; }
+  #velo-joy { width: 104px; height: 104px; }
+  .velo-touch-btn { width: 60px; height: 60px; font-size: 12px; }
+}
