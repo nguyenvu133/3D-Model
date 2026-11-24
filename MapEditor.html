@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Map Editor 3D — Trường Bạch · PixiJS v8 × Three.js</title>
+<link rel="stylesheet" href="css/map-editor.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%23713BFF'/%3E%3Cpath d='M12 5l7 4v6l-7 4-7-4V9l7-4z' fill='none' stroke='white' stroke-width='1.6'/%3E%3C/svg%3E">
+</head>
+<body>
+<div id="me-app">
+
+  <!-- ============ TOP BAR ============ -->
+  <header id="me-topbar">
+    <div class="brand">🗺 <b>Map Editor</b> <span>3D · Trường Bạch · PixiJS v8 × Three.js r128</span></div>
+    <nav class="me-menu">
+      <button id="me-new-btn" title="New Scene">File: New</button>
+      <button id="me-open-btn" title="Open project">Open</button>
+      <button id="me-save-btn" title="Save (Ctrl+S)">Save</button>
+      <button id="me-export-btn" title="Export .mapeditor.json">Export</button>
+      <button id="me-import-btn" title="Import .mapeditor.json / .shared-scene.json">Import</button>
+    </nav>
+    <div class="me-spacer"></div>
+    <button class="btn sm" id="me-studio-btn" title="Lưu map vào shared key rồi mở Studio (index.html)">🏛 Mở trong Studio</button>
+    <a class="btn sm" href="index.html" title="Về Studio (không lưu shared)">← Studio</a>
+  </header>
+
+  <!-- ============ TOOLBAR ============ -->
+  <div id="me-toolbar">
+    <div class="tool-group">
+      <button class="tool-btn active" data-me-tool="select" title="Select (Q)">➤ Select</button>
+      <button class="tool-btn" data-me-tool="move" title="Move (W)">✥ Move</button>
+      <button class="tool-btn" data-me-tool="rotate" title="Rotate (E)">↻ Rotate</button>
+      <button class="tool-btn" data-me-tool="scale" title="Scale (R)">⤢ Scale</button>
+    </div>
+    <div class="tool-sep"></div>
+    <div class="tool-group">
+      <span class="tool-label">Terrain:</span>
+      <button class="tool-btn" data-me-tool="raise" title="Nâng địa hình">▲ Raise</button>
+      <button class="tool-btn" data-me-tool="lower" title="Hạ địa hình">▼ Lower</button>
+      <button class="tool-btn" data-me-tool="smooth" title="Làm mịn">～ Smooth</button>
+      <button class="tool-btn" data-me-tool="flatten" title="San phẳng">▬ Flatten</button>
+      <button class="tool-btn" data-me-tool="noise" title="Nhiễu">≋ Noise</button>
+      <button class="tool-btn" data-me-tool="mountain" title="Núi">⛰ Mountain</button>
+      <button class="tool-btn" data-me-tool="paint" title="Sơn layer terrain">🎨 Paint</button>
+      <button class="tool-btn" data-me-tool="scatter" title="Rải cây/đá">🌲 Scatter</button>
+    </div>
+    <div class="tool-group">
+      <span class="tool-label">Cọ:</span>
+      <input type="number" id="me-brush-size" value="6" min="1" max="30" step="1" title="Brush size">
+      <input type="number" id="me-brush-strength" value="0.5" min="0.05" max="1" step="0.05" title="Brush strength">
+      <select id="me-brush-falloff" title="Falloff">
+        <option value="smooth">Smooth</option>
+        <option value="linear">Linear</option>
+        <option value="hard">Hard</option>
+      </select>
+      <select id="me-paint-layer" title="Paint layer"></select>
+      <select id="me-scatter-type" title="Scatter type">
+        <option value="pine">Thông</option>
+        <option value="rock">Đá</option>
+        <option value="bamboo">Trúc</option>
+      </select>
+    </div>
+    <div class="tool-sep"></div>
+    <div class="tool-group">
+      <button class="tool-btn" id="me-undo" title="Undo (Ctrl+Z)">↩ Undo</button>
+      <button class="tool-btn" id="me-redo" title="Redo (Ctrl+Y)">↪ Redo</button>
+      <button class="tool-btn" id="me-grid-btn" title="Grid (G)">▦ Grid</button>
+      <button class="tool-btn" id="me-collision-btn" title="Collision Preview">▣ Collider</button>
+      <button class="tool-btn" id="me-focus-btn" title="Focus selected (F)">◎ Focus</button>
+      <button class="tool-btn" id="me-frame-btn" title="Frame all">⛶ Frame</button>
+    </div>
+    <div class="tool-sep"></div>
+    <div class="tool-group">
+      <button class="tool-btn" id="me-play-btn" title="Play / Pause (Space)">▶ Play</button>
+      <button class="tool-btn" id="me-stop-btn" title="Stop">■ Stop</button>
+    </div>
+  </div>
+
+  <!-- ============ MAIN ============ -->
+  <div id="me-main">
+    <aside id="me-left" class="side-panel">
+      <div class="panel-head">🌲 Hierarchy <input type="text" id="me-hierarchy-search" placeholder="Tìm object…"></div>
+      <div class="panel-body" id="me-hierarchy"></div>
+    </aside>
+
+    <main id="me-viewport-wrap">
+      <canvas id="me-viewport"></canvas>
+      <canvas id="pixi-hud"></canvas>
+      <div id="me-scene-tabs">
+        <button data-me-template="snow" class="active" title="Map tuyết Trường Bạch">❄ Snow Mountain</button>
+        <button data-me-template="bamboo" title="Rừng trúc">🎋 Bamboo Forest</button>
+        <button data-me-template="dungeon" title="Dungeon">🕳 Dungeon</button>
+      </div>
+      <div id="me-viewbar">
+        <button data-me-view="iso" class="active">Iso</button>
+        <button data-me-view="perspective">Perspective</button>
+        <button data-me-view="top">Top</button>
+        <button data-me-view="front">Front</button>
+        <button data-me-view="side">Side</button>
+      </div>
+      <div id="hud-dom">FPS: — · Draw: — · Tris: — · Obj: —</div>
+    </main>
+
+    <aside id="me-right" class="side-panel">
+      <div class="panel-head">🔧 Inspector</div>
+      <div class="panel-body" id="me-inspector"></div>
+      <div class="panel-head">🌤 Environment</div>
+      <div class="panel-body" style="flex:none;max-height:220px;">
+        <div style="display:flex;flex-direction:column;gap:6px;padding:2px;">
+          <label>Thời tiết: <select id="me-weather"></select></label>
+          <label>Giờ trong ngày: <input type="range" id="me-timeofday" min="0" max="24" step="0.5" value="10" style="width:100%"></label>
+          <label>Fog near: <input type="number" id="me-fog-near" value="60" min="5" max="200" style="width:64px"></label>
+          <label>Fog far: <input type="number" id="me-fog-far" value="180" min="50" max="400" style="width:64px"></label>
+          <label><input type="checkbox" id="me-snow-toggle" checked> Tuyết rơi</label>
+          <div style="color:var(--text3);font-size:11px;">Bloom: <span class="state-badge">Planned</span> — chưa làm bằng EffectComposer r128, tone mapping + fog đang bật thật.</div>
+        </div>
+      </div>
+      <div class="panel-head">⛰ Terrain</div>
+      <div class="panel-body" style="flex:none;">
+        <div style="display:flex;flex-direction:column;gap:6px;padding:2px;">
+          <label>Kích thước: <input type="number" id="me-terrain-size" value="112" min="32" max="256" step="16" style="width:64px"></label>
+          <label>Segments: <input type="number" id="me-terrain-seg" value="64" min="16" max="128" step="16" style="width:64px"></label>
+          <button class="btn sm" id="me-terrain-resize">Đổi Terrain</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ============ ASSET MANAGER ============ -->
+  <section id="me-bottom">
+    <div id="me-bottom-head">
+      📦 Asset Manager
+      <select id="me-asset-filter">
+        <option value="All">Tất cả</option>
+        <option value="Buildings">Buildings</option>
+        <option value="Vegetation">Vegetation</option>
+        <option value="Props">Props</option>
+        <option value="Characters">Characters</option>
+        <option value="Environment">Environment</option>
+        <option value="Lighting">Lighting</option>
+        <option value="Primitives">Primitives</option>
+      </select>
+      <input type="text" id="me-asset-search" placeholder="Tìm asset…">
+      <span style="color:var(--text3);font-weight:400;">Click để đặt · kéo-thả vào viewport · Scatter rải nhanh</span>
+    </div>
+    <div id="me-asset-grid"></div>
+  </section>
+
+  <!-- ============ STATUS BAR ============ -->
+  <footer id="me-statusbar">
+    <span id="me-status">Đang tải…</span>
+    <span style="color:var(--text3)">Q/W/E/R tool · F focus · G grid · Ctrl+D duplicate · Ctrl+Z/Y undo/redo · Ctrl+S save · Space play</span>
+  </footer>
+</div>
+
+<div id="me-toast-root"></div>
+<input type="file" id="me-file-input" accept=".json" class="hidden">
+
+<!-- ============ LIBRARIES (CDN + fallback) — cùng three r128 với Studio ============ -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"
+        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/build/three.min.js\x27\x3E\x3C/script\x3E')"></script>
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@8.23.0/dist/pixi.min.js"
+        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/pixi.js@8.23.0/dist/pixi.min.js\x27\x3E\x3C/script\x3E')"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"
+        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js\x27\x3E\x3C/script\x3E')"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"
+        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js\x27\x3E\x3C/script\x3E')"></script>
+<script src="https://cdn.jsdelivr.net/npm/fflate@0.6.10/umd/index.js"
+        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/fflate@0.6.10/umd/index.js\x27\x3E\x3C/script\x3E')"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"
+        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/loaders/FBXLoader.js\x27\x3E\x3C/script\x3E')"></script>
+
+<!-- ============ MAP EDITOR ============ -->
+<script src="js/mapeditor/core/SceneData.js"></script>
+<script src="js/mapeditor/link/SharedScene.js"></script>
+<script src="js/mapeditor/editor/Placement.js"></script>
+<script src="js/mapeditor/terrain/TerrainEditor.js"></script>
+<script src="js/mapeditor/terrain/TerrainBrush.js"></script>
+<script src="js/mapeditor/viewport/CameraRig.js"></script>
+<script src="js/mapeditor/viewport/Viewport3D.js"></script>
+<script src="js/mapeditor/environment/Environment.js"></script>
+<script src="js/mapeditor/editor/Hierarchy.js"></script>
+<script src="js/mapeditor/editor/Inspector.js"></script>
+<script src="js/mapeditor/editor/AssetManager.js"></script>
+<script src="js/mapeditor/export/MapExport.js"></script>
+<script src="js/mapeditor/core/MapEditor.js"></script>
+<script>
+  /* scene tabs: đổi template */
+  document.querySelectorAll('[data-me-template]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('[data-me-template]').forEach(function (x) { x.classList.toggle('active', x === b); });
+      if (window.MapEditor && window.MapEditor.MapEditor) {
+        window.MapEditor.MapEditor.newScene(b.dataset.meTemplate);
+      }
+    });
+  });
+  document.addEventListener('DOMContentLoaded', function () {
+    if (window.MapEditor && window.MapEditor.MapEditor) window.MapEditor.MapEditor.boot();
+  });
+  if (document.readyState !== 'loading') {
+    if (window.MapEditor && window.MapEditor.MapEditor) window.MapEditor.MapEditor.boot();
+  }
+</script>
+</body>
+</html>

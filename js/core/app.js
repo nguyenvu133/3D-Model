@@ -180,6 +180,7 @@
     getBoot().bootProgress(60, 'Building UI panels…');
     PixiStudio.Toolbar.render();
     PixiStudio.Topbar.init();
+    if (PixiStudio.MapLink) PixiStudio.MapLink.init();
     PixiStudio.Panels.init();
     PixiStudio.Shortcuts.init();
     if (PixiStudio.Interaction) PixiStudio.Interaction.init();
