@@ -186,6 +186,33 @@
     }
   })();
 
+  /* Panel nhắc import file Shared JSON khi mở MapEditor bằng ?import=shared
+   * (Studio ghi shared key thất bại nên đã tải file — user bấm nút chọn file). */
+  MapExport.showImportSharedPrompt = function () {
+    var old = document.getElementById('me-import-shared-prompt');
+    if (old) old.remove();
+    var panel = document.createElement('div');
+    panel.id = 'me-import-shared-prompt';
+    panel.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55);font-family:inherit;';
+    panel.innerHTML =
+      '<div style="background:#1e2230;color:#eef1f8;max-width:440px;width:92%;padding:20px 22px;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.5);">' +
+      '<h3 style="margin:0 0 6px;font-size:17px;">Import file Shared JSON từ Studio</h3>' +
+      '<p style="margin:0 0 16px;font-size:13px;opacity:.85;">Studio không ghi được shared key nên đã tải file <b>.shared-scene.json</b> xuống. Bấm nút bên dưới rồi chọn file đó để load map.</p>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;">' +
+      '<button id="me-import-shared-close" style="padding:8px 14px;border-radius:8px;border:1px solid #555;background:transparent;color:#eef1f8;cursor:pointer;">Để sau</button>' +
+      '<button id="me-import-shared-pick" style="padding:8px 14px;border-radius:8px;border:none;background:#713bff;color:#fff;cursor:pointer;">Chọn file Shared JSON…</button>' +
+      '</div></div>';
+    document.body.appendChild(panel);
+    var pickBtn = document.getElementById('me-import-shared-pick');
+    if (pickBtn) pickBtn.addEventListener('click', function () {
+      panel.remove();
+      var fi = document.getElementById('me-file-input');
+      if (fi) fi.click();
+    });
+    var closeBtn = document.getElementById('me-import-shared-close');
+    if (closeBtn) closeBtn.addEventListener('click', function () { panel.remove(); });
+  };
+
   /* đọc shared key lúc boot (MapEditor mở từ Studio) */
   MapExport.checkIncomingShared = function () {
     var resolved = ME.SharedScene.resolveUrlScene();

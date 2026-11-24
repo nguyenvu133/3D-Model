@@ -362,6 +362,15 @@
     /* .meta cho model Thần Điêu (file FBX user tự copy) */
     files.push({ path: 'assets/models/than_dieu_run.fbx.meta', text: metaText('than_dieu_run.fbx', 'model') });
 
+    /* .meta cho model đã import vào map trong phiên này (VeloProject
+     * theo dõi, mục "Chưa lưu" trong cây project): Export Velo bao
+     * gồm cả các asset này — user tự copy file gốc vào assets/models/. */
+    var unsaved = (ME.VeloProject && ME.VeloProject.getUnsavedModelAssets)
+      ? ME.VeloProject.getUnsavedModelAssets() : [];
+    unsaved.forEach(function (a) {
+      files.push({ path: 'assets/models/' + a.fileName + '.meta', text: metaText(a.fileName, 'model') });
+    });
+
     var readme = [
       '# Velo project — export từ Map Editor',
       '',
@@ -374,6 +383,10 @@
       '',
       'BẮT BUỘC tự copy file model (binary, không kèm trong text export):',
       '  assets/models/than_dieu_run.fbx  <- models/thandieu/Than_dieu_Fast_Run.fbx trong repo 3D-Model',
+      '',
+      'Model đã import trong phiên Map Editor (mục "Chưa lưu" trong cây Velo Project):',
+      '  - Đã kèm file .meta cho từng model (ID ổn định theo tên file).',
+      '  - Tự copy file gốc (.fbx/.glb/.obj) vào assets/models/ với đúng tên trong .meta.',
       '',
       'KHÔNG export được (viết bằng V trong project Velo):',
       '  - Game logic: main.v / game.v / combat.v (HeroController, Health, HeroCombat,',

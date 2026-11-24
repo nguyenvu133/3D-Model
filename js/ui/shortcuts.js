@@ -90,6 +90,19 @@
         return;
       }
 
+      /* Camera bookmarks: Alt+1..5 nhảy tới, Alt+Shift+1..5 lưu (học MapEditor) */
+      if (e.altKey && e.key >= '1' && e.key <= '5') {
+        e.preventDefault();
+        const slot = parseInt(e.key, 10) - 1;
+        if (e.shiftKey) {
+          PixiStudio.Viewport.saveCameraBookmark(slot);
+          bus.emit('notify', { type: 'success', title: 'Bookmark', message: 'Đã lưu vị trí camera ' + (slot + 1) + '.' });
+        } else if (!PixiStudio.Viewport.gotoCameraBookmark(slot)) {
+          bus.emit('notify', { type: 'warning', title: 'Bookmark', message: 'Vị trí ' + (slot + 1) + ' chưa lưu (Alt+Shift+' + (slot + 1) + ' để lưu).' });
+        }
+        return;
+      }
+
       /* Number views */
       const viewMap = {
         '1': 'perspective', '2': 'quad', '3': 'front', '4': 'back',

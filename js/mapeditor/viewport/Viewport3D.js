@@ -47,6 +47,11 @@
     Viewport3D.scene.background = new THREE.Color(0x9db8d9);
     Viewport3D.scene.fog = new THREE.Fog(0x9db8d9, 60, 180);
     Viewport3D.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 600);
+    /* camera trực giao riêng cho chế độ Ortho (học Studio QuadCameras) */
+    Viewport3D.perspCamera = Viewport3D.camera;
+    Viewport3D.orthoCamera = new THREE.OrthographicCamera(-50, 50, 50, -50, -500, 1000);
+    Viewport3D.orthoCamera.aspect = 1;
+    Viewport3D._ortho = false;
     Viewport3D.rig = new ME.CameraRig(Viewport3D.camera);
     Viewport3D.rig.update();
 
@@ -124,11 +129,37 @@
     var w = wrap.clientWidth || 800, h = wrap.clientHeight || 600;
     Viewport3D.camera.aspect = w / Math.max(1, h);
     Viewport3D.camera.updateProjectionMatrix();
+    if (Viewport3D.orthoCamera) {
+      Viewport3D.orthoCamera.aspect = w / Math.max(1, h);
+      Viewport3D.orthoCamera.updateProjectionMatrix();
+    }
     Viewport3D.renderer.setSize(w, h);
     if (Viewport3D.renderer.setPixelRatio) {
       Viewport3D.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     }
     if (Viewport3D._pixi && Viewport3D._pixi.resize) Viewport3D._pixi.resize(w, h);
+  };
+
+  /* ---------- chế độ Ortho / Persp + FOV (thống nhất với Studio) ---------- */
+  Viewport3D.isOrtho = function () { return !!Viewport3D._ortho; };
+  Viewport3D.setOrthoMode = function (on) {
+    Viewport3D._ortho = !!on;
+    var cam = Viewport3D._ortho ? Viewport3D.orthoCamera : Viewport3D.perspCamera;
+    if (!cam) return false;
+    /* đồng bộ vị trí camera đang dùng sang camera mới */
+    cam.position.copy(Viewport3D.camera.position);
+    Viewport3D.camera = cam;
+    if (Viewport3D.rig) {
+      Viewport3D.rig.setOrtho(Viewport3D._ortho);
+      Viewport3D.rig.setCamera(cam);
+    }
+    if (Viewport3D.gizmo) Viewport3D.gizmo.camera = cam;
+    Viewport3D.resize();
+    return Viewport3D._ortho;
+  };
+  Viewport3D.setFov = function (deg) {
+    if (Viewport3D.rig) return Viewport3D.rig.setFov(deg);
+    return 50;
   };
 
   /* ---------- tuyết rơi ---------- */
@@ -397,7 +428,7 @@
         if (!hero && o.userData.mapType === 'hero') hero = o;
       });
       if (hero) {
-        Viewport3D.rig.target.set(hero.position.x, hero.position.y + 1, hero.position.z);
+        Viewport3D.rig.dTarget.set(hero.position.x, hero.position.y + 1, hero.position.z);
         Viewport3D.rig.update();
       }
     }
@@ -419,13 +450,15 @@
     var wx = Math.max(-half, Math.min(half, (mx - ox) / 0.5));
     var wz = Math.max(-half, Math.min(half, (my - oy) / 0.5));
     var wy = ME.TerrainEditor ? ME.TerrainEditor.heightAt(wx, wz) : 0;
-    Viewport3D.rig.target.set(wx, wy, wz);
+    Viewport3D.rig.dTarget.set(wx, wy, wz);
     Viewport3D.rig.update();
     return true;
   };
 
   /* ---------- render loop ---------- */
   Viewport3D.render = function (dt) {
+    /* damping camera: lerp về desired mỗi frame (học OrbitCam Studio) */
+    if (Viewport3D.rig) Viewport3D.rig.updateSmooth(dt);
     Viewport3D.updateSnow(dt);
     Viewport3D.updatePlay(dt);
     Viewport3D.renderer.render(Viewport3D.scene, Viewport3D.camera);

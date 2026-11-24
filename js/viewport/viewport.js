@@ -224,6 +224,32 @@
     Viewport.orbit.focus(target);
   };
 
+  /* Frame All (học MapEditor): khung toàn bộ modelRoot — nếu trống thì
+   * về góc nhìn mặc định. */
+  Viewport.frameAll = function () {
+    if (!Viewport.modelRoot || !Viewport.modelRoot.children.length) {
+      Viewport.resetCamera();
+      return false;
+    }
+    Viewport.orbit.focus(Viewport.modelRoot);
+    return true;
+  };
+
+  /* Camera bookmarks (học MapEditor): Alt+1..5 nhảy, Alt+Shift+1..5 lưu. */
+  Viewport.saveCameraBookmark = function (slot) {
+    if (!Viewport.orbit || !Viewport.orbit.saveBookmark) return false;
+    Viewport.orbit.saveBookmark(slot);
+    return true;
+  };
+  Viewport.gotoCameraBookmark = function (slot) {
+    if (!Viewport.orbit || !Viewport.orbit.gotoBookmark) return false;
+    return Viewport.orbit.gotoBookmark(slot);
+  };
+  Viewport.cameraBookmarkLabel = function (slot) {
+    if (!Viewport.orbit || !Viewport.orbit.bookmarkLabel) return '— trống —';
+    return Viewport.orbit.bookmarkLabel(slot);
+  };
+
   Viewport.resetCamera = function () {
     Viewport.orbit.setView('perspective');
   };

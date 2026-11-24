@@ -24,6 +24,10 @@
     this.dTheta = this.theta; this.dPhi = this.phi; this.dRadius = this.radius;
     this.dTarget = this.target.clone();
 
+    /* camera bookmarks (5 vị trí, học MapEditor) */
+    this.bookmarks = [null, null, null, null, null];
+    try { this.loadBookmarks(); } catch (e) { }
+
     this.enabled = true;
     this._updateCamera(1);
   }
@@ -77,6 +81,8 @@
   /* ---------- View presets ---------- */
   const VIEWS = {
     perspective: { theta: THREE.MathUtils.degToRad(28), phi: THREE.MathUtils.degToRad(72), radius: 5.2, target: [0, 0.9, 0] },
+    /* Iso học từ MapEditor CameraRig: theta 45°, phi ~54.7° */
+    iso: { theta: THREE.MathUtils.degToRad(45), phi: 0.955, radius: 8, target: [0, 0.9, 0] },
     ortho: { theta: THREE.MathUtils.degToRad(35), phi: THREE.MathUtils.degToRad(70), radius: 5.2, target: [0, 0.9, 0] },
     front: { theta: 0, phi: THREE.MathUtils.degToRad(90), radius: 4.2, target: [0, 0.9, 0] },
     back: { theta: Math.PI, phi: THREE.MathUtils.degToRad(90), radius: 4.2, target: [0, 0.9, 0] },
@@ -92,6 +98,45 @@
     this.dTheta = v.theta; this.dPhi = v.phi; this.dRadius = v.radius;
     this.dTarget.set(v.target[0], v.target[1], v.target[2]);
     return true;
+  };
+
+  /* ---------- Camera bookmarks (5 vị trí, học MapEditor CameraRig) ----------
+   * Lưu localStorage `pixistudio.bookmarks`. Phím Alt+1..5 nhảy tới,
+   * Alt+Shift+1..5 lưu (xem js/ui/shortcuts.js). */
+  OrbitCam.prototype.loadBookmarks = function () {
+    try {
+      const all = JSON.parse(window.localStorage.getItem('pixistudio.bookmarks') || 'null');
+      if (Array.isArray(all)) {
+        this.bookmarks = all.slice(0, 5);
+        while (this.bookmarks.length < 5) this.bookmarks.push(null);
+      }
+    } catch (e) { /* localStorage chặn thì dùng bộ nhớ tạm */ }
+    return this.bookmarks;
+  };
+  OrbitCam.prototype.saveBookmark = function (slot) {
+    slot = Math.max(0, Math.min(4, slot | 0));
+    if (!this.bookmarks) this.bookmarks = [null, null, null, null, null];
+    this.bookmarks[slot] = {
+      theta: this.dTheta, phi: this.dPhi, radius: this.dRadius,
+      target: [this.dTarget.x, this.dTarget.y, this.dTarget.z]
+    };
+    try { window.localStorage.setItem('pixistudio.bookmarks', JSON.stringify(this.bookmarks)); } catch (e) { }
+    return this.bookmarks[slot];
+  };
+  OrbitCam.prototype.gotoBookmark = function (slot) {
+    slot = Math.max(0, Math.min(4, slot | 0));
+    if (!this.bookmarks) this.loadBookmarks();
+    const b = this.bookmarks && this.bookmarks[slot];
+    if (!b) return false;
+    this.dTheta = b.theta; this.dPhi = b.phi; this.dRadius = b.radius;
+    this.dTarget.set(b.target[0], b.target[1], b.target[2]);
+    return true;
+  };
+  OrbitCam.prototype.bookmarkLabel = function (slot) {
+    if (!this.bookmarks) this.loadBookmarks();
+    const b = this.bookmarks && this.bookmarks[Math.max(0, Math.min(4, slot | 0))];
+    if (!b) return '— trống —';
+    return 'r=' + b.radius.toFixed(1) + ' · (' + b.target[0].toFixed(1) + ', ' + b.target[2].toFixed(1) + ')';
   };
 
   OrbitCam.prototype._updateCamera = function () {

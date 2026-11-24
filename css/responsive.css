@@ -109,6 +109,9 @@
   .topbar-actions .btn { padding: 0 9px; font-size: 11.5px; }
   .topbar-actions .btn .lbl { display: none; }
   .topbar-actions .btn { width: 32px; padding: 0; justify-content: center; }
+  /* nút Map Editor + Import Shared JSON vẫn với tới được khi topbar tràn */
+  .topbar-actions { overflow-x: auto; scrollbar-width: thin; flex-wrap: nowrap; }
+  .topbar-actions .btn { flex: none; }
 
   #viewport-topbar { gap: 5px; padding: 0 8px; }
   .vp-chip { padding: 0 7px; font-size: 11px; height: 27px; }

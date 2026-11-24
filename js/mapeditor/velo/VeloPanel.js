@@ -54,6 +54,8 @@
     setStatus('Đang tải demo3d Velo từ GitHub…');
     ME.VeloImport.importDemo3d().then(function (res) {
       setStatus(res.message || ('Đã import ' + res.objects.length + ' object.'));
+      /* cây project hiển thị đúng cấu trúc demo3d đã tải */
+      if (ME.VeloProject && ME.VeloProject.showDemoTree) ME.VeloProject.showDemoTree();
     }).catch(function (e) {
       setStatus('Import demo3d lỗi: ' + e.message + ' — thử chọn file .scene local.', true);
     });
@@ -151,6 +153,13 @@
     }
 
     inner.appendChild(btn('⬇ Import demo3d Velo', 'Tải main.scene demo3d từ repo velo-engine/velo (nhánh 3d) rồi dựng vào map', function () { VeloPanel.importDemo(); }));
+    inner.appendChild(btn('📁 Mở thư mục project Velo…', 'Chọn cả thư mục project Velo — hiện đường dẫn + số file, bấm Import mới vào (cây project ở cột trái)', function () {
+      if (ME.VeloProject && ME.VeloProject.openFolderPicker) {
+        ME.VeloProject.openFolderPicker().catch(function (e) { setStatus('Mở thư mục lỗi: ' + e.message, true); });
+      } else {
+        setStatus('VeloProject chưa load.', true);
+      }
+    }));
     inner.appendChild(btn('📂 Chọn file .scene…', 'Import file .scene bất kỳ của bạn (cùng parser)', function () { VeloPanel.importFilePicker(); }));
     inner.appendChild(btn('⬆ Export Velo (.scene) — xem trước', 'Sinh text .scene từ map hiện tại, hiện ở khung xem trước bên dưới', function () { VeloPanel.exportPreview(); }));
     inner.appendChild(btn('⬇ Tải main.scene', 'Tải file main.scene đã export', function () { VeloPanel.downloadScene(); }));
@@ -159,6 +168,8 @@
 
     var note = el('div', null,
       'Import: demo3d Velo (Hero Thần Điêu, 4 đuốc, 7 cây, portal…) — HUD 2D bỏ qua. ' +
+      'Mở thư mục project: quét cả thư mục (scenes/prefabs/models/scripts/.v), ' +
+      'cây project ở cột trái, tự quét lại khi file đổi. ' +
       'Export: game logic V + file FBX không kèm, xem docs/VELO_INTEGRATION.md.');
     note.style.cssText = 'color:var(--text3);font-size:11px;line-height:1.4;';
     inner.appendChild(note);

@@ -12,7 +12,9 @@
 
   <!-- ============ TOP BAR ============ -->
   <header id="me-topbar">
+    <button class="btn sm me-drawer-btn" id="me-drawer-left-btn" title="Mở/đóng panel trái (Hierarchy)">☰</button>
     <div class="brand">🗺 <b>Map Editor</b> <span>3D · Trường Bạch · PixiJS v8 × Three.js r128</span></div>
+    <span id="me-link-status" class="me-link-status" title="Trạng thái nối với Studio"></span>
     <nav class="me-menu">
       <button id="me-new-btn" title="New Scene">File: New</button>
       <button id="me-open-btn" title="Open project">Open</button>
@@ -22,7 +24,8 @@
     </nav>
     <div class="me-spacer"></div>
     <button class="btn sm" id="me-studio-btn" title="Lưu map vào shared key rồi mở Studio (index.html)">🏛 Mở trong Studio</button>
-    <a class="btn sm" href="index.html" title="Về Studio (không lưu shared)">← Studio</a>
+    <a class="btn" id="me-back-studio-btn" href="index.html" title="Về Studio (không lưu shared)">← Studio</a>
+    <button class="btn sm me-drawer-btn" id="me-drawer-right-btn" title="Mở/đóng panel phải (Inspector)">☰ Inspector</button>
   </header>
 
   <!-- ============ TOOLBAR ============ -->
@@ -96,8 +99,14 @@
         <button data-me-view="iso" class="active">Iso</button>
         <button data-me-view="perspective">Perspective</button>
         <button data-me-view="top">Top</button>
+        <button data-me-view="bottom">Bottom</button>
         <button data-me-view="front">Front</button>
+        <button data-me-view="back">Back</button>
+        <button data-me-view="left">Left</button>
+        <button data-me-view="right">Right</button>
         <button data-me-view="side">Side</button>
+        <button id="me-ortho-btn" title="Chuyển Persp / Ortho">Ortho</button>
+        <label class="me-fov" title="FOV (chỉ có tác dụng ở Persp)">FOV <input type="range" id="me-fov-range" min="30" max="90" step="1" value="50" style="width:70px;vertical-align:middle"> <span id="me-fov-val">50°</span></label>
       </div>
       <div id="hud-dom">FPS: — · Draw: — · Tris: — · Obj: —</div>
     </main>
@@ -188,6 +197,7 @@
 <script src="js/mapeditor/velo/VeloPrefabLibrary.js"></script>
 <script src="js/mapeditor/velo/VeloExport.js"></script>
 <script src="js/mapeditor/velo/VeloPanel.js"></script>
+<script src="js/mapeditor/velo/VeloProject.js"></script>
 <script src="js/mapeditor/core/MapEditor.js"></script>
 <script>
   /* scene tabs: đổi template */

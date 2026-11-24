@@ -266,6 +266,21 @@
 
   function getCached(id) { return cache[id] || null; }
   function getCachedText(id) { return cache[id] ? cache[id].text : null; }
+
+  /* Đăng ký text prefab từ thư mục project local (VeloProject):
+   * resolve() kiểm tra cache trước nên import sẽ dùng đúng file
+   * trong thư mục thay vì fetch GitHub. */
+  function registerText(id, text, source) {
+    if (!id || !text) return false;
+    try {
+      var tree = parseText(text);
+      cache[id] = { tree: tree, text: text, source: source || 'folder' };
+      return true;
+    } catch (e) {
+      if (typeof console !== 'undefined') console.warn('[VeloPrefabLibrary] registerText ' + id + ' lỗi:', e.message);
+      return false;
+    }
+  }
   function list() {
     return REGISTRY.map(function (r) {
       return { id: r.id, name: r.name, file: r.file, url: RAW_BASE + r.file, cached: !!cache[r.id], source: cache[r.id] ? cache[r.id].source : null };
@@ -303,6 +318,7 @@
     RAW_BASE: RAW_BASE, REGISTRY: REGISTRY,
     resolve: resolve, get: get, list: list,
     getCached: getCached, getCachedText: getCachedText,
+    registerText: registerText,
     registerAsset: registerAsset, registerAll: registerAll,
     _fallbackText: FALLBACK_TEXT
   };

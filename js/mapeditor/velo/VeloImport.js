@@ -25,6 +25,22 @@
   var HERO_MODEL_ID = 'a3d0f8b1'; /* assets/models/than_dieu_run.fbx — Thần Điêu Fast Run */
   var HERO_FBX_LOCAL = 'models/thandieu/Than_dieu_Fast_Run.fbx';
 
+  /* File model thật từ thư mục project Velo (VeloProject đăng ký):
+   * id (.meta) -> {file, url (blob), name}. Import ưu tiên dùng file
+   * này thay vì fetch HEAD file local trong repo. */
+  var _modelFiles = {};
+  function setModelFile(id, file) {
+    if (!id || !file) return false;
+    var url = null;
+    try {
+      if (typeof URL !== 'undefined' && URL.createObjectURL) url = URL.createObjectURL(file);
+    } catch (e) { url = null; }
+    if (!url) url = 'blob:velo-project/' + id;
+    _modelFiles[id] = { file: file, url: url, name: file.name || id };
+    return true;
+  }
+  function getModelFile(id) { return _modelFiles[id] || null; }
+
   /* 2D-only: import thì bỏ qua cả subtree, chỉ ghi log. */
   var HUD_COMPONENTS = ['Canvas', 'Label', 'Widget', 'UITransform', 'ProgressBar', 'StatsLabel'];
   /* Component chỉ là game logic V — không có đối tượng 3D tương đương. */
@@ -672,16 +688,26 @@
         res.prefabIds.forEach(function (id) { ME.VeloPrefabLibrary.registerAsset(id); });
       }
       refreshPanels();
-      /* Thần Điêu FBX thật nếu có file local, không thì giữ hero chibi + ghi rõ */
+      /* Thần Điêu FBX thật nếu có file local, không thì giữ hero chibi + ghi rõ.
+       * Ưu tiên 1: file model trong thư mục project Velo (blob URL).
+       * Ưu tiên 2: file local trong repo (HEAD check). */
       var heroObj = null;
       if (res.heroId) heroObj = ME.MapEditor.getObjectData(res.heroId);
       if (heroObj && ME.MapEditor._loadThandieuFBX) {
-        fetch(HERO_FBX_LOCAL, { method: 'HEAD' }).then(function (r) {
-          if (r.ok) return ME.MapEditor._loadThandieuFBX(heroObj.id, HERO_FBX_LOCAL);
-          res.warnings.push('chưa có ' + HERO_FBX_LOCAL + ' trong repo — Hero giữ dạng chibi, upload file FBX rồi import lại để có Thần Điêu thật');
-          ME.MapEditor.notify('Thần Điêu', 'Chưa có ' + HERO_FBX_LOCAL + ' — Hero giữ dạng chibi.', 'warning');
-          return false;
-        }).catch(function () { /* đã notify ở trên hoặc bỏ qua */ });
+        var heroModelId = heroObj.velo && heroObj.velo.modelId;
+        var mf = heroModelId ? getModelFile(heroModelId) : null;
+        if (mf) {
+          ME.MapEditor._loadThandieuFBX(heroObj.id, mf.url).then(function (ok) {
+            if (!ok) ME.MapEditor.notify('Thần Điêu', 'Load FBX từ thư mục project lỗi — Hero giữ dạng chibi.', 'warning');
+          });
+        } else {
+          fetch(HERO_FBX_LOCAL, { method: 'HEAD' }).then(function (r) {
+            if (r.ok) return ME.MapEditor._loadThandieuFBX(heroObj.id, HERO_FBX_LOCAL);
+            res.warnings.push('chưa có ' + HERO_FBX_LOCAL + ' trong repo — Hero giữ dạng chibi, upload file FBX rồi import lại để có Thần Điêu thật');
+            ME.MapEditor.notify('Thần Điêu', 'Chưa có ' + HERO_FBX_LOCAL + ' — Hero giữ dạng chibi.', 'warning');
+            return false;
+          }).catch(function () { /* đã notify ở trên hoặc bỏ qua */ });
+        }
       }
       if (res.heroId) {
         try {
@@ -733,12 +759,48 @@
     });
   }
 
+  /* Chèn 1 prefab (.scene) vào map hiện tại — không thay scene.
+   * Dùng khi click prefab trong cây Velo Project: convert prefab
+   * thành objects rồi append vào MapEditor.data + dựng mesh, đặt ở
+   * tâm camera. */
+  function insertPrefabText(text, opts) {
+    opts = opts || {};
+    var nodes;
+    try {
+      nodes = parse(text);
+    } catch (e) {
+      return Promise.reject(e);
+    }
+    return treeToSceneData(nodes, { name: opts.name || 'Prefab' }).then(function (res) {
+      if (!ME.MapEditor || !ME.MapEditor.data) return res;
+      var cx = 0, cz = 0;
+      if (ME.Viewport3D && ME.Viewport3D.rig) {
+        cx = ME.Viewport3D.rig.target.x;
+        cz = ME.Viewport3D.rig.target.z;
+      }
+      try { ME.MapEditor.pushUndo('Insert prefab ' + (opts.name || '')); } catch (e) { }
+      res.objects.forEach(function (o) {
+        o.position[0] = Math.round((o.position[0] + cx) * 1000) / 1000;
+        o.position[2] = Math.round((o.position[2] + cz) * 1000) / 1000;
+        ME.MapEditor.data.objects.push(o);
+        ME.MapEditor._addObjectMesh(o);
+      });
+      if (res.objects.length) {
+        ME.MapEditor.select(res.objects[0].id);
+        ME.MapEditor.emitChange('insert-prefab', { count: res.objects.length });
+      }
+      return res;
+    });
+  }
+
   ME.VeloImport = {
     DEMO_URL: DEMO_URL, HERO_MODEL_ID: HERO_MODEL_ID, HERO_FBX_LOCAL: HERO_FBX_LOCAL,
     parse: parse, tokenize: tokenize, countNodes: countNodes, walkNodes: walkNodes,
     findNodes: findNodes, comp: comp, rgbToHex: rgbToHex, hexToRgb: hexToRgb,
     treeToSceneData: treeToSceneData,
     importScene: importScene, importDemo3d: importDemo3d, importFile: importFile,
+    insertPrefabText: insertPrefabText,
+    setModelFile: setModelFile, getModelFile: getModelFile, _modelFiles: _modelFiles,
     refreshPanels: refreshPanels
   };
 

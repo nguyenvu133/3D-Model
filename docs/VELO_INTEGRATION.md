@@ -216,3 +216,73 @@ load FBX Thần Điêu, panel UI — xem §7.
    `README-VELO.md` (+ `.scene` prefab nếu đã tải về).
 4. Copy vào project Velo theo README, **tự copy file FBX**
    `models/thandieu/Than_dieu_Fast_Run.fbx` → `assets/models/than_dieu_run.fbx`.
+
+## 8. Import cả thư mục project + cây project + tự cập nhật (2026-11-24 — chưa push)
+
+### 8.1 Nút mở thư mục project Velo
+
+Panel Velo (cột phải) có nút **"📁 Mở thư mục project Velo…"** (cùng trong cây Velo Project ở cột trái). Dùng `showDirectoryPicker()` (Chromium) với fallback `<input type="file" webkitdirectory>`.
+
+**Hiện đường dẫn trước khi import** (theo yêu cầu user — không click là vào thư mục ngay): sau khi chọn thư mục, panel hiện tên thư mục + tổng số file quét được + số file theo loại (scenes/prefabs/models/scripts) + nút **"⬇ Import project này"** xác nhận và nút "Huỷ". Với webkitdirectory, đường dẫn hiển thị là tên thư mục + `webkitRelativePath` của từng file.
+
+Quét đệ quy toàn bộ thư mục:
+- `assets/scenes/*.scene` (scene)
+- `assets/prefabs/*.scene` (prefab)
+- `assets/models/*.fbx` / `.glb` / `.gltf` / `.obj` (model) + file `.meta` cạnh mỗi file
+- `*.v` (script V: main.v, game.v, combat.v…)
+- `velo.toml`, README.md
+
+Resolve tham chiếu bằng `.meta` ID → file thật: prefab instance `from @asset("<id>")` mở đúng file prefab trong thư mục (đăng ký text vào `VeloPrefabLibrary`); SkinnedModel3D `model=@asset("<id>")` **load FBX thật từ thư mục qua blob URL** (không còn chibi placeholder khi file có trong thư mục).
+
+### 8.2 Cây Project Velo
+
+Panel mới **"📁 Velo Project"** ở cột trái, dưới Hierarchy. Đầu cây hiện tên project + đường dẫn thư mục đã chọn. Cây đúng cấu trúc Velo:
+
+```
+📁 <tên thư mục project>
+├─ 📁 assets
+│  ├─ 📁 scenes/   (main.scene…)
+│  ├─ 📁 prefabs/  (torch.scene, tree.scene…)
+│  └─ 📁 models/   (than_dieu_run.fbx…)
+├─ 📁 scripts/     (main.v, game.v…)
+├─ 📄 velo.toml
+└─ 📄 README.md
+```
+
+Mỗi file: icon loại + tên + `.meta` ID (8-hex) + dung lượng. Click:
+- `.scene` → load scene đó làm map (scene đang mở được theo dõi để phát hiện đổi file).
+- prefab → chèn vào map hiện tại (tại tâm camera).
+- `.v` → xem code chỉ-đọc: số dòng + tên `pub struct X` + tên `pub fn X` parse được + preview 200 dòng đầu.
+- `.fbx` → load model vào map (qua Asset Manager).
+- `.meta` → xem ID + kind + version.
+- Thư mục → thu/mở cây.
+
+Mục **"⚠ Chưa lưu vào project"**: model GLB/FBX đã import vào map trong phiên nhưng chưa có trong thư mục project — kèm `.meta` ID tự sinh (fnv1a theo tên file). Export Velo bao gồm cả các asset này (kèm file `.meta` trong project files; user tự copy file binary gốc vào `assets/models/`).
+
+**Demo3d qua GitHub vẫn giữ**: nút "⬇ Import demo3d Velo" (fetch main.scene) — sau khi import xong, cây project hiển thị đúng cấu trúc demo3d (scenes/prefabs/models/scripts) với các file đã tải làm fixture; model `than_dieu_run.fbx` hiện kèm ghi chú "chưa có trong thư mục — upload file vào models/thandieu/ rồi import lại".
+
+### 8.3 Tự cập nhật (auto-update)
+
+- Giữ directory handle khi dùng `showDirectoryPicker()` → nút **"🔄 Quét lại"** + tự quét lại khi window focus + mỗi 10 giây (chỉ khi có handle; so sánh danh sách file + size/mtime).
+- File mới/mất/đổi → cây tự cập nhật (badge "● đã đổi" trên file scene đang mở).
+- **Scene đang mở đổi → hiện nút "↻ Scene đã đổi — Tải lại", KHÔNG tự tải lại lặng lẽ khi đang sửa.**
+- Fallback webkitdirectory (không có handle): nút "Quét lại" yêu cầu chọn lại thư mục, ghi rõ trong panel.
+
+### 8.4 Giới hạn (nói thật)
+
+- **Không chạy code V** — chỉ đọc/xem (parse `pub struct`/`pub fn`, preview 200 dòng). Muốn chạy game Velo thật thì dùng Velo engine.
+- `showDirectoryPicker()` chỉ có trên Chromium (Chrome/Edge). Safari/Firefox dùng fallback `webkitdirectory`.
+- **Đường dẫn hiển thị là tên thư mục + relative path** — trình duyệt không cho đọc đường dẫn tuyệt đối thật trên máy user (bảo mật). Đây là giới hạn của trình duyệt, không phải bug.
+- Tự quét lại 10s chỉ hoạt động khi có directory handle (Chromium). Với fallback, phải bấm "Quét lại" và chọn lại thư mục.
+- FBX load từ thư mục qua blob URL — cần FBXLoader + fflate CDN (đã có trong MapEditor.html).
+
+### 8.5 Test
+
+Harness `~/workspace/.test-mapeditor/test-velo-folder-mapeditor.js` (fixture thư mục Velo giả lập trong `~/workspace/.test-mapeditor/fixtures/velo-folder/`: main.scene thật + 2 prefab + 2 `.meta` + 1 file `.v` mẫu + `velo.toml`):
+- (a) quét thư mục → cây đủ scenes/prefabs/models/scripts, resolve `.meta` ID đúng, load FBX từ blob (stub), click scene đổi map;
+- (b) auto-update: thêm/xoá file → re-scan → cây đổi đúng; scene đang mở đổi → flag "đổi" xuất hiện, không tự reload;
+- (c) layout: chiều cao các section `#me-right` → Inspector body min-height ≥220px sau khi thu gọn các section khác;
+- (d) camera: ortho toggle đổi camera type, FOV slider đổi fov, focus-fit khớp công thức Studio, bookmark lưu/load;
+- (e) kết nối: click nút Map Editor → href đúng; write lỗi → download + panel hướng dẫn.
+
+Kết quả (2026-11-24): **`test-velo-folder-mapeditor.js`: 140/140 PASS × 2 vòng** (vòng 1: 140/140 sau khi sửa 3 bug thật tìm được khi viết test; vòng 2: 140/140). Hồi quy cùng ngày: `test-mapeditor.js` 96/96, `test-velo-mapeditor.js` 69/69, `test-fbx-mixamo.js` 73/73. `node --check`: 15/15 file JS mới/sửa OK. Server smoke: 13/13 file 200.

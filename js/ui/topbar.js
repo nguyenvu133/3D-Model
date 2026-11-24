@@ -18,6 +18,7 @@
     { id: 'material', name: 'Material', icon: 'material', page: 'material' },
     { id: 'render', name: 'Render', icon: 'render', page: 'render' },
     { id: 'game', name: 'Game', icon: 'game', page: 'export' },
+    { id: 'mapeditor', name: 'Map Editor', icon: 'scene', page: 'studio', action: 'mapeditor' },
     { id: 'tools', name: 'Tools', icon: 'wand', page: 'ai' },
     { id: 'settings', name: 'Settings', icon: 'settings', page: 'assets' }
   ];
@@ -54,6 +55,27 @@
 
     if (id === 'settings') {
       PixiStudio.Modals.showSettings();
+      return;
+    }
+    /* Map Editor: tab này không đổi workspace — mở Map Editor 2 chiều.
+     * Nếu ghi shared key thất bại, MapLink hiện panel fallback và ở lại
+     * Studio → trả tab active về Studio. */
+    if (id === 'mapeditor') {
+      if (PixiStudio.MapLink && PixiStudio.MapLink.openMapEditor) {
+        var ok = PixiStudio.MapLink.openMapEditor();
+        if (!ok) {
+          Topbar.active = 'studio';
+          U.$$('#workspace-nav .ws-tab').forEach(function (tab, i) {
+            tab.classList.toggle('active', WORKSPACES[i] && WORKSPACES[i].id === 'studio');
+          });
+        }
+      } else {
+        bus.emit('notify', { type: 'error', title: 'Map Editor', message: 'Module MapLink chưa load — kiểm tra script js/core/map-link.js trong index.html.' });
+        Topbar.active = 'studio';
+        U.$$('#workspace-nav .ws-tab').forEach(function (tab, i) {
+          tab.classList.toggle('active', WORKSPACES[i] && WORKSPACES[i].id === 'studio');
+        });
+      }
       return;
     }
     if (id === 'game') {

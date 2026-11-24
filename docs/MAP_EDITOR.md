@@ -178,3 +178,56 @@ Harness mới `~/workspace/.test-mapeditor/test-mapeditor-v2.js` (jsdom + three 
 - Shared format giữ `veloId` + `waterLevel`, validate sạch
 
 Kết quả (2026-11-24): **`test-mapeditor-v2.js`: 96/96 PASS** · `node --check`: **11/11 OK** (11 file sửa) · Harness cũ `test-mapeditor.js`: **95/96** — 1 FAIL duy nhất là `ghi shared key`: `SharedScene.write()` đã được agent song song đổi sang trả `{ok:true}` thay vì `true` nên assert cũ `=== true` trượt; bản thân write vẫn chạy (test "đọc lại shared key" ngay sau đó PASS). File `SharedScene.js` không thuộc phạm vi sửa của đợt này nên không động vào.
+
+---
+
+## 8. Sửa layout, kết nối, camera (2026-11-24 — sau push 16962a20, chưa push)
+
+### 8.1 Layout: Inspector hiện lại + thanh cuộn rõ (lỗi user báo #3, #6)
+
+Root cause: `#me-right` là column flex không có overflow riêng; các section cố định (Environment ≤220px, Terrain không giới hạn, Velo ≤340px, stats) vượt chiều cao main-row → Inspector body (`flex:1; min-height:0`) co về 0 → không nhìn thấy gì.
+
+Sửa:
+- Mọi section trong `#me-right`/`#me-left` thành **collapsible** (bấm `.panel-head` để thu/mở, mũi tên ▾/▸; click vào input/select/button không thu). Terrain, Environment, Velo, Stats **mặc định thu gọn** lần mở đầu; Inspector và Hierarchy luôn mở. Trạng thái lưu `localStorage: mapeditor.panels`.
+- `#me-right` có `overflow-y:auto` (fallback); mỗi `.panel-body` có `max-height` (mặc định ≤320px) + `overflow-y:auto`; **Inspector body `flex:1 1 220px`, `min-height:220px` — không bao giờ co về 0**.
+- Thanh cuộn hiện rõ: `scrollbar-width: thin; scrollbar-color: #3a4a6a rgba(255,255,255,0.05)` + webkit track nền sáng + thumb `#3a4a6a` (hover `#55648c`) cho mọi `.panel-body`, `#me-right`, `#me-left`, `.me-section-body`.
+- **Điện thoại (<700px)**: 2 panel thành drawer trượt (`position:fixed`, trái `translateX(-105%)`, phải `translateX(105%)`, rộng `min(300px,86vw)`); nút ☰ trái/phải trong toolbar mở/đóng; bấm ra ngoài viewport hoặc Esc thì đóng; mở drawer phải thì Inspector tự mở. Viewport full width; `#me-bottom` (Asset strip) thu gọn còn 34px (bấm head để mở).
+- **Studio**: `.topbar-actions` có `overflow-x:auto` trên màn hẹp (css/responsive.css) nên nút Map Editor không bị tràn khỏi màn hình nữa.
+
+### 8.2 Kết nối Studio ↔ MapEditor (lỗi user báo #1)
+
+- `MapLink.openMapEditor()`: toast "Đang mở Map Editor…" trước khi navigate; nếu `SharedScene.write` lỗi → tải file JSON như cũ **+ hiện panel hướng dẫn** 3 bước với nút "Mở Map Editor ngay" (navigate `MapEditor.html?import=shared` để MapEditor tự nhắc Import file).
+- Menu: topbar workspace nav có thêm mục **Map Editor** (ngoài nút topbar cũ); chọn thì mở Map Editor, lỗi thì notify rõ tiếng Việt.
+- Nút **"← Studio"** to rõ trong `#me-topbar` của MapEditor (gọi `openInStudio`).
+- Chỉ báo trạng thái: MapEditor topbar hiện **"Đã nối Studio ✓"** khi có `?from=studio`; Studio sau khi import xong hiện toast + statusbar "Đã nhận map từ Map Editor: <tên> (<số> objects)".
+- Binding chắc chắn: `MapLink` bind nút ngay khi DOM sẵn (DOMContentLoaded), không đợi `App.boot` xong; nút bấm khi thiếu module thì báo lỗi tiếng Việt.
+- MapEditor mở với `?import=shared` → panel "Import file Shared JSON từ Studio" với nút chọn file.
+
+### 8.3 Camera thống nhất 2 chiều (lỗi user báo #2)
+
+#### Bảng tính năng camera
+
+| Tính năng | Studio (OrbitCam) | Map Editor (CameraRig) |
+|---|---|---|
+| Orbit / Pan / Zoom | có (damping 12%/frame) | có (damping 12%/frame — mới) |
+| Persp / Ortho | có (4 camera ortho) | có (Ortho toggle + fit frustum — mới) |
+| FOV slider 30–90° | fov từ preset | có (chỉ Persp — mới) |
+| View presets | perspective/ortho/front/back/left/right/top/bottom + **iso (mới)** | iso/perspective/top/bottom/front/back/left/right/side |
+| Focus-fit (Box3) | `maxDim/(2·tan(fov/2))·1.35` | cùng công thức (mới) |
+| Frame All | **có (mới, nút + phím F)** | có (F / nút Frame) |
+| Bookmarks | **5 bookmark, localStorage, Alt+1–5 nhảy / Alt+Shift+1–5 lưu (mới)** | 5 bookmark, phím 1–5 nhảy / Shift+1–5 lưu |
+| Gizmo | Q/W/E/R | Q/W/E/R |
+
+- MapEditor học Studio: chế độ Ortho (OrthographicCamera riêng, frustum fit theo kích thước map), FOV slider 30–90° trong `#me-viewbar` (disable khi Ortho), damping mượt (desired state `dTheta/dPhi/dRadius/dTarget`, lerp `k = 1 − 0.0009^dt` như OrbitCam), view back/left/right/bottom + preset iso có target, focus-fit dùng đúng công thức fov của Studio.
+- Studio học MapEditor: view preset iso, nút Frame All (phím F, nút `#vp-frame-btn` trong `#viewport-topbar`, mục trong vp-menu), 5 camera bookmarks (localStorage `pixistudio.bookmarks`).
+- Phím tắt chung: F = frame all; Q/W/E/R = gizmo; 1–5 = bookmark (MapEditor), Alt+1–5 = bookmark (Studio — tránh xung đột với phím 1–8 đổi view của Studio).
+
+### 8.4 Test (harness mới)
+
+`~/workspace/.test-mapeditor/test-velo-folder-mapeditor.js` — xem docs/VELO_INTEGRATION.md §8 và kết quả trong §8.5 dưới. Hồi quy: `test-mapeditor.js` 96/96, `test-velo-mapeditor.js` 69/69, `test-fbx-mixamo.js` 73/73.
+
+### 8.5 Kết quả test (2026-11-24)
+
+Harness mới `~/workspace/.test-mapeditor/test-velo-folder-mapeditor.js` (jsdom + three r128 thật, fixture thư mục Velo trong `~/workspace/.test-mapeditor/fixtures/velo-folder/`): **140/140 PASS × 2 vòng** (vòng 1 và vòng 2 giống nhau). Hồi quy cùng ngày: `test-mapeditor.js` 96/96, `test-velo-mapeditor.js` 69/69, `test-fbx-mixamo.js` 73/73. `node --check`: 15/15 file JS mới/sửa OK. Server smoke: 13/13 file 200.
+
+Trong quá trình viết harness đã bắt được 3 bug thật trong code mới và đã sửa: (1) `scanFiles` không đọc `f._relPath` nên file từ `showDirectoryPicker` mất đường dẫn thư mục; (2) `getUnsavedModelAssets` append `.fbx` cả khi tên đã có đuôi `.glb`; (3) nút "Scene đã đổi — Tải lại" không có `id` nên test/code khác không tìm được. Ngoài ra hook cây project vào `AssetManager.render` để cây tự cập nhật khi import model trong phiên.

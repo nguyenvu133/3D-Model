@@ -278,6 +278,7 @@
     });
     bind('vp-cam-btn', function () { PixiStudio.Viewport.resetCamera(); });
     bind('vp-focus-btn', function () { PixiStudio.Viewport.focusSelected(); });
+    bind('vp-frame-btn', function () { PixiStudio.Viewport.frameAll(); });
     bind('vp-screenshot-btn', function () {
       const url = PixiStudio.Viewport.screenshot(1920, 1080, 'png');
       if (url) {
@@ -298,6 +299,20 @@
         { sep: true },
         { label: 'Quad View', icon: 'grid', kbd: '2', onClick: function () { PixiStudio.Viewport.setView('quad'); document.getElementById('view-mode-select').value = 'quad'; } },
         { label: 'Perspective', icon: 'cube', kbd: '1', onClick: function () { PixiStudio.Viewport.setView('perspective'); document.getElementById('view-mode-select').value = 'perspective'; } },
+        { label: 'Iso View', icon: 'cube', onClick: function () { PixiStudio.Viewport.setView('iso'); document.getElementById('view-mode-select').value = 'iso'; } },
+        { label: 'Frame all', icon: 'expand', onClick: function () { PixiStudio.Viewport.frameAll(); } },
+        { sep: true },
+        { title: 'Camera bookmarks (Alt+1..5 nhảy · Alt+Shift+1..5 lưu)' },
+        { label: 'Lưu bookmark 1', onClick: function () { PixiStudio.Viewport.saveCameraBookmark(0); bus.emit('notify', { type: 'success', title: 'Bookmark', message: 'Đã lưu vị trí camera 1.' }); } },
+        { label: 'Lưu bookmark 2', onClick: function () { PixiStudio.Viewport.saveCameraBookmark(1); bus.emit('notify', { type: 'success', title: 'Bookmark', message: 'Đã lưu vị trí camera 2.' }); } },
+        { label: 'Lưu bookmark 3', onClick: function () { PixiStudio.Viewport.saveCameraBookmark(2); bus.emit('notify', { type: 'success', title: 'Bookmark', message: 'Đã lưu vị trí camera 3.' }); } },
+        { label: 'Lưu bookmark 4', onClick: function () { PixiStudio.Viewport.saveCameraBookmark(3); bus.emit('notify', { type: 'success', title: 'Bookmark', message: 'Đã lưu vị trí camera 4.' }); } },
+        { label: 'Lưu bookmark 5', onClick: function () { PixiStudio.Viewport.saveCameraBookmark(4); bus.emit('notify', { type: 'success', title: 'Bookmark', message: 'Đã lưu vị trí camera 5.' }); } },
+        { label: 'Tới bookmark 1', onClick: function () { if (!PixiStudio.Viewport.gotoCameraBookmark(0)) bus.emit('notify', { type: 'warning', title: 'Bookmark', message: 'Vị trí 1 chưa lưu.' }); } },
+        { label: 'Tới bookmark 2', onClick: function () { if (!PixiStudio.Viewport.gotoCameraBookmark(1)) bus.emit('notify', { type: 'warning', title: 'Bookmark', message: 'Vị trí 2 chưa lưu.' }); } },
+        { label: 'Tới bookmark 3', onClick: function () { if (!PixiStudio.Viewport.gotoCameraBookmark(2)) bus.emit('notify', { type: 'warning', title: 'Bookmark', message: 'Vị trí 3 chưa lưu.' }); } },
+        { label: 'Tới bookmark 4', onClick: function () { if (!PixiStudio.Viewport.gotoCameraBookmark(3)) bus.emit('notify', { type: 'warning', title: 'Bookmark', message: 'Vị trí 4 chưa lưu.' }); } },
+        { label: 'Tới bookmark 5', onClick: function () { if (!PixiStudio.Viewport.gotoCameraBookmark(4)) bus.emit('notify', { type: 'warning', title: 'Bookmark', message: 'Vị trí 5 chưa lưu.' }); } },
         { sep: true },
         { label: 'Toggle Gizmo (Q)', icon: 'cursor', onClick: function () { PixiStudio.Shortcuts.setGizmoMode('select'); } },
         { label: 'Local / World space', icon: 'target', onClick: function () { const s = PixiStudio.State.get('gizmoSpace') === 'local' ? 'world' : 'local'; PixiStudio.State.set('gizmoSpace', s); PixiStudio.Gizmo.setSpace(s); bus.emit('notify', { type: 'info', title: 'Gizmo space', message: s }); } }

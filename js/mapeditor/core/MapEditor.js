@@ -40,6 +40,139 @@
     booted: false
   };
 
+  /* ---------- section thu gọn 2 panel (fix Inspector bị khuất) ----------
+   * Bọc từng cặp .panel-head + .panel-body trong #me-left/#me-right thành
+   * .me-section có thể thu/mở. Inspector + Hierarchy luôn có min-height
+   * (CSS .me-section-inspector 220px / .me-section-hierarchy 160px) nên
+   * không bao giờ co về 0. Trạng thái lưu localStorage `mapeditor.panels`.
+   * Lần mở đầu tiên: chỉ Inspector + Hierarchy mở, còn lại thu gọn. */
+  MapEditor._panelStateKey = 'mapeditor.panels';
+  MapEditor._panelState = null;
+  MapEditor._loadPanelState = function () {
+    if (MapEditor._panelState) return MapEditor._panelState;
+    var st = {};
+    try { st = JSON.parse(window.localStorage.getItem(MapEditor._panelStateKey) || '{}') || {}; } catch (e) { st = {}; }
+    MapEditor._panelState = st;
+    return st;
+  };
+  MapEditor._savePanelState = function () {
+    try { window.localStorage.setItem(MapEditor._panelStateKey, JSON.stringify(MapEditor._panelState || {})); } catch (e) { }
+  };
+  MapEditor._sectionKeyFor = function (headText) {
+    var t = (headText || '').toLowerCase();
+    if (t.indexOf('inspector') >= 0) return 'inspector';
+    if (t.indexOf('hierarchy') >= 0) return 'hierarchy';
+    if (t.indexOf('environment') >= 0) return 'environment';
+    if (t.indexOf('terrain thêm') >= 0) return 'terrain-extra';
+    if (t.indexOf('terrain') >= 0) return 'terrain';
+    if (t.indexOf('velo project') >= 0) return 'velo-project';
+    if (t.indexOf('velo') >= 0) return 'velo';
+    if (t.indexOf('snap') >= 0) return 'snap';
+    if (t.indexOf('bookmark') >= 0) return 'bookmarks';
+    if (t.indexOf('layer') >= 0) return 'layers';
+    if (t.indexOf('đo') >= 0 || t.indexOf('thống kê') >= 0) return 'measure';
+    if (t.indexOf('bầu trời') >= 0) return 'sky';
+    if (t.indexOf('play') >= 0) return 'play';
+    if (t.indexOf('chỉnh sửa') >= 0) return 'edit';
+    return 'sec_' + t.replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 24);
+  };
+  /* Bọc 1 cặp head+body đã có sẵn trong DOM thành section thu gọn. */
+  MapEditor.wrapPanelSection = function (headEl, bodyEl, key, defaultOpen) {
+    if (!headEl || !bodyEl || headEl.parentNode !== bodyEl.parentNode) return null;
+    if (headEl.parentNode.classList.contains('me-section')) return headEl.parentNode;
+    var parent = headEl.parentNode;
+    var sec = document.createElement('div');
+    sec.className = 'me-section';
+    if (key === 'inspector') sec.classList.add('me-section-inspector');
+    if (key === 'hierarchy') sec.classList.add('me-section-hierarchy');
+    sec.setAttribute('data-section', key);
+    parent.insertBefore(sec, headEl);
+    sec.appendChild(headEl);
+    sec.appendChild(bodyEl);
+    var arrow = document.createElement('span');
+    arrow.className = 'me-collapse-arrow';
+    arrow.textContent = '▾';
+    headEl.appendChild(arrow);
+    var st = MapEditor._loadPanelState();
+    var open = (key in st) ? !!st[key] : !!defaultOpen;
+    sec.classList.toggle('collapsed', !open);
+    headEl.addEventListener('click', function (e) {
+      var tag = (e.target && e.target.tagName) || '';
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'BUTTON' || tag === 'A') return;
+      var nowCollapsed = sec.classList.toggle('collapsed');
+      MapEditor._loadPanelState()[key] = !nowCollapsed;
+      MapEditor._savePanelState();
+    });
+    /* section thường: giới hạn chiều cao để không bóp Inspector */
+    if (key !== 'inspector' && key !== 'hierarchy' && !bodyEl.style.maxHeight) {
+      bodyEl.style.maxHeight = '320px';
+    }
+    return sec;
+  };
+  MapEditor._initCollapsiblePanels = function () {
+    ['me-left', 'me-right'].forEach(function (pid) {
+      var panel = $(pid);
+      if (!panel) return;
+      /* snapshot cặp head+body (bỏ qua node đã bọc) */
+      var pairs = [];
+      var kids = Array.prototype.slice.call(panel.children);
+      for (var i = 0; i < kids.length; i++) {
+        if (kids[i].classList && kids[i].classList.contains('panel-head') &&
+            kids[i + 1] && kids[i + 1].classList && kids[i + 1].classList.contains('panel-body')) {
+          pairs.push([kids[i], kids[i + 1]]);
+          i++;
+        }
+      }
+      pairs.forEach(function (p) {
+        var key = MapEditor._sectionKeyFor(p[0].textContent);
+        var defaultOpen = (key === 'inspector' || key === 'hierarchy');
+        MapEditor.wrapPanelSection(p[0], p[1], key, defaultOpen);
+      });
+    });
+  };
+  MapEditor.toggleSection = function (key, open) {
+    var sec = document.querySelector('.me-section[data-section="' + key + '"]');
+    if (!sec) return false;
+    var wantOpen = open === undefined ? sec.classList.contains('collapsed') : !!open;
+    sec.classList.toggle('collapsed', !wantOpen);
+    MapEditor._loadPanelState()[key] = wantOpen;
+    MapEditor._savePanelState();
+    return wantOpen;
+  };
+
+  /* ---------- drawer điện thoại (<700px) ---------- */
+  MapEditor.toggleDrawer = function (side) {
+    var cls = side === 'left' ? 'me-left-open' : 'me-right-open';
+    var other = side === 'left' ? 'me-right-open' : 'me-left-open';
+    document.body.classList.remove(other);
+    document.body.classList.toggle(cls);
+    /* mở drawer phải thì chắc chắn Inspector đang mở */
+    if (side === 'right' && document.body.classList.contains(cls)) {
+      MapEditor.toggleSection('inspector', true);
+    }
+    return document.body.classList.contains(cls);
+  };
+  MapEditor.closeDrawers = function () {
+    document.body.classList.remove('me-left-open', 'me-right-open');
+  };
+
+  /* ---------- trạng thái nối Studio ---------- */
+  MapEditor._updateLinkStatus = function (receivedName) {
+    var el = $('me-link-status');
+    if (!el) return;
+    var fromStudio = false;
+    try { fromStudio = /[?&]from=studio/.test(window.location.search); } catch (e) { }
+    if (receivedName) {
+      el.textContent = '✓ Đã nhận scene từ Studio: ' + receivedName;
+      el.classList.remove('warn');
+    } else if (fromStudio) {
+      el.textContent = '✓ Đã nối Studio';
+      el.classList.remove('warn');
+    } else {
+      el.textContent = '';
+    }
+  };
+
   /* ---------- auto-update trung tâm (debounce ~80ms) ---------- */
   /* Mọi mutation đi qua emitChange; emitChange refresh Hierarchy +
    * Inspector + AssetManager + HUD minimap + panel thống kê cùng lúc.
@@ -968,6 +1101,8 @@
 
     cv.addEventListener('pointerdown', function (e) {
       cv.setPointerCapture(e.pointerId);
+      /* bấm ra ngoài panel (điện thoại): đóng drawer */
+      MapEditor.closeDrawers();
       MapEditor._dragging = { button: e.button, x: e.clientX, y: e.clientY, moved: 0, mode: null };
       var ndc = ndcFromEvent(e);
       /* đo khoảng cách: click 2 điểm terrain */
@@ -1164,7 +1299,22 @@
         MapEditor.cancelPlacement();
         MapEditor._addWaypointFor = null;
         if (MapEditor._measuring) { MapEditor._measuring = false; MapEditor.clearMeasure(); }
+        MapEditor.closeDrawers();
         MapEditor.select(null);
+      } else if (k >= '1' && k <= '5' && !e.altKey) {
+        /* camera bookmarks: 1–5 nhảy tới, Shift+1–5 lưu vị trí hiện tại */
+        var slot = parseInt(k, 10) - 1;
+        if (e.shiftKey) {
+          if (ME.Viewport3D.rig) {
+            ME.Viewport3D.rig.saveBookmark(slot);
+            if (MapEditor._refreshBookmarkLabels) MapEditor._refreshBookmarkLabels();
+            MapEditor.notify('Bookmark', 'Đã lưu vị trí camera ' + (slot + 1) + '.', 'success');
+          }
+        } else {
+          if (ME.Viewport3D.rig && !ME.Viewport3D.rig.gotoBookmark(slot)) {
+            MapEditor.notify('Bookmark', 'Vị trí ' + (slot + 1) + ' chưa lưu (Shift+' + (slot + 1) + ' để lưu).', 'warning');
+          }
+        }
       } else if (k === 'q') MapEditor.setTool('select');
       else if (k === 'w') MapEditor.setTool('move');
       else if (k === 'e') MapEditor.setTool('rotate');
@@ -1243,6 +1393,22 @@
         fi.value = '';
       });
     }
+    /* drawer điện thoại + thu gọn Asset strip */
+    on('me-drawer-left-btn', function () { MapEditor.toggleDrawer('left'); });
+    on('me-drawer-right-btn', function () { MapEditor.toggleDrawer('right'); });
+    var bHead = $('me-bottom-head');
+    if (bHead) {
+      bHead.addEventListener('click', function (e) {
+        var tag = (e.target && e.target.tagName) || '';
+        if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'BUTTON' || tag === 'A') return;
+        var b = $('me-bottom');
+        if (b) b.classList.toggle('collapsed');
+      });
+      var bArrow = document.createElement('span');
+      bArrow.className = 'me-collapse-arrow';
+      bArrow.textContent = '▾';
+      bHead.appendChild(bArrow);
+    }
     /* view buttons */
     document.querySelectorAll('[data-me-view]').forEach(function (b) {
       b.addEventListener('click', function () {
@@ -1250,6 +1416,24 @@
         document.querySelectorAll('[data-me-view]').forEach(function (x) { x.classList.toggle('active', x === b); });
       });
     });
+    /* Ortho / Persp + FOV (thống nhất với Studio) */
+    on('me-ortho-btn', function () {
+      var on2 = ME.Viewport3D.setOrthoMode(!ME.Viewport3D.isOrtho());
+      var btn = $('me-ortho-btn');
+      if (btn) btn.classList.toggle('active', on2);
+      var fov = $('me-fov-range');
+      if (fov) fov.disabled = on2;
+      MapEditor.setStatus(on2 ? 'Camera: Orthographic' : 'Camera: Perspective');
+    });
+    var fovRange = $('me-fov-range');
+    if (fovRange) {
+      fovRange.addEventListener('input', function () {
+        var v = parseInt(fovRange.value, 10) || 50;
+        ME.Viewport3D.setFov(v);
+        var val = $('me-fov-val');
+        if (val) val.textContent = v + '°';
+      });
+    }
     /* tool buttons */
     document.querySelectorAll('[data-me-tool]').forEach(function (b) {
       b.addEventListener('click', function () {
@@ -1687,6 +1871,22 @@
       ME.Viewport3D.rig.setView('iso');
       /* panel mở rộng (thêm bằng JS: chỉnh sửa, snap, bookmarks, layers, đo, terrain, play) */
       try { MapEditor._buildExtraUI(); } catch (e) { console.warn('[MapEditor] extra UI lỗi:', e); }
+      /* bọc các section thành thu gọn — Inspector luôn hiện, không bị khuất */
+      try { MapEditor._initCollapsiblePanels(); } catch (e) { console.warn('[MapEditor] collapsible lỗi:', e); }
+      /* trạng thái nối Studio (?from=studio / vừa nhận scene) */
+      try {
+        var receivedName = null;
+        if (loaded && MapEditor.data) receivedName = MapEditor.data.name;
+        MapEditor._updateLinkStatus(receivedName);
+      } catch (e) { }
+      /* mở từ Studio bằng file fallback: ?import=shared → nhắc chọn file */
+      try {
+        if (/[?&]import=shared/.test(window.location.search) && ME.MapExport && ME.MapExport.showImportSharedPrompt) {
+          ME.MapExport.showImportSharedPrompt();
+        }
+      } catch (e) { }
+      /* Velo Project: import cả thư mục + cây project */
+      try { if (ME.VeloProject) ME.VeloProject.init(); } catch (e) { console.warn('[MapEditor] VeloProject lỗi:', e); }
       /* autosave 60s */
       setInterval(function () {
         if (MapEditor._dirty && MapEditor.data) {

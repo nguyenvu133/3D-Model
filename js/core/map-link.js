@@ -42,6 +42,7 @@
         notify('error', 'Map Editor', 'Thiếu module liên kết (SceneData/SharedScene). Kiểm tra lại script trong index.html.');
         return false;
       }
+      notify('info', 'Map Editor', 'Đang mở Map Editor…');
       var project = PixiStudio.Storage.serializeProject();
       var doc = MapLink._compactDoc(MapLink.studioToShared(project));
       var res = window.MapEditor.SharedScene.write(doc);
@@ -49,9 +50,9 @@
         window.location.href = 'MapEditor.html?scene=pixistudio.sharedScene&from=studio';
         return true;
       }
-      /* FALLBACK giống chiều ngược lại: tải file Shared JSON, MapEditor
-       * import được bằng nút Import sẵn có (#me-import-btn nhận
-       * .shared-scene.json). */
+      /* FALLBACK giống chiều ngược lại: tải file Shared JSON + hiện panel
+       * hướng dẫn (không chỉ toast) với nút "Mở Map Editor ngay" —
+       * MapEditor mở kèm ?import=shared sẽ tự nhắc chọn file. */
       var reasonText = (res && res.reason === 'quota')
         ? 'localStorage đã đầy'
         : (res && res.reason === 'security')
@@ -60,7 +61,8 @@
       try {
         var fname = 'studio-map.shared-scene.json';
         window.MapEditor.SharedScene.downloadText(JSON.stringify(doc, null, 2), fname, 'application/json');
-        notify('warning', 'Map Editor', 'Không ghi được shared key (' + reasonText + '). Đã tải "' + fname + '" — mở Map Editor rồi bấm Import và chọn file này.');
+        notify('warning', 'Map Editor', 'Không ghi được shared key (' + reasonText + '). Đã tải "' + fname + '" — làm theo panel hướng dẫn.');
+        MapLink._showOpenMapEditorFallbackPanel(fname, reasonText);
       } catch (e) {
         notify('error', 'Map Editor', 'Không ghi được shared key (' + reasonText + '). Dùng Export Project rồi import trong Map Editor.');
       }
@@ -69,6 +71,37 @@
       notify('error', 'Map Editor', 'Lỗi khi chuẩn bị scene: ' + err.message);
       return false;
     }
+  };
+
+  /* Panel hướng dẫn khi shared key ghi thất bại (Studio → MapEditor).
+   * Nút chính mở MapEditor kèm ?import=shared để MapEditor tự nhắc
+   * chọn file Shared JSON vừa tải. */
+  MapLink._showOpenMapEditorFallbackPanel = function (fname, reasonText) {
+    try {
+      var old = document.getElementById('maplink-fallback-panel');
+      if (old) old.remove();
+      var panel = document.createElement('div');
+      panel.id = 'maplink-fallback-panel';
+      panel.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55);font-family:inherit;';
+      panel.innerHTML =
+        '<div style="background:#1e2230;color:#eef1f8;max-width:480px;width:92%;padding:20px 22px;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.5);">' +
+        '<h3 style="margin:0 0 6px;font-size:17px;">Không ghi được shared key — đã tải file Shared JSON</h3>' +
+        '<p style="margin:0 0 12px;font-size:13px;opacity:.85;">Lý do: ' + (reasonText || 'không ghi được shared key') + '. Scene của bạn vẫn an toàn trong file vừa tải.</p>' +
+        '<ol style="margin:0 0 16px;padding-left:20px;font-size:14px;line-height:1.9;">' +
+        '<li>File <b>' + (fname || 'studio-map.shared-scene.json') + '</b> vừa được tải xuống (kiểm tra thư mục Downloads).</li>' +
+        '<li>Bấm nút <b>“Mở Map Editor ngay”</b> bên dưới để mở Map Editor.</li>' +
+        '<li>Trong Map Editor, bấm <b>“Chọn file Shared JSON…”</b> rồi chọn file vừa tải.</li>' +
+        '</ol>' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end;">' +
+        '<button id="maplink-fallback-close" style="padding:8px 14px;border-radius:8px;border:1px solid #555;background:transparent;color:#eef1f8;cursor:pointer;">Đóng</button>' +
+        '<button id="maplink-fallback-open" style="padding:8px 14px;border-radius:8px;border:none;background:#713bff;color:#fff;cursor:pointer;">Mở Map Editor ngay</button>' +
+        '</div></div>';
+      document.body.appendChild(panel);
+      var openBtn = document.getElementById('maplink-fallback-open');
+      if (openBtn) openBtn.addEventListener('click', function () { window.location.href = 'MapEditor.html?import=shared'; });
+      var closeBtn = document.getElementById('maplink-fallback-close');
+      if (closeBtn) closeBtn.addEventListener('click', function () { panel.remove(); });
+    } catch (e) { /* panel lỗi thì toast đã đủ */ }
   };
 
   /* Thu gọn shared doc: deep-clone + làm tròn terrain.heights về 3 chữ
@@ -221,6 +254,11 @@
         (doc.map.terrain ? ' + terrain' : '') + '.';
       if (warnings.length) msg += ' Lưu ý: ' + warnings.slice(0, 3).join(' | ') + (warnings.length > 3 ? ' (+' + (warnings.length - 3) + ' nữa)' : '');
       notify(warnings.length ? 'warning' : 'success', 'Map Editor → Studio', msg);
+      /* statusbar cũng hiện trạng thái (ngoài toast) */
+      try {
+        var sb = document.getElementById('sb-view');
+        if (sb) sb.textContent = 'Đã nhận map từ Map Editor: ' + (doc.name || 'Untitled') + ' (' + count + ' objects)';
+      } catch (e) { }
       bus.emit('scene:changed', { action: 'maplink-import', count: count });
       /* focus terrain nếu có */
       try {
@@ -306,19 +344,41 @@
     });
   };
 
-  /* ---------- init (gọi từ App.boot sau Topbar.init) ---------- */
-  MapLink.init = function () {
+  /* ---------- init (gọi từ App.boot sau Topbar.init) ----------
+   * Bind sớm ngay khi DOM sẵn (không đợi App.boot xong hẳn) để nút vẫn
+   * hoạt động cả khi boot studio lỗi giữa chừng. Idempotent. */
+  MapLink._bound = false;
+  MapLink._bindButtons = function () {
+    if (MapLink._bound) return;
+    MapLink._bound = true;
     try {
       var btn = document.getElementById('btn-map-editor');
       if (btn) {
         btn.addEventListener('click', function () { MapLink.openMapEditor(); });
       }
       MapLink._bindImportSharedButton();
+    } catch (err) {
+      console.error('[MapLink] bind lỗi:', err);
+    }
+  };
+  MapLink.init = function () {
+    try {
+      MapLink._bindButtons();
       MapLink.checkIncoming();
     } catch (err) {
       console.error('[MapLink] init lỗi:', err);
     }
   };
+
+  /* Bind sớm: DOMContentLoaded (hoặc ngay nếu DOM đã sẵn). */
+  (function () {
+    if (typeof document === 'undefined') return;
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', MapLink._bindButtons);
+    } else {
+      MapLink._bindButtons();
+    }
+  })();
 
   window.PixiStudio.MapLink = MapLink;
 })();
