@@ -6,6 +6,10 @@
  * - MapEditor → Studio: lúc boot, nếu URL có ?scene=... thì đọc
  *   shared key, import terrain + objects vào Viewport.modelRoot,
  *   rồi xoá key. Không có key / key lỗi → không đổi hành vi cũ.
+ * - Fallback file: shared key ghi thất bại (quota/security) → tự tải
+ *   file .shared-scene.json; Studio import bằng nút "Import Shared
+ *   JSON" trên topbar (MapLink.importSharedFromFile), MapEditor import
+ *   bằng nút Import sẵn có (nhận .shared-scene.json).
  * Format: pixistudio-shared-scene-1 (xem docs/MAP_EDITOR.md §3).
  * Tái dùng window.MapEditor.SceneData / SharedScene / Placement
  * (được load trong index.html trước file này).
@@ -39,18 +43,47 @@
         return false;
       }
       var project = PixiStudio.Storage.serializeProject();
-      var doc = MapLink.studioToShared(project);
-      var ok = window.MapEditor.SharedScene.write(doc);
-      if (!ok) {
-        notify('error', 'Map Editor', 'Không ghi được shared key (localStorage đầy/bị chặn). Dùng Export Project rồi import trong Map Editor.');
-        return false;
+      var doc = MapLink._compactDoc(MapLink.studioToShared(project));
+      var res = window.MapEditor.SharedScene.write(doc);
+      if (res && res.ok) {
+        window.location.href = 'MapEditor.html?scene=pixistudio.sharedScene&from=studio';
+        return true;
       }
-      window.location.href = 'MapEditor.html?scene=pixistudio.sharedScene&from=studio';
-      return true;
+      /* FALLBACK giống chiều ngược lại: tải file Shared JSON, MapEditor
+       * import được bằng nút Import sẵn có (#me-import-btn nhận
+       * .shared-scene.json). */
+      var reasonText = (res && res.reason === 'quota')
+        ? 'localStorage đã đầy'
+        : (res && res.reason === 'security')
+          ? 'trình duyệt chặn ghi localStorage'
+          : 'không ghi được shared key';
+      try {
+        var fname = 'studio-map.shared-scene.json';
+        window.MapEditor.SharedScene.downloadText(JSON.stringify(doc, null, 2), fname, 'application/json');
+        notify('warning', 'Map Editor', 'Không ghi được shared key (' + reasonText + '). Đã tải "' + fname + '" — mở Map Editor rồi bấm Import và chọn file này.');
+      } catch (e) {
+        notify('error', 'Map Editor', 'Không ghi được shared key (' + reasonText + '). Dùng Export Project rồi import trong Map Editor.');
+      }
+      return false;
     } catch (err) {
       notify('error', 'Map Editor', 'Lỗi khi chuẩn bị scene: ' + err.message);
       return false;
     }
+  };
+
+  /* Thu gọn shared doc: deep-clone + làm tròn terrain.heights về 3 chữ
+   * số thập phân (đủ chính xác, giảm ~30% dung lượng → ít chạm quota). */
+  MapLink._compactDoc = function (doc) {
+    try {
+      var c = JSON.parse(JSON.stringify(doc));
+      var h = c && c.map && c.map.terrain && c.map.terrain.heights;
+      if (Array.isArray(h)) {
+        for (var i = 0; i < h.length; i++) {
+          if (typeof h[i] === 'number') h[i] = Math.round(h[i] * 1000) / 1000;
+        }
+      }
+      return c;
+    } catch (e) { return doc; }
   };
 
   MapLink._hasDeps = function () {
@@ -241,6 +274,38 @@
     return g;
   };
 
+  /* ---------- Import Shared JSON từ file (fallback khi shared key lỗi) ----------
+   * Nút "Import Shared JSON" trên topbar Studio → file picker → validate
+   * format pixistudio-shared-scene-1 → tái dùng MapLink.importShared(doc).
+   * Mọi lỗi try/catch + notify tiếng Việt, không crash Studio. */
+  MapLink.importSharedFromFile = function (file) {
+    if (!file) return Promise.resolve(false);
+    return window.MapEditor.SharedScene.readFileAsText(file).then(function (text) {
+      var doc;
+      try { doc = JSON.parse(text); } catch (e) { throw new Error('File JSON không hợp lệ'); }
+      if (!doc || doc.format !== 'pixistudio-shared-scene-1') {
+        throw new Error('File không phải Shared Scene (format phải là pixistudio-shared-scene-1)');
+      }
+      if (!doc.map) throw new Error('File thiếu trường "map"');
+      return MapLink.importShared(doc);
+    }).catch(function (err) {
+      notify('error', 'Import Shared JSON', err && err.message ? err.message : 'Import file thất bại');
+      return false;
+    });
+  };
+
+  MapLink._bindImportSharedButton = function () {
+    var btn = document.getElementById('btn-import-shared');
+    var input = document.getElementById('shared-scene-file-input');
+    if (!btn || !input) return;
+    btn.addEventListener('click', function () { input.click(); });
+    input.addEventListener('change', function () {
+      var file = input.files && input.files[0];
+      input.value = '';
+      if (file) MapLink.importSharedFromFile(file);
+    });
+  };
+
   /* ---------- init (gọi từ App.boot sau Topbar.init) ---------- */
   MapLink.init = function () {
     try {
@@ -248,6 +313,7 @@
       if (btn) {
         btn.addEventListener('click', function () { MapLink.openMapEditor(); });
       }
+      MapLink._bindImportSharedButton();
       MapLink.checkIncoming();
     } catch (err) {
       console.error('[MapLink] init lỗi:', err);

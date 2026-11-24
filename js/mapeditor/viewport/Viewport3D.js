@@ -34,6 +34,7 @@
     _playing: false,
     _playT: 0,
     _patrolState: {},
+    _followHero: false,
     _raf: 0,
     _disposed: false
   };
@@ -325,6 +326,9 @@
     if (!v) Viewport3D.resetPlayState();
   };
   Viewport3D.isPlaying = function () { return Viewport3D._playing; };
+  /* camera theo hero khi Play (bật/tắt từ panel Mở rộng) */
+  Viewport3D.setFollowHero = function (v) { Viewport3D._followHero = !!v; };
+  Viewport3D.isFollowHero = function () { return Viewport3D._followHero; };
   Viewport3D.resetPlayState = function () {
     /* trả hero/monster về vị trí gốc trong data */
     if (!ME.MapEditor) return;
@@ -352,8 +356,8 @@
         var anim = 'Idle';
         var d = obj.userData.mapData;
         if (d && d.anim) anim = d.anim;
-        /* monster đi patrol nếu có path gần */
-        if ((type === 'monster' || type === 'boss') && ME.MapEditor.findPatrolNear) {
+        /* hero/monster/boss đi patrol nếu có path gần (hero cũng đi patrol khi Play) */
+        if ((type === 'monster' || type === 'boss' || type === 'hero') && ME.MapEditor.findPatrolNear) {
           var path = ME.MapEditor.findPatrolNear(obj.position);
           if (path) {
             var st = Viewport3D._patrolState[obj.userData.mapId] || { i: 0, prog: 0 };
@@ -386,6 +390,38 @@
         });
       }
     });
+    /* camera follow hero */
+    if (Viewport3D._followHero && Viewport3D.rig) {
+      var hero = null;
+      ME.MapEditor.forEachObject(function (o) {
+        if (!hero && o.userData.mapType === 'hero') hero = o;
+      });
+      if (hero) {
+        Viewport3D.rig.target.set(hero.position.x, hero.position.y + 1, hero.position.z);
+        Viewport3D.rig.update();
+      }
+    }
+  };
+
+  /* click lên minimap (góc phải trên, 120×120, offset 8px) → di chuyển camera.
+   * Trả true nếu click nằm trong minimap (đã xử lý), false nếu không.
+   * viewW/viewH: kích thước viewport (mặc định lấy từ canvas) — test truyền tay. */
+  Viewport3D.minimapClick = function (clientX, clientY, viewW, viewH) {
+    var r = Viewport3D.canvas ? Viewport3D.canvas.getBoundingClientRect() : null;
+    var W = viewW || (r ? r.width : 0);
+    if (!W) return false;
+    var mx = clientX - (r ? r.left : 0);
+    var my = clientY - (r ? r.top : 0);
+    var x0 = W - 128, x1 = W - 8, y0 = 8, y1 = 128;
+    if (mx < x0 || mx > x1 || my < y0 || my > y1) return false;
+    var ox = x0 + 60, oy = y0 + 60;
+    var half = (ME.TerrainEditor && ME.TerrainEditor.data ? ME.TerrainEditor.data.size : 112) / 2;
+    var wx = Math.max(-half, Math.min(half, (mx - ox) / 0.5));
+    var wz = Math.max(-half, Math.min(half, (my - oy) / 0.5));
+    var wy = ME.TerrainEditor ? ME.TerrainEditor.heightAt(wx, wz) : 0;
+    Viewport3D.rig.target.set(wx, wy, wz);
+    Viewport3D.rig.update();
+    return true;
   };
 
   /* ---------- render loop ---------- */

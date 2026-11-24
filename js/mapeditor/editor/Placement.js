@@ -143,6 +143,51 @@
     return g;
   };
 
+  BUILDERS.torii = function (o) {
+    /* cổng torii đỏ kiểu Nhật/wuxia — 2 trụ + 2 xà ngang cong nhẹ */
+    var g = new THREE.Group();
+    [-2.6, 2.6].forEach(function (dx) { g.add(cyl(0.32, 0.38, 6.4, 0xb02020, dx, 3.2, 0, 10)); });
+    g.add(box(7.6, 0.55, 0.7, 0x8a1414, 0, 6.6, 0));
+    var top = box(8.6, 0.45, 0.9, 0x1a1a1a, 0, 7.4, 0);
+    g.add(top);
+    g.add(box(6.4, 0.4, 0.5, 0xb02020, 0, 5.6, 0));
+    g.add(box(0.5, 0.9, 0.5, 0xc9a94f, 0, 7.0, 0));
+    return g;
+  };
+
+  BUILDERS.well = function (o) {
+    /* giếng đá có mái */
+    var g = new THREE.Group();
+    var rim = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.4, 1.1, 12, 1, true), mat(0x8a8a94, { doubleSide: true }));
+    rim.position.y = 0.55; rim.castShadow = true; rim.receiveShadow = true;
+    g.add(rim);
+    var water = new THREE.Mesh(new THREE.CircleGeometry(1.15, 12),
+      new THREE.MeshStandardMaterial({ color: 0x2a5a7a, roughness: 0.1, metalness: 0.2 }));
+    water.rotation.x = -Math.PI / 2; water.position.y = 0.85;
+    g.add(water);
+    [-1.1, 1.1].forEach(function (dx) { g.add(box(0.18, 2.2, 0.18, 0x6b4a2a, dx, 1.1, 0)); });
+    var roof = cone(1.9, 1.1, 0x1e4d3a, 0, 2.9, 0, 4); roof.rotation.y = Math.PI / 4; g.add(roof);
+    var bucket = cyl(0.22, 0.22, 0.3, 0x6b4a2a, 0, 1.9, 0, 8);
+    g.add(bucket);
+    return g;
+  };
+
+  BUILDERS.tower = function (o) {
+    /* tháp canh 3 tầng mái */
+    var g = new THREE.Group();
+    g.add(box(5, 1, 5, 0x7a7264, 0, 0.5, 0));
+    var tiers = [[4.2, 3.2, 0], [3.4, 3.0, 5.4], [2.6, 2.8, 10.4]];
+    tiers.forEach(function (t, i) {
+      g.add(box(t[0], t[1], t[0], i % 2 ? 0x7a4a2e : 0x8a2f26, 0, t[2] + t[1] / 2 + 1, 0));
+      var roof = cone(t[0] * 0.85, 1.6, 0x1e4d3a, 0, t[2] + t[1] + 1.8, 0, 4);
+      roof.rotation.y = Math.PI / 4; g.add(roof);
+      var snow = cone(t[0] * 0.87, 0.25, 0xe8eef7, 0, t[2] + t[1] + 1.1, 0, 4);
+      snow.rotation.y = Math.PI / 4; g.add(snow);
+    });
+    g.add(sphere(0.4, 0xffd94d, 0, 14.6, 0, { emissive: 0x8a6d1f }));
+    return g;
+  };
+
   BUILDERS.portal = function (o) {
     var g = new THREE.Group();
     var torus = new THREE.Mesh(new THREE.TorusGeometry(2.6, 0.35, 10, 28), new THREE.MeshBasicMaterial({ color: 0x9d4edd }));
@@ -308,6 +353,8 @@
     { type: 'temple', name: 'Đền chính', cat: 'Buildings' },
     { type: 'house', name: 'Nhà dân', cat: 'Buildings' },
     { type: 'gate', name: 'Cổng thành', cat: 'Buildings' },
+    { type: 'torii', name: 'Cổng torii', cat: 'Buildings' },
+    { type: 'tower', name: 'Tháp canh', cat: 'Buildings' },
     { type: 'bridge', name: 'Cầu gỗ', cat: 'Buildings' },
     { type: 'pine', name: 'Thông tuyết', cat: 'Vegetation' },
     { type: 'bamboo', name: 'Trúc', cat: 'Vegetation' },
@@ -315,6 +362,7 @@
     { type: 'lantern', name: 'Đèn lồng', cat: 'Props' },
     { type: 'campfire', name: 'Lửa trại', cat: 'Props' },
     { type: 'statue', name: 'Tượng đá', cat: 'Props' },
+    { type: 'well', name: 'Giếng đá', cat: 'Props' },
     { type: 'fence', name: 'Hàng rào', cat: 'Props' },
     { type: 'portal', name: 'Cổng dungeon', cat: 'Props' },
     { type: 'waterfall', name: 'Thác nước', cat: 'Environment' },

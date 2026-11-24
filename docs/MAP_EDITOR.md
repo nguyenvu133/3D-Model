@@ -118,3 +118,63 @@ Kết quả (đã chạy, 2026-11-24):
 - `node --check`: **15/15 OK** (13 file `js/mapeditor/`, `js/core/map-link.js`, `js/core/app.js`).
 - Server smoke: **18/18 file trả 200** (MapEditor.html, css, 13 js mapeditor, map-link.js, index.html, app.js).
 - Hồi quy studio cũ: `test-fbx-mixamo.js` **73/73 PASS** (exporter không bị ảnh hưởng).
+
+## 7. Auto-update + mở rộng Map Editor (v2, 2026-11-24)
+
+### 7.1 Auto-update trung tâm
+
+- `MapEditor.emitChange(kind, detail)` — mọi mutation (add/delete/rename/reparent/select/undo/redo/load/import) đi qua đây; debounce ~80ms rồi refresh **Hierarchy + Inspector + AssetManager + HUD minimap + panel thống kê** cùng lúc. `emitChangeNow()` cho load/undo cần cập nhật ngay. Kind `'live'` (kéo slider, sửa số) không render lại Inspector để khỏi mất focus. `select()` vẫn render ngay (không qua debounce).
+- **AssetManager registry thật**: `registerAsset(asset)` / `unregisterAsset(id)` / `getAsset(id)` / `listAssets()` — asset `{id, name, kind, source, veloId?}` gồm prefab built-in (24 thẻ: 21 cũ + torii/tower/well) + file import + asset Velo (agent Velo gọi `registerAsset` là chạy — đã test với asset `velo:d3a10003`). Thêm/xoá asset là panel tự hiện, kèm đếm `N / tổng assets`, tìm kiếm + lọc theo loại nối vào registry thật (lọc `Velo` theo `source`, `Model nhập` theo `kind`).
+- **Import file nhận biết định dạng**: nút Import — `.shared-scene.json` → `MapExport.importSharedFile`, `.mapeditor.json` → `MapExport.importFile`, `.glb/.gltf/.fbx/.obj` → `AssetManager.importModelFile` (chỉ gọi hàm có sẵn, không sửa `MapExport.js`).
+
+### 7.2 Mở rộng Map Editor (đều là nút thật)
+
+| Tính năng | Cách dùng |
+|---|---|
+| Multi-select | Shift/Ctrl+click (viewport + Hierarchy), Shift+kéo khung chọn trong viewport, Ctrl+A chọn hết |
+| Copy/paste | Ctrl+C / Ctrl+V (nút trong panel Chỉnh sửa) — paste đổi tên `_paste`, lệch +2m |
+| Align / distribute | Align X/Z (min/giữa/max), đều khoảng cách X/Z (cần ≥3 object) — panel Chỉnh sửa |
+| Snap | Lưới 0.5/1/2 m + góc 15°/45° — panel Snap; áp vào gizmo (`translationSnap`/`rotationSnap`) + điểm đặt object |
+| Camera bookmarks | 5 vị trí, Lưu/Đi — panel Bookmarks, lưu `localStorage` (`mapeditor.bookmarks`) |
+| Layers | Environment/Buildings/Props/Characters/Effects (Effects = Lighting + Particles) — ẩn/hiện từng layer |
+| Groups | Chọn nhiều object → "Gom nhóm…" (nhóm mới tự tạo, Hierarchy hiện nhóm) |
+| Đo khoảng cách | Nút Đo → click 2 điểm trên terrain, hiện số mét + vẽ đường vàng |
+| Duplicate dọc path | Chọn 1 object → nhân dọc patrol path gần nhất (4 bản với path mặc định) |
+| Scatter có seed | Seed cố định → cùng vị trí rải (test: seed 42 cho cùng toạ độ 2 lần) |
+| Terrain brush mới | Plateau (chỉ nâng lên mặt bằng), Terrace (bậc thang 1m), Erode (xói mòn) — nút trong panel Terrain thêm |
+| Heightmap | Export/import JSON `mapeditor-heightmap-1` (heights + paint + mực nước), validate độ dài |
+| Mực nước | Slider −2…4 m + checkbox — mặt phẳng nước trong suốt, lưu vào `terrain.waterLevel` (đi qua shared format) |
+| Prefab wuxia mới | Cổng torii, giếng đá, tháp canh (3 tầng mái) — có trong Asset Manager + `TYPE_GROUP` + thumbnail + icon Hierarchy |
+| Bầu trời + fog | Preset mới: Bình minh, Bão tố, Sương mù dày (ô Thời tiết) + preset fog: Sương mỏng/Mặc định/Sương dày |
+| Play | Hero cũng đi patrol khi Play (như quái/boss) + checkbox "Camera theo hero khi Play" |
+| Scene stats | Panel Đo & Thống kê: objects/verts/tris tổng + theo loại, lấy từ mesh thật |
+| Minimap click | Click lên minimap (góc phải trên) → camera di chuyển tới điểm đó |
+| Import GLB/FBX/OBJ | Nút "＋ Import GLB / FBX / OBJ" trong Asset Manager (GLTFLoader/FBXLoader có sẵn; OBJLoader tải động từ CDN khi cần). Model đã import đặt được bằng click thẻ/kéo-thả; sau reload trang mà chưa import lại thì hiện placeholder box. Import lưu `url: 'import:<id>'` trong data object |
+| Search | Hierarchy tìm theo tên/loại/nhóm; Asset Manager tìm theo tên/loại nối registry |
+
+### 7.3 Inspector — khối "Thông tin" (đầu Inspector)
+
+Tên, loại, đường dẫn trong scene (`Scene / <nhóm> / <tên>`), parent (`Scene (MapRoot)`), số con (trực tiếp/descendant/mesh), transform local + world (position/rotation°/scale — world lấy từ `matrixWorld` thật), mesh (verts/tris/bounds size/skinned), material (số material, màu, roughness/metalness/opacity của material đầu tiên), components (suy từ data + userData thật: Transform/Mesh/PointLight/Collider/PatrolPath/Animation/Light/ImportedModel/VeloAsset/SkinnedMesh), nguồn asset (prefab procedural / file import + tên file / Velo asset ID nếu có), prefab link (tên + `builtin:<type>`), collider (dạng/kích thước), patrol waypoints (số điểm + toạ độ), animation (clip đang chạy — FBX Thần Điêu thì ghi tên clip + số clip; procedural thì ghi tốc độ 1.0x). Khi không chọn object, panel Scene cũng hiện tổng verts/tris + mực nước.
+
+### 7.4 PLANNED (chưa làm, không có nút giả)
+
+- Mesh Deform (sửa vertex/edge/face) — như cũ, vẫn planned.
+- Bloom (EffectComposer) — như cũ, vẫn planned.
+- NavMesh/pathfinding thật, physics/rigidbody thật — collider + patrol vẫn chỉ là dữ liệu.
+- FBX import qua Asset Manager cần file + CDN (đã có loader, chưa test file thật ngoài stub).
+- Chưa test trên điện thoại thật.
+
+### 7.5 Test v2
+
+Harness mới `~/workspace/.test-mapeditor/test-mapeditor-v2.js` (jsdom + three r128 thật, cùng stub như harness cũ):
+
+- Registry: 24 built-in, register/unregister Velo, lọc Velo/tìm torii
+- emitChange: place/delete → Hierarchy rows + Asset cards + stats panel đổi đúng số (sau debounce 150ms)
+- Inspector info đủ 9 trường (temple/patrol/hero)
+- Multi-select/copy-paste/align/distribute/snap/bookmarks/layers/nhóm
+- Prefab mới, brush Plateau/Terrace/Erode, scatter seed 42 trùng vị trí, heightmap export/import, mực nước
+- Đo 3-4-5 = 5m, minimap click, duplicate dọc path (4 bản), marquee chọn đền
+- Stats thật, play follow hero, import model (reject .txt, đặt clone model đã load)
+- Shared format giữ `veloId` + `waterLevel`, validate sạch
+
+Kết quả (2026-11-24): **`test-mapeditor-v2.js`: 96/96 PASS** · `node --check`: **11/11 OK** (11 file sửa) · Harness cũ `test-mapeditor.js`: **95/96** — 1 FAIL duy nhất là `ghi shared key`: `SharedScene.write()` đã được agent song song đổi sang trả `{ok:true}` thay vì `true` nên assert cũ `=== true` trượt; bản thân write vẫn chạy (test "đọc lại shared key" ngay sau đó PASS). File `SharedScene.js` không thuộc phạm vi sửa của đợt này nên không động vào.

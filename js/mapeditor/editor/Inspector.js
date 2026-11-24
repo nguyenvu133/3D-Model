@@ -56,6 +56,132 @@
     s.appendChild(el('div', 'ins-head', title));
     return s;
   }
+  function esc(s) {
+    return String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function fmtNum(v, digits) {
+    if (v === undefined || v === null || !isFinite(v)) return '—';
+    return String(Math.round(v * Math.pow(10, digits || 2)) / Math.pow(10, digits || 2));
+  }
+  function fmtVec(arr, digits) {
+    if (!arr) return '—';
+    return '(' + fmtNum(arr[0], digits) + ', ' + fmtNum(arr[1], digits) + ', ' + fmtNum(arr[2], digits) + ')';
+  }
+
+  /* thống kê mesh thật từ THREE.Object3D: verts/tris/bounds/material/con */
+  Inspector.meshStats = function (threeObj) {
+    var st = { verts: 0, tris: 0, meshes: 0, children: 0, descendants: 0, materials: [], bounds: null, skinned: false };
+    if (!threeObj) return st;
+    st.children = threeObj.children.length;
+    threeObj.traverse(function (ch) {
+      st.descendants++;
+      if (ch.isMesh) {
+        st.meshes++;
+        if (ch.isSkinnedMesh) st.skinned = true;
+        var g = ch.geometry;
+        if (g) {
+          if (g.index) st.tris += g.index.count / 3;
+          else if (g.attributes.position) st.tris += g.attributes.position.count / 3;
+          if (g.attributes.position) st.verts += g.attributes.position.count;
+        }
+        if (ch.material && st.materials.indexOf(ch.material) < 0) st.materials.push(ch.material);
+      }
+    });
+    st.descendants--; /* trừ chính nó */
+    try {
+      var box = new THREE.Box3().setFromObject(threeObj);
+      if (!box.isEmpty()) {
+        var size = box.getSize(new THREE.Vector3());
+        st.bounds = [size.x, size.y, size.z];
+      }
+    } catch (e) { /* Box3 lỗi với object rỗng thì bỏ qua */ }
+    return st;
+  };
+
+  /* khối "Thông tin" đầu Inspector — mọi số liệu lấy từ object thật */
+  Inspector.infoSection = function (obj, threeObj) {
+    var s = section('Thông tin');
+    var st = Inspector.meshStats(threeObj);
+    var rows = [];
+    rows.push(['Tên', obj.name]);
+    rows.push(['Loại', obj.type + (obj.placeholder ? ' (placeholder)' : '')]);
+    rows.push(['Đường dẫn', 'Scene / ' + (obj.group || 'Props') + ' / ' + obj.name]);
+    rows.push(['Parent', 'Scene (MapRoot)']);
+    rows.push(['Số con', st.children + ' con trực tiếp · ' + st.descendants + ' descendant · ' + st.meshes + ' mesh']);
+    rows.push(['Transform local', 'P ' + fmtVec(obj.position) + ' · R° ' + fmtVec([obj.rotation[0] * 180 / Math.PI, obj.rotation[1] * 180 / Math.PI, obj.rotation[2] * 180 / Math.PI], 1) + ' · S ' + fmtVec(obj.scale)]);
+    if (threeObj) {
+      var wp = new THREE.Vector3(), wq = new THREE.Quaternion(), ws = new THREE.Vector3();
+      try {
+        threeObj.updateWorldMatrix(true, false);
+        threeObj.matrixWorld.decompose(wp, wq, ws);
+        var eu = new THREE.Euler().setFromQuaternion(wq);
+        rows.push(['Transform world', 'P ' + fmtVec([wp.x, wp.y, wp.z]) + ' · R° ' + fmtVec([eu.x * 180 / Math.PI, eu.y * 180 / Math.PI, eu.z * 180 / Math.PI], 1) + ' · S ' + fmtVec([ws.x, ws.y, ws.z])]);
+      } catch (e) { rows.push(['Transform world', '—']); }
+    }
+    rows.push(['Mesh', st.verts.toLocaleString() + ' verts · ' + Math.round(st.tris).toLocaleString() + ' tris' +
+      (st.bounds ? ' · bounds ' + fmtVec(st.bounds) + ' m' : ' · bounds —') + (st.skinned ? ' · skinned' : '')]);
+    if (st.materials.length) {
+      var m0 = st.materials[0];
+      var col = (m0.color && m0.color.getHexString) ? '#' + m0.color.getHexString() : '—';
+      rows.push(['Material', st.materials.length + ' material · màu ' + col +
+        ' · roughness ' + fmtNum(m0.roughness) + ' · metalness ' + fmtNum(m0.metalness) +
+        ' · opacity ' + fmtNum(m0.opacity !== undefined ? m0.opacity : 1)]);
+    } else {
+      rows.push(['Material', '— (không có mesh)']);
+    }
+    /* components: suy từ data + userData thật */
+    var comps = ['Transform', 'Mesh'];
+    if (threeObj && threeObj.userData.pointLight) comps.push('PointLight');
+    if (obj.collider) comps.push('Collider(' + obj.collider.shape + ')');
+    if (obj.path && obj.path.length) comps.push('PatrolPath(' + obj.path.length + ' điểm)');
+    if (obj.anim || (threeObj && threeObj.userData.limbs)) comps.push('Animation');
+    if (obj.light) comps.push('Light');
+    if (obj.url && obj.url.indexOf('import:') === 0) comps.push('ImportedModel');
+    if (obj.veloId) comps.push('VeloAsset');
+    if (st.skinned) comps.push('SkinnedMesh');
+    rows.push(['Components', comps.join(', ')]);
+    /* nguồn asset */
+    var src = 'Prefab procedural (' + obj.type + ')';
+    if (obj.url) {
+      if (obj.url.indexOf('import:') === 0) {
+        var a = ME.AssetManager ? ME.AssetManager.getAsset(obj.url) : null;
+        src = 'File import: ' + (a ? (a.fileName || a.name) : obj.url);
+      } else src = obj.url;
+    }
+    if (obj.veloId) src += ' · Velo asset ID: ' + obj.veloId;
+    rows.push(['Nguồn asset', src]);
+    /* prefab link */
+    var prefabName = obj.type;
+    if (ME.Placement && ME.Placement.ASSET_LIST) {
+      ME.Placement.ASSET_LIST.forEach(function (a) { if (a.type === obj.type) prefabName = a.name; });
+    }
+    rows.push(['Prefab', prefabName + ' · id: builtin:' + obj.type]);
+    /* collider */
+    rows.push(['Collider', obj.collider ? obj.collider.shape + ' ' + fmtVec(obj.collider.size || [1, 1, 1]) : '— (không có)']);
+    /* patrol waypoints */
+    if (obj.path) {
+      var pts = obj.path.map(function (p) { return '(' + fmtNum(p[0], 1) + ', ' + fmtNum(p[1], 1) + ')'; });
+      rows.push(['Patrol waypoints', obj.path.length + ' điểm: ' + (pts.slice(0, 6).join(' → ') + (pts.length > 6 ? ' …' : ''))]);
+    }
+    /* animation */
+    var animTxt = obj.anim || '—';
+    if (ME.MapEditor && ME.MapEditor._thandieu && ME.MapEditor._thandieu.objectId === obj.id) {
+      var t = ME.MapEditor._thandieu;
+      var cur = t.current && t.current.getClip ? t.current.getClip().name : (t.clips.length ? t.clips[0].name : '—');
+      animTxt = 'FBX Thần Điêu: ' + cur + ' · tốc độ 1.0x · ' + t.clips.length + ' clip';
+    } else if (obj.anim) {
+      animTxt = obj.anim + ' (procedural · tốc độ 1.0x)';
+    }
+    rows.push(['Animation', animTxt]);
+    var info = el('div', 'ins-info');
+    info.innerHTML = rows.map(function (r) {
+      return '<div><span style="color:var(--text3)">' + esc(r[0]) + ':</span> <b>' + esc(r[1]) + '</b></div>';
+    }).join('');
+    s.appendChild(info);
+    return s;
+  };
 
   Inspector.render = function () {
     var c = Inspector._container;
@@ -67,14 +193,21 @@
 
     if (!obj) {
       var s0 = section('Scene — ' + (data ? data.name : ''));
+      var totals = { verts: 0, tris: 0 };
+      if (ME.MapEditor.computeSceneStats) {
+        var cs = ME.MapEditor.computeSceneStats();
+        totals.verts = cs.totalVerts; totals.tris = cs.totalTris;
+      }
       var info = el('div', 'ins-info');
       info.innerHTML =
         'Objects: <b>' + (data ? data.objects.length : 0) + '</b><br>' +
+        'Vertices: <b>' + totals.verts.toLocaleString() + '</b> · Triangles: <b>' + totals.tris.toLocaleString() + '</b><br>' +
         'Terrain: <b>' + (data && data.terrain ? data.terrain.size + ' × ' + data.terrain.size + ' · ' + data.terrain.segments + ' seg' : '—') + '</b><br>' +
+        'Mực nước: <b>' + (data && data.terrain && data.terrain.waterLevel !== null && data.terrain.waterLevel !== undefined ? data.terrain.waterLevel + ' m' : '—') + '</b><br>' +
         'Template: <b>' + (data ? data.template : '—') + '</b><br>' +
         'Weather: <b>' + (data && data.environment ? data.environment.weather : '—') + '</b>';
       s0.appendChild(info);
-      s0.appendChild(el('div', 'ins-hint', 'Chọn 1 object trong Hierarchy hoặc click trong viewport để sửa.'));
+      s0.appendChild(el('div', 'ins-hint', 'Chọn 1 object trong Hierarchy hoặc click trong viewport để sửa. Shift/Ctrl+click để chọn nhiều.'));
       c.appendChild(s0);
       return;
     }
@@ -91,6 +224,9 @@
     head.appendChild(nameInp);
     head.appendChild(el('span', 'ins-type', obj.type + (obj.placeholder ? ' · placeholder' : '')));
     c.appendChild(head);
+
+    /* Thông tin đầy đủ — đầu Inspector */
+    c.appendChild(Inspector.infoSection(obj, ME.MapEditor.getObject3D(obj.id)));
 
     /* Transform */
     var sT = section('Transform');

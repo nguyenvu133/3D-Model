@@ -11,7 +11,7 @@
   window.MapEditor = window.MapEditor || {};
   var ME = window.MapEditor;
 
-  var TOOLS = ['raise', 'lower', 'smooth', 'flatten', 'noise', 'mountain'];
+  var TOOLS = ['raise', 'lower', 'smooth', 'flatten', 'noise', 'mountain', 'plateau', 'terrace', 'erode'];
   var PAINT_TOOLS = ['paint'];
 
   var Brush = {
@@ -108,6 +108,23 @@
       else if (tool === 'smooth') nh = h + (smoothHeightAt(v.idx) - h) * f * s;
       else if (tool === 'flatten') nh = h + (Brush.flattenHeight - h) * f * s;
       else if (tool === 'noise') nh = h + (rand01() - 0.5) * 2 * s * f;
+      else if (tool === 'plateau') {
+        /* chỉ nâng lên mặt bằng (đỉnh bằng), không hạ chỗ cao hơn */
+        if (h < Brush.flattenHeight) nh = h + (Brush.flattenHeight - h) * f * s;
+      }
+      else if (tool === 'terrace') {
+        /* bậc thang: lượng tử hoá độ cao theo bước 1m */
+        var step = 1;
+        var q = Math.round(h / step) * step;
+        nh = h + (q - h) * f * s;
+      }
+      else if (tool === 'erode') {
+        /* xói mòn: làm mịn mạnh + hạ chỗ nhô cao hơn vùng quanh */
+        var sm = smoothHeightAt(v.idx);
+        nh = h + (sm - h) * f * s;
+        var slope = h - sm;
+        if (slope > 0) nh -= slope * f * s * 0.4;
+      }
       if (nh !== h) {
         TE.setHeightAtIndex(v.idx, nh);
         changed++;
@@ -127,6 +144,10 @@
     }
     if (Brush.tool === 'flatten' && x !== undefined) {
       Brush.flattenHeight = ME.TerrainEditor.heightAt(x, z);
+    }
+    if (Brush.tool === 'plateau' && x !== undefined) {
+      /* plateau lấy mặt bằng = độ cao tại điểm bắt đầu + 1.5m */
+      Brush.flattenHeight = ME.TerrainEditor.heightAt(x, z) + 1.5;
     }
     if (x !== undefined && z !== undefined) Brush.applyAt(x, z);
   };
@@ -183,6 +204,15 @@
       }
     }
     return placed;
+  };
+
+  /* scatter có seed: cùng seed + cùng vị trí/loại → cùng vị trí rải */
+  Brush.setSeed = function (seed) {
+    Brush._seed = (parseInt(seed, 10) >>> 0) || 1;
+  };
+  Brush.scatterSeeded = function (x, z, type, count, seed) {
+    if (seed !== undefined && seed !== null) Brush.setSeed(seed);
+    return Brush.scatter(x, z, type, count);
   };
 
   Brush.TOOLS = TOOLS;

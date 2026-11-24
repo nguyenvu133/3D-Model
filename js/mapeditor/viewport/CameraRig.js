@@ -27,6 +27,8 @@
     this.minRadius = 8;
     this.maxRadius = 260;
     this.view = 'iso';
+    this.bookmarks = [null, null, null, null, null];
+    this.loadBookmarks();
   }
 
   CameraRig.prototype.update = function () {
@@ -103,6 +105,44 @@
 
   CameraRig.prototype.reset = function () {
     return this.setView('iso');
+  };
+
+  /* ---------- camera bookmarks (5 vị trí, lưu localStorage) ---------- */
+  CameraRig.prototype.loadBookmarks = function () {
+    try {
+      var all = JSON.parse(window.localStorage.getItem('mapeditor.bookmarks') || 'null');
+      if (Array.isArray(all)) {
+        for (var i = 0; i < 5; i++) this.bookmarks[i] = all[i] || null;
+      }
+    } catch (e) { /* localStorage chặn thì dùng bộ nhớ tạm */ }
+    return this.bookmarks;
+  };
+  CameraRig.prototype.saveBookmark = function (slot) {
+    slot = Math.max(0, Math.min(4, slot | 0));
+    this.bookmarks[slot] = {
+      theta: this.theta, phi: this.phi, radius: this.radius,
+      target: [this.target.x, this.target.y, this.target.z]
+    };
+    try { window.localStorage.setItem('mapeditor.bookmarks', JSON.stringify(this.bookmarks)); } catch (e) { }
+    return this.bookmarks[slot];
+  };
+  CameraRig.prototype.gotoBookmark = function (slot) {
+    slot = Math.max(0, Math.min(4, slot | 0));
+    var b = this.bookmarks[slot];
+    if (!b) {
+      this.loadBookmarks();
+      b = this.bookmarks[slot];
+    }
+    if (!b) return false;
+    this.theta = b.theta; this.phi = b.phi; this.radius = b.radius;
+    this.target.set(b.target[0], b.target[1], b.target[2]);
+    this.update();
+    return true;
+  };
+  CameraRig.prototype.bookmarkLabel = function (slot) {
+    var b = this.bookmarks[Math.max(0, Math.min(4, slot | 0))];
+    if (!b) return '— trống —';
+    return 'r=' + Math.round(b.radius) + ' · (' + Math.round(b.target[0]) + ', ' + Math.round(b.target[2]) + ')';
   };
 
   ME.CameraRig = CameraRig;

@@ -15,7 +15,9 @@
     mesh: null,
     data: null,        /* data.terrain */
     size: 112,
-    segments: 64
+    segments: 64,
+    waterLevel: null,  /* null = không hiện mặt nước */
+    _waterMesh: null
   };
 
   function layerColor(idx) {
@@ -177,7 +179,106 @@
       TerrainEditor.mesh.material.dispose();
       TerrainEditor.mesh = null;
     }
+    if (TerrainEditor._waterMesh) TerrainEditor._waterMesh.visible = false;
+    TerrainEditor.waterLevel = null;
     TerrainEditor.data = null;
+  };
+
+  /* ---------- mực nước (mặt phẳng nước trong suốt) ---------- */
+  TerrainEditor.setWaterLevel = function (y) {
+    y = parseFloat(y);
+    if (!isFinite(y)) return false;
+    TerrainEditor.waterLevel = y;
+    if (window.THREE) {
+      if (!TerrainEditor._waterMesh) {
+        var geo = new THREE.PlaneGeometry(1, 1);
+        geo.rotateX(-Math.PI / 2);
+        var m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+          color: 0x3a7ab5, transparent: true, opacity: 0.55, roughness: 0.15, metalness: 0.1
+        }));
+        m.name = 'WaterLevel';
+        TerrainEditor._waterMesh = m;
+      }
+      var size = TerrainEditor.size || 112;
+      TerrainEditor._waterMesh.scale.set(size, 1, size);
+      TerrainEditor._waterMesh.position.set(0, y, 0);
+      TerrainEditor._waterMesh.visible = true;
+      if (ME.Viewport3D && ME.Viewport3D.scene && !TerrainEditor._waterMesh.parent) {
+        ME.Viewport3D.scene.add(TerrainEditor._waterMesh);
+      }
+    }
+    if (ME.MapEditor && ME.MapEditor.data && ME.MapEditor.data.terrain) {
+      ME.MapEditor.data.terrain.waterLevel = y;
+    }
+    return true;
+  };
+  TerrainEditor.hideWater = function () {
+    TerrainEditor.waterLevel = null;
+    if (TerrainEditor._waterMesh) TerrainEditor._waterMesh.visible = false;
+    if (ME.MapEditor && ME.MapEditor.data && ME.MapEditor.data.terrain) {
+      ME.MapEditor.data.terrain.waterLevel = null;
+    }
+  };
+
+  /* ---------- import/export heightmap JSON ---------- */
+  function downloadText(text, filename, mime) {
+    try {
+      var blob = new Blob([text], { type: mime || 'application/json' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(a.href); }, 100);
+      return true;
+    } catch (e) { return false; }
+  }
+  TerrainEditor.exportHeightmap = function () {
+    if (!TerrainEditor.data) return null;
+    var doc = {
+      format: 'mapeditor-heightmap-1',
+      size: TerrainEditor.data.size,
+      segments: TerrainEditor.data.segments,
+      heights: TerrainEditor.data.heights.slice ? TerrainEditor.data.heights.slice() : TerrainEditor.data.heights,
+      paint: TerrainEditor.data.paint ? (TerrainEditor.data.paint.slice ? TerrainEditor.data.paint.slice() : TerrainEditor.data.paint) : null,
+      waterLevel: TerrainEditor.waterLevel
+    };
+    var json = JSON.stringify(doc);
+    var name = 'heightmap-' + (TerrainEditor.data.size || 112) + 'x' + (TerrainEditor.data.segments || 64) + '.json';
+    downloadText(json, name, 'application/json');
+    return doc;
+  };
+  TerrainEditor.importHeightmap = function (doc) {
+    /* trả {ok, error?} — không throw */
+    if (!doc || doc.format !== 'mapeditor-heightmap-1') {
+      return { ok: false, error: 'format không phải mapeditor-heightmap-1' };
+    }
+    var size = doc.size || 112, seg = doc.segments || 64;
+    var n = (seg + 1) * (seg + 1);
+    if (!Array.isArray(doc.heights) || doc.heights.length !== n) {
+      return { ok: false, error: 'heights sai độ dài (cần ' + n + ')' };
+    }
+    if (doc.paint && (!Array.isArray(doc.paint) || doc.paint.length !== n)) {
+      return { ok: false, error: 'paint sai độ dài (cần ' + n + ')' };
+    }
+    var nd = {
+      size: size, segments: seg,
+      heights: doc.heights.slice(),
+      paint: doc.paint ? doc.paint.slice() : new Array(n).fill(0),
+      waterLevel: (doc.waterLevel !== undefined && doc.waterLevel !== null) ? doc.waterLevel : null
+    };
+    var oldParent = TerrainEditor.mesh ? TerrainEditor.mesh.parent : null;
+    if (oldParent) oldParent.remove(TerrainEditor.mesh);
+    TerrainEditor.dispose();
+    var mesh = TerrainEditor.create(nd);
+    if (oldParent) oldParent.add(mesh);
+    else if (ME.Viewport3D && ME.Viewport3D.scene) ME.Viewport3D.scene.add(mesh);
+    if (nd.waterLevel !== null) TerrainEditor.setWaterLevel(nd.waterLevel);
+    if (ME.MapEditor && ME.MapEditor.data) {
+      ME.MapEditor.data.terrain = nd;
+      if (ME.MapEditor.emitChange) ME.MapEditor.emitChange('terrain-import');
+    }
+    return { ok: true };
   };
 
   ME.TerrainEditor = TerrainEditor;

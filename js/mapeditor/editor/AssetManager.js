@@ -14,12 +14,54 @@
   var AssetManager = {
     _grid: null,
     _filter: 'All',
-    _search: ''
+    _search: '',
+    _registry: {},       /* id -> asset {id, name, kind, source, type, veloId?, fileName?} */
+    _order: [],          /* id theo thứ tự đăng ký */
+    _loadedModels: {},   /* id -> THREE.Group đã load (import GLB/FBX/OBJ) */
+    _importInput: null
   };
+
+  /* ---------- registry thật: prefab built-in + file import + Velo ---------- */
+  AssetManager.registerAsset = function (asset) {
+    asset = asset || {};
+    if (!asset.id) asset.id = 'asset_' + (AssetManager._order.length + 1) + '_' + Math.floor(Math.random() * 1296).toString(36);
+    asset.name = asset.name || asset.type || asset.id;
+    asset.kind = asset.kind || 'Props';
+    asset.source = asset.source || 'builtin';
+    if (!AssetManager._registry[asset.id]) AssetManager._order.push(asset.id);
+    AssetManager._registry[asset.id] = asset;
+    AssetManager.render();
+    return asset;
+  };
+  AssetManager.unregisterAsset = function (id) {
+    if (!AssetManager._registry[id]) return false;
+    delete AssetManager._registry[id];
+    var i = AssetManager._order.indexOf(id);
+    if (i >= 0) AssetManager._order.splice(i, 1);
+    delete AssetManager._loadedModels[id];
+    AssetManager.render();
+    return true;
+  };
+  AssetManager.getAsset = function (id) { return AssetManager._registry[id] || null; };
+  AssetManager.listAssets = function () {
+    return AssetManager._order.map(function (id) { return AssetManager._registry[id]; });
+  };
+  AssetManager.getLoadedModel = function (id) { return AssetManager._loadedModels[id] || null; };
+  AssetManager.assetCount = function () { return AssetManager._order.length; };
 
   AssetManager.init = function (gridEl, filterEl, searchEl) {
     AssetManager._grid = gridEl;
     if (filterEl) {
+      /* thêm lựa chọn lọc cho asset nhập / Velo (không sửa HTML) */
+      ['Model', 'Velo'].forEach(function (k) {
+        var has = false;
+        for (var i = 0; i < filterEl.options.length; i++) if (filterEl.options[i].value === k) has = true;
+        if (!has) {
+          var op = document.createElement('option');
+          op.value = k; op.textContent = k === 'Model' ? 'Model nhập' : 'Velo';
+          filterEl.appendChild(op);
+        }
+      });
       filterEl.addEventListener('change', function () {
         AssetManager._filter = filterEl.value;
         AssetManager.render();
@@ -30,6 +72,41 @@
         AssetManager._search = searchEl.value.trim().toLowerCase();
         AssetManager.render();
       });
+    }
+    /* đăng ký prefab built-in vào registry */
+    if (ME.Placement && ME.Placement.ASSET_LIST) {
+      ME.Placement.ASSET_LIST.forEach(function (a) {
+        AssetManager.registerAsset({
+          id: 'builtin:' + a.type, name: a.name, kind: a.cat,
+          source: 'builtin', type: a.type
+        });
+      });
+    }
+    /* nút + input Import GLB/FBX/OBJ (thêm bằng JS, không sửa HTML) */
+    var head = gridEl ? gridEl.parentElement : null;
+    if (head) {
+      var btn = document.createElement('button');
+      btn.className = 'btn sm';
+      btn.textContent = '＋ Import GLB / FBX / OBJ';
+      btn.title = 'Import model 3D vào map (GLB, FBX, OBJ)';
+      btn.addEventListener('click', function () {
+        if (AssetManager._importInput) AssetManager._importInput.click();
+      });
+      var headBar = head.querySelector('#me-bottom-head');
+      if (headBar) headBar.appendChild(btn);
+      var inp = document.createElement('input');
+      inp.type = 'file';
+      inp.accept = '.glb,.gltf,.fbx,.obj';
+      inp.style.display = 'none';
+      inp.addEventListener('change', function () {
+        var f = inp.files && inp.files[0];
+        if (f) AssetManager.importModelFile(f).catch(function (e) {
+          if (ME.MapEditor) ME.MapEditor.notify('Import model lỗi', e.message, 'error');
+        });
+        inp.value = '';
+      });
+      head.appendChild(inp);
+      AssetManager._importInput = inp;
     }
     AssetManager.render();
   };
@@ -143,6 +220,29 @@
       ctx.fillStyle = '#6b4a2a';
       for (var f = 0; f < 5; f++) ctx.fillRect(cx - 28 + f * 14, 30, 5, 26);
       ctx.fillRect(cx - 30, 38, 60, 4);
+    } else if (type === 'torii') {
+      ctx.fillStyle = '#b02020';
+      ctx.fillRect(cx - 28, 22, 7, 40); ctx.fillRect(cx + 21, 22, 7, 40);
+      ctx.fillRect(cx - 34, 14, 68, 7);
+      ctx.fillStyle = '#1a1a1a'; ctx.fillRect(cx - 38, 8, 76, 6);
+      ctx.fillStyle = '#c9a94f'; ctx.fillRect(cx - 3, 12, 6, 8);
+    } else if (type === 'well') {
+      ctx.fillStyle = '#8a8a94'; ctx.fillRect(cx - 20, 44, 40, 16);
+      ctx.fillStyle = '#2a5a7a'; ctx.fillRect(cx - 16, 44, 32, 5);
+      ctx.fillStyle = '#6b4a2a'; ctx.fillRect(cx - 22, 22, 5, 24); ctx.fillRect(cx + 17, 22, 5, 24);
+      poly([[cx - 26, 24], [cx + 26, 24], [cx, 8]], '#1e4d3a', '#0d2a1e');
+    } else if (type === 'tower') {
+      ctx.fillStyle = '#8a2f26'; ctx.fillRect(cx - 14, 38, 28, 24);
+      poly([[cx - 22, 40], [cx + 22, 40], [cx, 24]], '#1e4d3a', '#0d2a1e');
+      ctx.fillStyle = '#7a4a2e'; ctx.fillRect(cx - 9, 16, 18, 10);
+      poly([[cx - 15, 18], [cx + 15, 18], [cx, 6]], '#1e4d3a', '#0d2a1e');
+      ctx.fillStyle = '#ffd94d'; ctx.beginPath(); ctx.arc(cx, 4, 3, 0, Math.PI * 2); ctx.fill();
+    } else if (type === 'model') {
+      ctx.fillStyle = '#713bff';
+      ctx.fillRect(cx - 16, 20, 32, 32);
+      ctx.fillStyle = '#4a2a8a'; ctx.fillRect(cx - 20, 52, 40, 6);
+      ctx.fillStyle = '#ffffff'; ctx.font = 'bold 11px monospace';
+      ctx.fillText('3D', cx - 8, 40);
     } else {
       ctx.fillStyle = '#7a7a94';
       if (type === 'sphere') { ctx.beginPath(); ctx.arc(cx, 36, 16, 0, Math.PI * 2); ctx.fill(); }
@@ -156,30 +256,52 @@
     var g = AssetManager._grid;
     if (!g) return;
     g.innerHTML = '';
-    var list = ME.Placement.ASSET_LIST.filter(function (a) {
-      if (AssetManager._filter !== 'All' && a.cat !== AssetManager._filter) return false;
-      if (AssetManager._search && a.name.toLowerCase().indexOf(AssetManager._search) < 0 && a.type.indexOf(AssetManager._search) < 0) return false;
+    var list = AssetManager.listAssets().filter(function (a) {
+      if (AssetManager._filter !== 'All') {
+        /* kind 'Velo' lọc theo source, còn lại lọc theo kind/cat */
+        if (AssetManager._filter === 'Velo') { if (a.source !== 'velo') return false; }
+        else if (a.kind !== AssetManager._filter) return false;
+      }
+      if (AssetManager._search && a.name.toLowerCase().indexOf(AssetManager._search) < 0 &&
+          (a.type || '').indexOf(AssetManager._search) < 0) return false;
       return true;
     });
+    /* đếm số asset (hiển thị ở đầu grid) */
+    var count = document.createElement('div');
+    count.className = 'asset-count';
+    count.textContent = list.length + ' / ' + AssetManager._order.length + ' assets' +
+      (AssetManager._filter !== 'All' ? ' · lọc: ' + AssetManager._filter : '') +
+      (AssetManager._search ? ' · tìm: "' + AssetManager._search + '"' : '');
+    g.appendChild(count);
     list.forEach(function (a) {
       var card = document.createElement('div');
       card.className = 'asset-card';
       card.draggable = true;
-      card.title = a.name + ' — click để đặt, hoặc kéo vào viewport';
+      var srcLabel = a.source === 'velo' ? 'Velo' : (a.source === 'import' ? 'Import' : 'Built-in');
+      card.title = a.name + ' (' + srcLabel + ')' + (a.veloId ? ' · Velo ID: ' + a.veloId : '') + ' — click để đặt, hoặc kéo vào viewport';
       var cv = document.createElement('canvas');
       cv.width = 96; cv.height = 72;
       cv.className = 'asset-thumb';
-      drawThumb(cv, a.type);
+      drawThumb(cv, a.type || 'model');
       card.appendChild(cv);
       var nm = document.createElement('div');
       nm.className = 'asset-name';
       nm.textContent = a.name;
       card.appendChild(nm);
+      if (a.source !== 'builtin') {
+        var badge = document.createElement('div');
+        badge.className = 'asset-badge';
+        badge.textContent = srcLabel;
+        card.appendChild(badge);
+      }
       card.addEventListener('click', function () {
-        if (ME.MapEditor) ME.MapEditor.startPlacement(a.type);
+        if (!ME.MapEditor) return;
+        if (a.source === 'import') ME.MapEditor.placeImportedModel(a.id);
+        else if (a.source === 'velo' && a.type) ME.MapEditor.startPlacement(a.type);
+        else ME.MapEditor.startPlacement(a.type);
       });
       card.addEventListener('dragstart', function (e) {
-        e.dataTransfer.setData('text/plain', 'asset:' + a.type);
+        e.dataTransfer.setData('text/plain', a.source === 'import' ? 'asset:import:' + a.id : 'asset:' + a.type);
         e.dataTransfer.effectAllowed = 'copy';
       });
       g.appendChild(card);
@@ -190,6 +312,70 @@
       none.textContent = 'Không có asset nào khớp.';
       g.appendChild(none);
     }
+  };
+
+  /* ---------- import GLB / FBX / OBJ vào map ---------- */
+  function ensureOBJLoader() {
+    if (window.THREE && THREE.OBJLoader) return Promise.resolve(true);
+    return new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js';
+      s.onload = function () { resolve(!!(window.THREE && THREE.OBJLoader)); };
+      s.onerror = function () { reject(new Error('Không tải được OBJLoader (cần mạng CDN)')); };
+      document.head.appendChild(s);
+    });
+  }
+  function readFileAsArrayBuffer(file) {
+    return new Promise(function (resolve, reject) {
+      var r = new FileReader();
+      r.onload = function () { resolve(r.result); };
+      r.onerror = function () { reject(new Error('Không đọc được file')); };
+      r.readAsArrayBuffer(file);
+    });
+  }
+  AssetManager.importModelFile = function (file) {
+    var name = (file.name || '').toLowerCase();
+    var ext = name.indexOf('.glb') >= 0 || name.indexOf('.gltf') >= 0 ? 'glb'
+      : name.indexOf('.fbx') >= 0 ? 'fbx'
+      : name.indexOf('.obj') >= 0 ? 'obj' : null;
+    if (!ext) return Promise.reject(new Error('Chỉ hỗ trợ .glb / .gltf / .fbx / .obj'));
+    var needLoader = ext === 'glb' ? (window.THREE && THREE.GLTFLoader)
+      : ext === 'fbx' ? (window.THREE && THREE.FBXLoader) : null;
+    if (ext === 'obj') needLoader = true; /* OBJLoader tải động bên dưới */
+    if (!needLoader) {
+      return Promise.reject(new Error(ext === 'glb' ? 'GLTFLoader chưa load (cần mạng CDN).' : 'FBXLoader chưa load (cần mạng CDN).'));
+    }
+    var loadJob = ext === 'obj' ? ensureOBJLoader().then(function () { return readFileAsArrayBuffer(file); })
+      : readFileAsArrayBuffer(file);
+    return loadJob.then(function (buf) {
+      return new Promise(function (resolve, reject) {
+        try {
+          if (ext === 'glb') {
+            var gl = new THREE.GLTFLoader();
+            if (gl.parse) gl.parse(buf, '', function (gltf) { resolve(gltf.scene || gltf); }, function (e) { reject(e || new Error('parse GLB lỗi')); });
+            else reject(new Error('GLTFLoader.parse không có (cần GLTFLoader r128 đầy đủ)'));
+          } else if (ext === 'fbx') {
+            var fl = new THREE.FBXLoader();
+            if (fl.parse) resolve(fl.parse(buf, ''));
+            else reject(new Error('FBXLoader.parse không có'));
+          } else {
+            var ol = new THREE.OBJLoader();
+            var text = new TextDecoder().decode(buf);
+            resolve(ol.parse(text));
+          }
+        } catch (e) { reject(e); }
+      });
+    }).then(function (root) {
+      var id = 'import:' + file.name.replace(/[^\w\-.]+/g, '_') + '_' + Date.now().toString(36);
+      root.traverse(function (o) { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      AssetManager._loadedModels[id] = root;
+      var asset = AssetManager.registerAsset({
+        id: id, name: file.name.replace(/\.(glb|gltf|fbx|obj)$/i, ''),
+        kind: 'Model', source: 'import', type: 'model', fileName: file.name
+      });
+      if (ME.MapEditor) ME.MapEditor.notify('Import model', 'Đã import "' + file.name + '" — click thẻ để đặt vào map.', 'success');
+      return asset;
+    });
   };
 
   ME.AssetManager = AssetManager;

@@ -54,7 +54,10 @@
     c.appendChild(rootRow);
     Object.keys(groups).forEach(function (gname) {
       var list = groups[gname];
-      if (q) list = list.filter(function (o) { return o.name.toLowerCase().indexOf(q) >= 0 || o.type.toLowerCase().indexOf(q) >= 0; });
+      if (q) list = list.filter(function (o) {
+        return o.name.toLowerCase().indexOf(q) >= 0 || o.type.toLowerCase().indexOf(q) >= 0 ||
+          (o.group || '').toLowerCase().indexOf(q) >= 0;
+      });
       if (!list.length && q) return;
       var open = !Hierarchy._collapsed[gname];
       var grow = el('div', 'h-row h-group');
@@ -68,7 +71,8 @@
       c.appendChild(grow);
       if (!open) return;
       list.forEach(function (o) {
-        var sel = ME.MapEditor.selectedId() === o.id;
+        var selIds = (ME.MapEditor.selectedIds ? ME.MapEditor.selectedIds() : [ME.MapEditor.selectedId()]);
+        var sel = selIds.indexOf(o.id) >= 0;
         var row = el('div', 'h-row h-obj' + (sel ? ' selected' : '') + (o.visible === false ? ' hidden-obj' : '') + (o.locked ? ' locked-obj' : ''));
         row.style.paddingLeft = '26px';
         row.draggable = true;
@@ -89,8 +93,10 @@
         acts.appendChild(eye);
         acts.appendChild(lock);
         row.appendChild(acts);
-        row.addEventListener('click', function () {
-          ME.MapEditor.select(o.id);
+        row.addEventListener('click', function (e) {
+          /* Ctrl/Cmd/Shift + click = thêm/bớt khỏi multi-select */
+          if (e.ctrlKey || e.metaKey || e.shiftKey) ME.MapEditor.toggleSelect(o.id);
+          else ME.MapEditor.select(o.id);
         });
         row.addEventListener('dblclick', function () {
           var nn = window.prompt('Đổi tên object:', o.name);
@@ -129,6 +135,7 @@
   Hierarchy._iconFor = function (type) {
     var map = {
       temple: '⛩', house: '⌂', gate: '🚪', bridge: '🌉',
+      torii: '⛩', tower: '🗼', well: '🪣',
       pine: '🌲', bamboo: '🎋', rock: '🪨',
       lantern: '🏮', campfire: '🔥', statue: '🗿', fence: '▦', portal: '🌀',
       hero: '🧑', monster: '👹', boss: '👺',

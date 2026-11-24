@@ -58,8 +58,10 @@
   /* ---------- kiểu object + nhóm mặc định ---------- */
   var TYPE_GROUP = {
     temple: 'Buildings', house: 'Buildings', gate: 'Buildings', bridge: 'Buildings',
+    torii: 'Buildings', tower: 'Buildings',
     pine: 'Vegetation', bamboo: 'Vegetation', rock: 'Vegetation',
     lantern: 'Props', campfire: 'Props', statue: 'Props', fence: 'Props', portal: 'Props',
+    well: 'Props',
     hero: 'Characters', monster: 'Characters', boss: 'Characters',
     light: 'Lighting', patrol: 'Environment', waterfall: 'Environment',
     box: 'Props', sphere: 'Props', cylinder: 'Props', cone: 'Props', plane: 'Props',
@@ -309,7 +311,8 @@
           size: data.terrain.size,
           segments: data.terrain.segments,
           heights: data.terrain.heights.slice(),
-          paint: data.terrain.paint ? data.terrain.paint.slice() : null
+          paint: data.terrain.paint ? data.terrain.paint.slice() : null,
+          waterLevel: (data.terrain.waterLevel !== undefined && data.terrain.waterLevel !== null) ? data.terrain.waterLevel : null
         } : null,
         environment: data.environment ? JSON.parse(JSON.stringify(data.environment)) : null,
         objects: (data.objects || []).map(function (o) {
@@ -321,6 +324,7 @@
             light: o.light ? JSON.parse(JSON.stringify(o.light)) : null,
             path: o.path ? JSON.parse(JSON.stringify(o.path)) : null,
             anim: o.anim || null, url: o.url || null,
+            veloId: o.veloId || null,
             placeholder: !!o.placeholder, locked: !!o.locked, visible: o.visible !== false
           };
         })
@@ -366,7 +370,8 @@
         size: map.terrain.size || 112,
         segments: map.terrain.segments || 64,
         heights: map.terrain.heights ? map.terrain.heights.slice() : null,
-        paint: map.terrain.paint ? map.terrain.paint.slice() : null
+        paint: map.terrain.paint ? map.terrain.paint.slice() : null,
+        waterLevel: (map.terrain.waterLevel !== undefined && map.terrain.waterLevel !== null) ? map.terrain.waterLevel : null
       };
       var n = (data.terrain.segments + 1) * (data.terrain.segments + 1);
       if (!data.terrain.heights || data.terrain.heights.length !== n) {
@@ -404,6 +409,7 @@
         path: o.path || null,
         anim: o.anim || null,
         url: o.url || null,
+        veloId: o.veloId || null,
         placeholder: !!o.placeholder,
         locked: !!o.locked, visible: o.visible !== false
       });

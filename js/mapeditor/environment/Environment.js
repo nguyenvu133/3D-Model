@@ -29,7 +29,26 @@
     sunset: {
       name: 'Hoàng hôn', sky: 0xe8805a, fogColor: 0xd86a4a, fogNear: 55, fogFar: 170,
       sunColor: 0xff9a50, sunIntensity: 0.9, hemiIntensity: 0.55, snow: false
+    },
+    dawn: {
+      name: 'Bình minh', sky: 0xf2c9a0, fogColor: 0xe8b890, fogNear: 70, fogFar: 220,
+      sunColor: 0xffd9a0, sunIntensity: 0.8, hemiIntensity: 0.7, snow: false
+    },
+    storm: {
+      name: 'Bão tố', sky: 0x4a5260, fogColor: 0x4a5260, fogNear: 25, fogFar: 90,
+      sunColor: 0xb8c8d8, sunIntensity: 0.45, hemiIntensity: 0.4, snow: false
+    },
+    mist: {
+      name: 'Sương mù dày', sky: 0xb8c8d0, fogColor: 0xb8c8d0, fogNear: 15, fogFar: 70,
+      sunColor: 0xe8e8e8, sunIntensity: 0.6, hemiIntensity: 0.6, snow: false
     }
+  };
+
+  /* preset sương mù (chỉ fog, không đổi thời tiết) */
+  var FOG_PRESETS = {
+    clear: { name: 'Sương mỏng', near: 100, far: 320 },
+    normal: { name: 'Mặc định', near: 60, far: 180 },
+    dense: { name: 'Sương dày', near: 20, far: 90 }
   };
 
   var Environment = {
@@ -108,6 +127,14 @@
     }
   };
 
+  Environment.applyFogPreset = function (name) {
+    var p = FOG_PRESETS[name];
+    if (!p) return false;
+    Environment.setFog(p.near, p.far);
+    return true;
+  };
+
   Environment.PRESETS = PRESETS;
+  Environment.FOG_PRESETS = FOG_PRESETS;
   ME.Environment = Environment;
 })();

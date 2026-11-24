@@ -26,12 +26,22 @@
     PROJECT_PREFIX: PROJECT_PREFIX,
     AUTOSAVE_KEY: AUTOSAVE_KEY,
 
-    /* ---------- shared key ---------- */
+    /* ---------- shared key ----------
+     * write() TRẢ {ok:true} | {ok:false, reason, message} — KHÔNG throw.
+     * reason: 'quota' (localStorage đầy / QuotaExceededError),
+     *         'security' (bị chặn / SecurityError, vd. private mode),
+     *         'unknown' (lỗi khác). saveProject/saveAutosave vẫn trả boolean. */
     write: function (doc) {
       try {
         localStorage.setItem(KEY, JSON.stringify(doc));
-        return true;
-      } catch (e) { return false; }
+        return { ok: true };
+      } catch (e) {
+        var name = (e && e.name) || '';
+        var reason = 'unknown';
+        if (name === 'QuotaExceededError' || name === 'NS_ERROR_DOM_QUOTA_REACHED') reason = 'quota';
+        else if (name === 'SecurityError') reason = 'security';
+        return { ok: false, reason: reason, message: (e && e.message) || String(e) };
+      }
     },
     read: function () {
       try {
