@@ -629,7 +629,8 @@ tỉ lệ.
   /* v20.0 — Mixamo Pre-flight: kiểm tra model trước khi ghi FBX.
      Lỗi chặn (errors) → ok=false, warn chứa 'LỖI: ...'; cảnh báo →
      ok=true, warn để gộp vào thông báo. Thiếu module validator thì
-     bỏ qua (giữ hành vi cũ). */
+     bỏ qua (giữ hành vi cũ). ROUND 4: luôn chạy trên nhóm ĐÃ chuẩn
+     bị Mixamo-safe (xem prepareMixamoSafe) — ngưỡng tris là >= 50.000. */
   function mixamoPreflight(target, mode) {
     var V = PixiStudio.MixamoValidator;
     if (!V) return { ok: true, warn: [] };
@@ -642,6 +643,25 @@ tỉ lệ.
     } catch (e) { return { ok: true, warn: [] }; }
   }
 
+  /* v21.0+ (round 4) — Chuẩn bị mesh Mixamo-safe TRƯỚC khi ghi FBX:
+     bỏ skeleton + tự decimate giữ UV nếu >= 50k tris (đúng công thức
+     2 file mẫu Thiếu Lâm/Thần Điêu đã sửa tay). Trả { group, report }
+     hoặc null (đã notify lỗi). Thiếu module thì dùng model gốc như cũ. */
+  function prepareMixamoSafe(source) {
+    const MSE = PixiStudio.MixamoSafeExport;
+    if (!MSE || typeof MSE.prepare !== 'function') {
+      const t = countTris(source);
+      return { group: source, report: { trisBefore: t, trisAfter: t, decimated: false, warnings: [] } };
+    }
+    PixiStudio.Notifications.updateLoading(45, 'Đang chuẩn bị mesh Mixamo-safe (bỏ skeleton, giảm tris nếu cần)...');
+    const prepared = MSE.prepare(source);
+    if (!prepared.group) {
+      bus.emit('notify', { type: 'error', title: 'Mixamo-safe', message: 'Không xuất được file Mixamo: ' + prepared.report.errors.join('; ') });
+      return null;
+    }
+    return prepared;
+  }
+
   function saveFBXMixamo(target, modelName, finish, fmt) {
     PixiStudio.Notifications.updateLoading(20, 'Chờ texture decode để nhúng màu vào FBX...');
     return new Promise(function (resolve) {
@@ -649,16 +669,20 @@ tỉ lệ.
         PixiStudio.Notifications.updateLoading(60, 'Ghi FBX 2013 cho Mixamo (mesh-only + texture nhúng)...');
         setTimeout(function () {
           try {
-            /* v20.0 Pre-flight: chặn xuất nếu Mixamo chắc chắn từ chối
-               (vd: >50.000 tam giác, không có mesh). */
-            const pre = mixamoPreflight(target, 'mesh-only');
+            /* Round 4 — chuẩn bị Mixamo-safe trước: bỏ skeleton, tự
+               decimate giữ UV nếu >= 50k tris (như file Thiếu Lâm/
+               Thần Điêu đã sửa tay). Pre-flight chỉ chạy trên nhóm
+               ĐÃ chuẩn bị — chỉ chặn khi decimate xong vẫn không đạt. */
+            const prepared = prepareMixamoSafe(target);
+            if (!prepared) { PixiStudio.Notifications.hideLoading(); resolve(null); return; }
+            const pre = mixamoPreflight(prepared.group, 'mesh-only');
             if (!pre.ok) {
               PixiStudio.Notifications.hideLoading();
               bus.emit('notify', { type: 'error', title: 'Mixamo Pre-flight', message: 'Model chưa đủ điều kiện upload Mixamo: ' + pre.warn.join('; ') });
               resolve(null);
               return;
             }
-            const res = PixiStudio.FBXBinary.write(target, {
+            const res = PixiStudio.FBXBinary.write(prepared.group, {
               noSkeleton: true,
               prepareMixamo: true,
               version: 7300,
@@ -671,13 +695,13 @@ tỉ lệ.
             const name = buildFileName(modelName, 'mixamo', fmt ? fmt.ext : '.fbx');
             finish(blob, { mixamo: true, textures: res.report.textures }, name);
             const r = res.report;
-            const tris = countTris(target);
             const warn = pre.warn.slice();
+            warn.push.apply(warn, prepared.report.warnings || []);
             if (!r.textures && tx.total) warn.push('texture chưa decode xong (' + tx.ready + '/' + tx.total + ') — file sẽ KHÔNG có màu');
             bus.emit('notify', {
               type: warn.length ? 'warning' : 'success',
               title: 'Save Mixamo xong',
-              message: r.meshes + ' mesh · ' + tris + ' tam giác · ' + r.textures + ' texture nhúng · mesh-only (Mixamo tự auto-rig) · ' + U.formatBytes(r.bytes) +
+              message: r.meshes + ' mesh · ' + prepared.report.trisBefore + ' → ' + prepared.report.trisAfter + ' tam giác · ' + r.textures + ' texture nhúng · mesh-only (Mixamo tự auto-rig) · ' + U.formatBytes(r.bytes) +
                 (warn.length ? ' — LƯU Ý: ' + warn.join('; ') : ' — mở https://www.mixamo.com → Characters → Upload Character.'),
               duration: 12000
             });
@@ -702,6 +726,12 @@ tỉ lệ.
      Writer của studio ĐÃ ghi đúng các loại node này; khác biệt duy nhất
      là số version: 7400 = FBX 2014, còn Mixamo chỉ nhận "2013 or earlier"
      ⇒ nút này ghi version 7300 (FBX 2013) VÀ tự rig + auto-skin nếu cần.
+     ROUND 4 (11-2026) — ĐỔI HƯỚNG: file Thiếu Lâm chứng minh xuất
+     KÈM skeleton vẫn bị Mixamo từ chối (chỉ 24/65 xương có skin +
+     A-pose → map-skeleton thất bại), còn file mesh-only thì Mixamo
+     auto-rig được. Nên nút này GIỮ việc dựng khung 65 xương trong
+     scene (để làm animation), nhưng FILE xuất ra là mesh-only
+     Mixamo-safe (< 50k tris, có texture), giống hệt 2 file mẫu.
      ============================================================ */
   function ensureMixamoRig(target) {
     const RigAutoGen = PixiStudio.RigAutoGen;
@@ -754,23 +784,25 @@ tỉ lệ.
                 ? { bones: built.stats.bones, skinned: built.skinnedMeshes.length, mixamoNamed: built.stats.bones, sample: [] }
                 : collectRigInfo(target);
               const hasRig = info.bones > 0;
-              /* v20.0 Pre-flight: chặn xuất nếu Mixamo chắc chắn từ chối. */
-              const pre = mixamoPreflight(out, hasRig ? 'rig' : 'mesh-only');
+              /* Round 4 — file Mixamo LUÔN mesh-only: chuẩn bị Mixamo-safe
+                 trên nhóm đã rig (bỏ skeleton, tự decimate giữ UV nếu
+                 >= 50k). Pre-flight chỉ chạy trên nhóm ĐÃ chuẩn bị. */
+              const prepared = prepareMixamoSafe(out);
+              if (!prepared) { PixiStudio.Notifications.hideLoading(); resolve(null); return; }
+              const pre = mixamoPreflight(prepared.group, 'mesh-only');
               if (!pre.ok) {
                 PixiStudio.Notifications.hideLoading();
                 bus.emit('notify', { type: 'error', title: 'Mixamo Pre-flight', message: 'Model chưa đủ điều kiện upload Mixamo: ' + pre.warn.join('; ') });
                 resolve(null);
                 return;
               }
-              const res = PixiStudio.FBXBinary.write(out, {
+              const res = PixiStudio.FBXBinary.write(prepared.group, {
                 version: 7300,                    /* FBX 2013 — Mixamo chỉ nhận ≤ 2013 */
-                /* Khung xương chuẩn đã ở +Y, cao 1.8, đáy y=0 → KHÔNG bake lại
-                   (bake sẽ làm lệch giữa geometry và bone). */
-                prepareMixamo: !built,
-                keepSkeleton: hasRig,
-                noSkeleton: !hasRig,
-                upAxis: built ? 'keep' : 'Y',
-                autoScale: !built,
+                prepareMixamo: true,
+                keepSkeleton: false,              /* mesh-only — Mixamo tự auto-rig */
+                noSkeleton: true,
+                upAxis: 'Y',
+                autoScale: true,
                 embedTextures: true
               });
               const blob = new Blob([res.bytes], { type: 'application/octet-stream' });
@@ -778,17 +810,15 @@ tỉ lệ.
               finish(blob, { version: 7300, bones: res.report.bones, hasSkin: res.report.hasSkin }, name);
               const r = res.report;
               const warn = pre.warn.slice();
+              warn.push.apply(warn, prepared.report.warnings || []);
               if (!built && buildErr) warn.push('không dựng được khung xương chuẩn Mixamo (' + String(buildErr.message || buildErr) + ') — dùng rig auto-gen');
-              if (!hasRig) warn.push('không tạo được rig — file là mesh-only, Mixamo sẽ tự auto-rig');
-              const tris = countTris(out);
+              if (!hasRig) warn.push('không tạo được rig trong scene — file là mesh-only, Mixamo sẽ tự auto-rig');
               PixiStudio.Notifications.hideLoading();
               bus.emit('notify', {
                 type: warn.length ? 'warning' : 'success',
-                title: 'FBX 2013 + khung xương Mixamo đã lưu',
-                message: 'FBX 2013 (version ' + r.version + ') · ' + info.bones + ' xương chuẩn Mixamo' +
-                  ' (Hips→Spine→Spine1→Spine2, mixamorig:*) · ' + info.skinned + ' skinned mesh · ' +
-                  r.clusters + ' cluster · ' + r.meshes + ' mesh · ' + tris + ' tam giác · ' + r.textures +
-                  ' texture · ' + U.formatBytes(r.bytes) + ' — cấu trúc y hệt X Bot.fbx; upload Mixamo: Characters → Upload Character.' +
+                title: 'FBX 2013 Mixamo-safe đã lưu',
+                message: 'FBX 2013 (version ' + r.version + ') · mesh-only · ' + prepared.report.trisBefore + ' → ' + prepared.report.trisAfter + ' tam giác · ' + r.meshes + ' mesh · ' + r.textures +
+                  ' texture · ' + U.formatBytes(r.bytes) + ' — Mixamo tự auto-rig (khung xương ' + info.bones + ' xương vẫn giữ trong scene để làm animation, không xuất ra file); upload Mixamo: Characters → Upload Character.' +
                   (warn.length ? ' LƯU Ý: ' + warn.join('; ') : ''),
                 duration: 15000
               });

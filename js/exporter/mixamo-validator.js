@@ -5,7 +5,12 @@
  * thực tế đã gặp với X Bot.fbx và FBX exporter (xem
  * docs/V20_UPGRADE_REPORT.md):
  *   - Mixamo chỉ nhận FBX 2013 trở xuống (exporter đã ghi 7300)
- *   - Auto-rig Mixamo giới hạn ~50.000 tam giác
+ *   - Auto-rig Mixamo giới hạn ~50.000 tam giác — ĐÚNG 50.000 cũng
+ *     bị từ chối (file Thiếu Lâm 11-2026: đúng 50.000 tris lọt qua
+ *     vì check cũ dùng `>`). Ngưỡng ở đây là `>=` cho đúng giới hạn.
+ *     Nút export giờ TỰ decimate trước khi gọi validator, nên
+ *     validator vẫn báo lỗi ở >= 50k (model "như hiện tại" chưa an
+ *     toàn) — export chỉ chặn khi decimate xong vẫn không đạt.
  *   - Nhân vật phải đứng thẳng theo +Y, cao ~1.8 (exporter tự
  *     xoay trục dài nhất lên Y và auto-scale, nhưng vẫn báo để
  *     người dùng biết model sẽ bị biến đổi)
@@ -100,7 +105,7 @@
 
     /* --- lỗi chặn (Mixamo sẽ từ chối) --- */
     if (!c.meshes.length) errors.push('Không có mesh nào để xuất FBX');
-    if (c.tris > MAX_TRIS) errors.push(c.tris + ' tam giác > giới hạn 50.000 của Mixamo — hãy giảm chi tiết (Decimate) trước khi upload');
+    if (c.tris >= MAX_TRIS) errors.push(c.tris + ' tam giác ≥ giới hạn 50.000 của Mixamo — hãy giảm chi tiết (Decimate) trước khi upload');
     if (mode === 'rig' && c.bones.length === 0 && c.skinned.length === 0)
       warnings.push('Không có xương/skin — file sẽ là mesh-only, Mixamo tự auto-rig');
 

@@ -358,7 +358,8 @@
       });
     }
 
-    /* Topbar "Save Mixamo" → xuất FBX Mixamo (mesh-only + texture nhúng) ngay,
+    /* Topbar "Save Mixamo" → xuất FBX Mixamo-safe (mesh-only < 50k
+       tris + texture nhúng, tự decimate giữ UV khi cần) ngay,
        không mở Save Center. Ctrl+Shift+M cũng chạy. */
     const topMixamo = document.getElementById('btn-save-mixamo');
     if (topMixamo) {
@@ -370,8 +371,9 @@
         PixiStudio.SaveManager.save('fbx-mixamo');
       });
     }
-    /* Topbar "Save Mixamo Rig" → FBX 2013 (version 7300) có rig mixamorig,
-       cùng cấu trúc X Bot.fbx. Ctrl+Shift+R cũng chạy. */
+    /* Topbar "Save Mixamo Rig" → FBX 2013 mesh-only Mixamo-safe
+       (khung 65 xương vẫn giữ trong scene để làm animation, không
+       xuất ra file). Ctrl+Shift+R cũng chạy. */
     const topMixamoRig = document.getElementById('btn-save-mixamo-rig');
     if (topMixamoRig) {
       topMixamoRig.addEventListener('click', function () {

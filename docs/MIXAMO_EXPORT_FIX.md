@@ -303,3 +303,114 @@ binary FBX 7300, mesh-only, 43.133 tris, 2 texture nhúng (map JPEG 275 KB
 Mixamo hiển thị rõ trong viewer của họ (đó là giới hạn của Mixamo, không
 phải lỗi file). Ảnh RM không nhúng — trên Mixamo model sẽ dùng độ bóng
 mặc định.
+
+## Lần 4 — Mixamo-safe export: mesh-only + tự decimate giữ UV (2026-11-24)
+
+### 4.1. File Thiếu Lâm: exporter đúng nhưng Mixamo vẫn từ chối
+
+File `tripo_convert_thieulam_mixamo-rig_211511.fbx` do chính studio xuất
+(Rig 1 Lượt + Export FBX, đã dùng exporter sửa ở lần 1–3) vẫn bị Mixamo
+từ chối, dù FBX SDK thật đọc được đầy đủ: binary FBX 7300, FileId đúng,
+footer đúng, 1 mesh, 0 animation, 3 texture nhúng. Nguyên nhân là 3 yếu
+tố cộng lại, KHÔNG nằm ở cấu trúc file:
+
+- **Đúng 50.000 tris** = chạm ngưỡng auto-rig của Mixamo.
+- **File CÓ skeleton** (65 xương `mixamorig:`, chỉ 24 xương có skin
+  weights — 40 xương ngón tay + `HeadTop_End` không skin) nên Mixamo
+  đi nhánh map-skeleton có sẵn thay vì auto-rig, mà bind pose A-pose
+  (tay 138,6° so với trục dọc, không phải T-pose ~90°) → map thất bại
+  ("unable to map your existing skeleton", cùng lỗi từng thấy ở X Bot).
+- **Validator + pre-flight đều dùng `>`** (`mixamo-validator.js:103`
+  `tris > MAX_TRIS`, `rig-oneclick.js:457` `tris0 > 50000`) nên đúng
+  50.000 lọt qua mọi cửa kiểm tra — file lỗi ra đời dù đã qua pre-flight.
+
+File làm lại bằng tay chứng minh công thức đúng
+(`~/workspace/.test-fbx/thieulam-Mixamo.fbx`, 9.056.956 B): mesh-only
+(bỏ skeleton, Mixamo tự auto-rig), decimate giữ UV xuống **46.917 tris**
+(cell 0.007 + weld 0.004, cạnh hở 0,84%), nhúng baseColor JPEG 269.271 B
++ normalMap PNG 1.294.122 B byte-identical với gốc, FBX 7300, FileId
+đúng — SDK đọc được, harness 31/31. File Thần Điêu round-3 tương tự
+(43.133 tris). Vấn đề còn lại: đưa đúng công thức này vào NÚT EXPORT
+để không phải làm tay nữa.
+
+### 4.2. Thay đổi
+
+**Mới — `js/exporter/mixamo-safe-export.js`** (`PixiStudio.MixamoSafeExport`,
+nạp trong `index.html` sau `mixamo-validator.js`, trước `save-manager.js`):
+`prepare(root)` trả `{ group, report }` — nhóm mesh-only an toàn cho Mixamo:
+
+1. Clone geometry từng mesh, nướng `matrixWorld` vào, **bỏ skeleton/
+   skinning** (xoá `skinIndex`/`skinWeight`, dựng lại bằng `THREE.Mesh`
+   thường — KHÔNG clone `SkinnedMesh`, vì clone giữ `isSkinnedMesh` và
+   skeleton). Material dùng chung (giữ texture để writer nhúng).
+2. Chuẩn hoá tỉ lệ y hệt autoScale của `fbx-binary.js` (cao ngoài
+   [1,2–3,5] thì scale về 1,8; đáy y=0, tâm X/Z về 0) để cỡ ô decimate
+   (mét) ổn định với mọi model.
+3. Nếu tổng tris >= 50.000 → sweep tối đa 5 ô
+   `[0.007, 0.010, 0.015, 0.022, 0.028]`, dừng ở ô đầu tiên cho
+   tris ≤ 47.000 VÀ cạnh hở < 2% VÀ UV spread ≤ 1/64. Thuật toán
+   `decimateUV`/`weldPositions` port nguyên từ `convert-thieulam.js`
+   (gom đỉnh theo vị trí + UV lượng tử hoá 1/64, trung bình vị trí/
+   normal/UV/màu, rồi hàn eps 0.004); KHÔNG dùng `LODGenerator.decimate`
+   (làm mất UV). Mesh đa-material (groups > 1) không giảm được nên giữ
+   nguyên và tính vào tổng. Không ô nào đạt → trả `group: null` + lỗi
+   rõ ("Không giảm được xuống dưới 47000...") — chặn đúng, không xuất
+   file lỗi.
+4. Đếm xương có/không skin (`countSkinUsage`): xương có skin weight
+   > 0 ở ít nhất 1 vertex mới tính là "có skin". Nếu có xương không
+   skin (vd 41/65 ở Thiếu Lâm) → cảnh báo tiếng Việt ghi rõ số xương
+   bỏ/tổng, rằng skeleton sẽ được bỏ để Mixamo tự auto-rig lại.
+
+**Ngưỡng validator — `js/exporter/mixamo-validator.js:103`:** `>` → `>=`
+(đúng 50.000 phải chặn/cảnh báo). Validator vẫn là hàm thuần kiểm tra
+model "như hiện tại"; vì nút export giờ tự decimate trước nên pre-flight
+không chặn cứng ở ≥ 50k nữa — validator chỉ chạy trên nhóm ĐÃ chuẩn bị,
+và chỉ chặn khi decimate xong vẫn không đạt. Hai mạch không mâu thuẫn.
+
+**Gắn vào cả 3 đường xuất Mixamo** (giữ nguyên FBX 7300, Y-up,
+UnitScaleFactor 100, `embedTextures: true`, 0 animation; nút export FBX
+thường `fbx` KHÔNG đổi):
+
+- `js/exporter/save-manager.js` — helper mới `prepareMixamoSafe(source)`
+  + `saveFBXMixamo` và `saveFBXMixamoRig` đều: prepare → pre-flight
+  trên nhóm đã chuẩn bị → ghi `FBXBinary.write` mesh-only
+  (`noSkeleton: true`, `prepareMixamo: true`). Nút Rig vẫn dựng khung
+  65 xương trong scene (để làm animation) nhưng KHÔNG xuất xương ra
+  file; thông báo ghi rõ tris trước → sau + cảnh báo xương không skin.
+- `js/rigging/rig-oneclick.js` — `buildExportBytes`: bỏ 2 pre-flight
+  chặn cứng trên model gốc + check `tris0 > 50000`; thay bằng
+  prepare → validate nhóm đã chuẩn bị → ghi mesh-only. Trả thêm
+  `mixamoSafe: prepared.report`. Nút đổi nhãn thành "📥 Export Mixamo
+  (mesh-only, Mixamo tự rig)" + footnote mới; `exportRiggedFBX` báo
+  tris trước → sau. Tên file `*_rigged_mixamo.fbx` giữ nguyên.
+- `index.html` — thêm script tag `mixamo-safe-export.js`; tooltip 2 nút
+  topbar "Save Mixamo / Save Mixamo Rig" ghi rõ mesh-only < 50k tris.
+  `js/ui/panels.js` — cập nhật comment 2 nút.
+
+### 4.3. Kiểm chứng
+
+- Harness mới `~/workspace/.test-fbx/test-mixamo-safe-export.js`:
+  **40/40 × 2 vòng** — (a) sphere 59.600 tris → 41.173 tris (ô 0.028),
+  không còn skin attributes/xương, UV spread 0,0150 ≤ 1/64, cạnh hở
+  0,29%, nguồn không bị sửa; (b) đúng 50.000 tris → decimate xuống
+  45.750 (không lọt qua như trước); (c) mesh 1.472 tris → không decimate
+  thừa; (d) SkinnedMesh 3 xương/1 có skin → mesh-only + cảnh báo
+  "2/3 xương không có skin weights"; (e) round-trip FBX: FBXLoader parse
+  được (1 mesh, 0 xương), validator ok, CLI 16/16, fbx2gltf đọc được
+  1 mesh/0 skin + trích được texture; (f) validator chặn 50.000, cho qua
+  49.999; (g) vertex color giữ được khi decimate; (h) hộp lưới đều 66
+  (52.272 tris, ngay cả ô 0.028 cũng chỉ còn 50.052) → prepare trả null
+  + lỗi rõ.
+- Hồi quy: `test-rig-oneclick.js` **41/41** (mục 3 + 7 cập nhật theo hành
+  vi mesh-only mới; mục 7 dùng sphere 59.600 tris thay hộp 52.272),
+  `test-fbx-mixamo.js` 73/73, `test-thieulam-mixamo.js` 31/31,
+  `test-thandieu-mixamo.js` 30/30. `node --check` 0 lỗi trên 5 file
+  mới/sửa. Server smoke 200 cho `index.html` + 5 file JS.
+- Giới hạn còn lại: sweep tối đa 5 ô nên mesh lưới đều rất khó giảm
+  (vd hộp 52.272 tris) vẫn bị chặn — đúng và trung thực, nhưng user phải
+  giảm tay bằng Decimate/LOD; decimate trên máy yếu có thể mất vài giây
+  (5 lần thử × decimate + weld trên ~150k verts) — nút đã có loading;
+  mesh có `uv2`/morph target sẽ mất các attribute đó khi decimate
+  (chỉ giữ position/normal/uv/color); chuẩn hoá tỉ lệ chỉ scale khi cao
+  ngoài [1,2–3,5] (theo đúng writer) nên model đã ~1,8 m không đổi.
+

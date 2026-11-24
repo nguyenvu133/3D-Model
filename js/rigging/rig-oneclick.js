@@ -19,8 +19,10 @@
  *  • Rig trong viewport dùng RigAutoGen: 23 xương (+20 ngón tay nếu bật
  *    fingers) — tên mixamorig:* khi chọn template Mixamo.
  *  • Export FBX dùng khung xương CHUẨN MIXAMO 65 xương
- *    (MixamoSkeleton.build — trích từ X Bot.fbx) trên bản sao model,
- *    giống nút "Save Mixamo Rig" — vì đó mới là khung Mixamo map được.
+ *    (MixamoSkeleton.build — trích từ X Bot.fbx) trên bản sao model
+ *    cho viewport; FILE xuất ra là mesh-only Mixamo-safe (< 50k
+ *    tris, có texture) — Mixamo tự auto-rig, giống file Thiếu Lâm/
+ *    Thần Điêu đã sửa tay (round 4). Xem js/exporter/mixamo-safe-export.js.
  *  • Không có khung xương chim: model chim/bốn chân được rig bằng khung
  *    humanoid "cho có" + cảnh báo rõ ràng, không giả vờ khớp.
  *  • Marker chỉnh bằng số % (chưa kéo-thả trên viewport như Meshy).
@@ -425,10 +427,16 @@
   /* ============================================================
      EXPORT FBX — dùng đúng FBXBinary.write đã sửa (footer chuẩn SDK,
      FileId đúng, Video Path cho texture), preset Mixamo:
-       version 7300 (FBX 2013) · keepSkeleton · upAxis Y · autoScale
-       · embedTextures khi model có texture.
-     Trả về Promise<{bytes, report, filename, validation, exportGroup}>
-     hoặc null khi bị pre-flight chặn. Không throw ra ngoài.
+       version 7300 (FBX 2013) · Y-up · autoScale · embedTextures
+       khi model có texture.
+     ROUND 4 (11-2026) — file xuất ra LUÔN mesh-only Mixamo-safe
+     (< 50k tris, có texture), giống hệt 2 file mẫu Thiếu Lâm/
+     Thần Điêu đã sửa tay: MixamoSafeExport.prepare bỏ skeleton
+     (Mixamo map-skeleton thất bại với xương không skin + A-pose)
+     và tự decimate giữ UV khi >= 50k tris. Khung 65 xương vẫn giữ
+     trong scene (lastBuild) để làm animation — chỉ không xuất ra file.
+     Trả về Promise<{bytes, report, filename, validation, exportGroup,
+     mixamoSafe}> hoặc null khi bị chặn. Không throw ra ngoài.
      ============================================================ */
   RigOneClick.buildExportBytes = function (target, modelName) {
     target = getTarget(target);
@@ -445,22 +453,9 @@
       return Promise.resolve(null);
     }
 
-    /* Pre-flight nhanh trên model gốc: chặn ngay nếu >50k tris / không mesh */
-    if (V) {
-      const pre = V.check(target, { mode: 'rig' });
-      if (!pre.ok) {
-        notify('error', 'Mixamo Pre-flight', 'Model chưa đủ điều kiện upload Mixamo: ' + pre.errors.join('; '));
-        return Promise.resolve(null);
-      }
-    }
-    const tris0 = countTris(target).tris;
-    if (tris0 > 50000) {
-      notify('error', 'Mixamo Pre-flight', tris0 + ' tam giác > giới hạn 50.000 của Mixamo — hãy giảm chi tiết (Decimate) trước khi xuất.');
-      return Promise.resolve(null);
-    }
-
-    /* Nhóm xuất: ưu tiên khung 65 xương đã dựng ở bước rig.
-       Quadruped: KHÔNG dựng khung humanoid — xuất thẳng model + rig creature. */
+    /* Nhóm nguồn: ưu tiên khung 65 xương đã dựng ở bước rig (giữ
+       trong scene để làm animation). Quadruped: KHÔNG dựng khung
+       humanoid — xuất thẳng model + rig creature. */
     let out = target, built = null;
     if (RigOneClick.lastResult && RigOneClick.lastResult.type === 'quadruped') {
       out = target; built = null;
@@ -477,10 +472,26 @@
       }
     }
 
-    /* Pre-flight trên đúng nhóm sẽ xuất (rig) */
+    /* Round 4 — chuẩn bị Mixamo-safe trên nhóm nguồn: bỏ skeleton,
+       tự decimate giữ UV nếu >= 50k tris (như 2 file mẫu). KHÔNG
+       còn chặn cứng ở >50k nữa: chỉ chặn khi prepare không cứu được. */
+    const MSE = PixiStudio.MixamoSafeExport;
+    let prepared = null;
+    if (MSE && typeof MSE.prepare === 'function') {
+      prepared = MSE.prepare(out);
+      if (!prepared.group) {
+        notify('error', 'Mixamo-safe', 'Không xuất được file Mixamo: ' + prepared.report.errors.join('; '));
+        return Promise.resolve(null);
+      }
+    } else {
+      const t0 = countTris(out).tris;
+      prepared = { group: out, report: { trisBefore: t0, trisAfter: t0, decimated: false, warnings: [] } };
+    }
+
+    /* Pre-flight trên đúng nhóm SẼ xuất (mesh-only, đã chuẩn bị) */
     let validation = null;
     if (V) {
-      validation = V.check(out, { mode: 'rig' });
+      validation = V.check(prepared.group, { mode: 'mesh-only' });
       if (!validation.ok) {
         notify('error', 'Mixamo Pre-flight', 'Model chưa đủ điều kiện upload Mixamo: ' + validation.errors.join('; '));
         return Promise.resolve(null);
@@ -491,11 +502,11 @@
     return waitForTextures(out, 8000).then(function (tx) {
       let res;
       try {
-        res = W.write(out, {
+        res = W.write(prepared.group, {
           version: 7300,              /* FBX 2013 — Mixamo chỉ nhận ≤ 2013 */
-          keepSkeleton: true,
-          noSkeleton: false,
-          prepareMixamo: false,
+          keepSkeleton: false,        /* mesh-only — Mixamo tự auto-rig */
+          noSkeleton: true,
+          prepareMixamo: true,
           upAxis: 'Y',
           autoScale: true,
           embedTextures: tex         /* chỉ nhúng khi model có texture */
@@ -506,9 +517,9 @@
       }
       const warn = [];
       if (validation) warn.push.apply(warn, validation.warnings || []);
+      warn.push.apply(warn, prepared.report.warnings || []);
       if (!res.report.textures && tx.total) warn.push('texture chưa decode xong (' + tx.ready + '/' + tx.total + ') — file sẽ KHÔNG có màu');
-      if (built && built.stats.bonesUsed < built.stats.bones) warn.push('chỉ ' + built.stats.bonesUsed + '/' + built.stats.bones + ' xương có skin (xương ngón/mút không skin)');
-      return { bytes: res.bytes, report: res.report, filename: filename, validation: validation, warnings: warn, exportGroup: out, hasTexture: tex, built: !!built };
+      return { bytes: res.bytes, report: res.report, filename: filename, validation: validation, warnings: warn, exportGroup: prepared.group, hasTexture: tex, built: !!built, mixamoSafe: prepared.report };
     });
   };
 
@@ -518,10 +529,11 @@
       if (!r) return null;
       const blob = new Blob([r.bytes], { type: 'application/octet-stream' });
       U.downloadBlob(blob, r.filename);
-      notify(r.warnings.length ? 'warning' : 'success', 'Export FBX xong',
-        r.report.meshes + ' mesh · ' + r.report.bones + ' xương · ' + r.report.clusters + ' cluster · ' +
+      const ms = r.mixamoSafe || {};
+      notify(r.warnings.length ? 'warning' : 'success', 'Export Mixamo xong',
+        r.report.meshes + ' mesh · mesh-only · ' + (ms.trisBefore != null ? ms.trisBefore + ' → ' : '') + (ms.trisAfter != null ? ms.trisAfter : '?') + ' tam giác · ' +
         r.report.textures + ' texture nhúng · ' + U.formatBytes(r.bytes) +
-        ' — upload Mixamo: Characters → Upload Character.' +
+        ' — Mixamo tự auto-rig; upload Mixamo: Characters → Upload Character.' +
         (r.warnings.length ? ' LƯU Ý: ' + r.warnings.join('; ') : ''), 15000);
       bus.emit('rig:exported', { filename: r.filename, bytes: r.bytes.length, bones: r.report.bones });
       return r;
@@ -681,13 +693,13 @@
       }
     }));
     exportBtn = U.el('button', {
-      class: 'btn success grow', text: '📥 Export FBX (Mixamo 2013)',
+      class: 'btn success grow', text: '📥 Export Mixamo (mesh-only, Mixamo tự rig)',
       onclick: function () {
         exportBtn.disabled = true;
         exportBtn.textContent = '⏳ Đang xuất FBX…';
         RigOneClick.exportRiggedFBX(null).then(function (r) {
           exportBtn.disabled = !r;
-          exportBtn.textContent = '📥 Export FBX (Mixamo 2013)';
+          exportBtn.textContent = '📥 Export Mixamo (mesh-only, Mixamo tự rig)';
           if (r) RigOneClick.renderPanel();
         });
       }
@@ -695,7 +707,7 @@
     exportBtn.disabled = !(RigOneClick.lastResult && RigOneClick.lastResult.exportReady);
     btns.appendChild(exportBtn);
     sc.appendChild(btns);
-    sc.appendChild(U.el('div', { class: 'dim small', style: 'line-height:1.5;margin-top:6px;', text: 'Export: FBX 2013 (version 7300) · giữ skeleton 65 xương · Y-up · nhúng texture nếu model có màu. Upload file lên https://www.mixamo.com → Characters → Upload Character.' }));
+    sc.appendChild(U.el('div', { class: 'dim small', style: 'line-height:1.5;margin-top:6px;', text: 'Export: FBX 2013 (version 7300) · mesh-only < 50k tris (Mixamo tự auto-rig, giống file Thiếu Lâm/Thần Điêu đã sửa) · Y-up · nhúng texture nếu model có màu · tự giảm tris giữ UV khi cần. Khung xương 65 xương vẫn giữ trong scene để làm animation, không xuất ra file. Upload file lên https://www.mixamo.com → Characters → Upload Character.' }));
 
     section.appendChild(sc);
     body.insertBefore(section, body.firstChild);
