@@ -414,3 +414,94 @@ thường `fbx` KHÔNG đổi):
   (chỉ giữ position/normal/uv/color); chuẩn hoá tỉ lệ chỉ scale khi cao
   ngoài [1,2–3,5] (theo đúng writer) nên model đã ~1,8 m không đổi.
 
+## Lần 5 — Weld eps tỉ lệ với cỡ ô (2026-11-25, sửa sau khi user báo export vẫn lỗi)
+
+### 5.1. Triệu chứng mới
+
+Sau lần 4 (commit d8baf649), user báo export vẫn không import vào được.
+Kiểm tra bằng GLB Tripo thật (`tripo_convert_lenhhosung.glb`, đúng
+50.000 tris, profile y hệt Thần Điêu) qua đúng 3 đường xuất của studio
+trong Node (GLTFLoader r128 thật + jsdom): `MixamoSafeExport.prepare()`
+CHẶN HẲN, không có file nào được tạo:
+
+> Không giảm được xuống dưới 47000 tam giác (thử 5 ô, tốt nhất 23870
+> tris, cạnh hở 19.5%) — hãy giảm tay bằng Decimate/LOD trước khi xuất
+
+Nghĩa là lỗi của user KHÔNG chỉ do thử bản studio cũ trước d8baf649 —
+đường xuất hiện tại vẫn có lỗi thật với model Tripo 50.000 tris.
+
+### 5.2. Nguyên nhân gốc — weld eps cố định, ô decimate tăng dần
+
+`prepare()` chuẩn hoá chiều cao về 1,8 m rồi sweep 5 ô
+[0.007, 0.010, 0.015, 0.022, 0.028] với `weldPositions` eps CỐ ĐỊNH
+0.004. Số liệu sweep trên lenhhosung (đo từng ô, trước/sau weld):
+
+| ô | tris | cạnh hở trước weld | cạnh hở sau weld (eps 0.004) | kết quả |
+|---|------|-------------------|------------------------------|---------|
+| 0.007 | 47.564 | 4,50% | 0,08% | TRƯỢT — 47.564 > đích 47.000 (chỉ thừa 564) |
+| 0.010 | 44.280 | 8,50% | 2,17% | TRƯỢT — vượt ngưỡng cạnh hở 2% (chỉ thừa 0,17%) |
+| 0.015 | 37.629 | 13,68% | 8,72% | trượt |
+| 0.022 | 28.843 | 18,47% | 15,89% | trượt |
+| 0.028 | 23.870 | 21,04% | 19,53% | trượt |
+
+Cả 5 ô đều trượt nên `prepare()` trả null → 2 nút export đều báo lỗi,
+không tải file về. Cơ chế: khe hở sau decimate tỉ lệ với cỡ ô (tâm
+cluster cách nhau ~ô), nên weld eps cố định chỉ hàn được khi ô ≤ 0.008;
+ô càng lớn, các cặp seam càng nằm ngoài tầm eps → cạnh hở tăng vọt theo
+ô. Mesh tamphong (ô 0.007 cho 46.642 tris, cạnh hở 0,06%) và coco
+(ô 0.010 cho 45.921 tris, cạnh hở 1,96% — sát nút) thì lọt qua, nên lỗi
+này phụ thuộc từng model — đúng kiểu "lúc được lúc không" user gặp.
+
+### 5.3. Thay đổi (`js/exporter/mixamo-safe-export.js`, duy nhất 1 file)
+
+- Weld eps trong sweep: `cellWeldEps = Math.max(WELD_EPS, cell * 0.5)`
+  — tỉ lệ 0.5 = pipeline làm tay đã chứng minh (weld 0.003 ở ô 0.006
+  trên file Thần Điêu/Thiếu Lâm). `WELD_EPS = 0.004` giờ là sàn, không
+  còn là hằng số; thêm hằng `WELD_RATIO = 0.5`, export ra
+  `MixamoSafeExport.WELD_EPS / WELD_RATIO`.
+- `report` thêm `weldEps` (eps đã dùng ở ô được chọn / ô tốt nhất);
+  thông báo "Đã tự giảm …" ghi thêm weld (vd "ô 0.01, weld 0.0050").
+- API không đổi: `prepare(root, opts)` vẫn nhận `opts.weldEps` làm sàn;
+  các harness cũ không cần sửa.
+
+### 5.4. Kiểm chứng
+
+- Sweep sau sửa (weld = max(0.004, ô×0.5)), cả 3 GLB Tripo mới:
+  lenhhosung dừng ở ô 0.010 → 44.280 tris, cạnh hở 0,61%, maxDisp
+  0,0118; tamphong dừng ở ô 0.007 → 46.642 tris, cạnh hở 0,06%;
+  coco dừng ở ô 0.010 → 45.921 tris, cạnh hở 0,51%, maxDisp 0,0140.
+  maxDisp ~1 cm ở model cao 1,8 m — tương đương pipeline làm tay
+  (0,0074 ở 1,0 m ≈ 0,0133 ở 1,8 m).
+- Harness mới `~/workspace/.test-fbx/test-studio-export-real-glb.js`:
+  **80/80 × 2 vòng** — load GLB lenhhosung thật bằng GLTFLoader r128,
+  chạy đúng 3 đường xuất (1) `SaveManager.save('fbx-mixamo')`,
+  (2) `SaveManager.save('fbx-mixamo-rig')`, (3) `RigOneClick.runOneClick`
+  + `buildExportBytes`. Cả 3 cho file 7.086.940 B: FBX 7300, FileId
+  đúng, footer đúng, Video Path `model.fbm/` (texture nhúng, không link
+  ngoài), FBXLoader parse được (1 mesh, 0 xương, 0 SkinnedMesh, 0 anim,
+  44.280 tris, UV, cao 1,8, đáy y=0), validator ok, CLI 16/16, fbx2gltf
+  đọc được 1 mesh/0 skin + trích 2 ảnh + baseColorTexture/normalTexture.
+  Texture tới được writer (canvas drawImage +4, translate/flip +4 mỗi
+  lần xuất). Đường Mixamo không gọi fetch/XHR/WebSocket (3 fetch( còn
+  lại trong save-manager.js đều là `/api/meshopt-*`, ngoài đường Mixamo)
+  → file xuất ra dùng offline được.
+- 3 file FBX mẫu mới (làm bằng pipeline convert, texture bytes thật):
+  `lenhhosung-Mixamo.fbx` 43.321 tris, `tamphong-Mixamo.fbx` 41.291 tris,
+  `coco-Mixamo.fbx` 40.989 tris — harness mới
+  `~/workspace/.test-fbx/test-tripo3-mixamo.js` **90/90 × 2 vòng**
+  (version/FileId/footer, 1 mesh, < 50k, 0 anim/xương, 2 texture đúng
+  byte, Video Path, validator CLI 16/16, fbx2gltf trích đúng 2 ảnh).
+  Hướng texture đã chứng minh bằng PIL: ảnh trích từ FBX trùng byte
+  với ảnh đã lật dọc, hàng đầu của ảnh trích khớp hàng cuối của ảnh gốc
+  (mean|d| ~1, khác hẳn hàng đầu ~21–49).
+- Hồi quy sau sửa: `test-fbx-mixamo.js` 73/73, `test-thieulam-mixamo.js`
+  31/31, `test-thandieu-mixamo.js` 30/30, `test-mixamo-safe-export.js`
+  40/40, `test-rig-oneclick.js` 41/41. `node --check` 0 lỗi.
+  Server smoke 200 cho `index.html` + file sửa.
+- Giới hạn còn lại: kiểm thử Node dùng FakeImage + canvas stub nên chỉ
+  chứng minh được texture plumbing (drawImage/flip/Video Path) chứ
+  không chứng minh được bytes texture thật trong file do studio xuất —
+  bytes thật đã được chứng minh ở đường "provided" của cùng writer
+  (convert-tripo3.js + fbx2gltf trích đúng byte). Cần user thử trên
+  trình duyệt thật: xuất từ studio rồi upload Mixamo, kiểm tra file
+  còn màu không.

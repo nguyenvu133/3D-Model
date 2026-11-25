@@ -31,7 +31,8 @@
  *      dừng ở ô đầu tiên cho tris ≤ 47.000 VÀ cạnh hở < 2% VÀ
  *      UV spread ≤ 1/64; mesh đa-material (groups > 1) không giảm
  *      được (mất map material) nên giữ nguyên và tính vào tổng.
- *   4. Hàn vị trí (weldPositions, eps 0.004) rồi đo lại.
+ *   4. Hàn vị trí (weldPositions, eps = max(0.004, ô × 0.5)) rồi đo lại —
+ *      eps tỉ lệ với ô vì khe hở sau decimate tỉ lệ với cỡ ô (round 5).
  *   5. Trả { group, report } — group null + report.errors khi không
  *      cứu được (vd decimate xong vẫn ≥ 50k). Validator (đã sửa
  *      ngưỡng `>=`) chạy trên nhóm ĐÃ chuẩn bị, chỉ chặn lúc này.
@@ -49,7 +50,14 @@
   var TARGET_TRIS = 47000;     /* đích sau decimate (cách ngưỡng 3.000) */
   var MAX_OPEN_RATIO = 0.02;   /* cạnh hở < 2% */
   var UV_QUANT = 1 / 64;       /* lượng tử hoá UV — như 2 file mẫu */
-  var WELD_EPS = 0.004;        /* hàn vị trí sau decimate */
+  var WELD_EPS = 0.004;        /* hàn vị trí sau decimate — SÀN, không phải hằng số:
+                                  eps thật = max(WELD_EPS, ô * 0.5) (xem sweep bên dưới) */
+  var WELD_RATIO = 0.5;        /* weld eps = ô * 0.5 — khe hở do decimate tỉ lệ với cỡ ô;
+                                  bài học lenhhosung (12-2026): weld cố định 0.004 chỉ hàn
+                                  được khi ô ≤ 0.008; ô 0.010 → cạnh hở 2,17% (vượt ngưỡng
+                                  2%) trong khi ô 0.007 thì 47.564 tris (vượt đích 47.000)
+                                  — cả 5 ô đều trượt, nút export chặn hẳn, không có file.
+                                  Tỉ lệ 0.5 = pipeline làm tay (weld 0.003 ở ô 0.006). */
   var CELLS = [0.007, 0.010, 0.015, 0.022, 0.028];  /* tối đa 5 lần thử — 0.007 là ô đã chứng minh trên file Thiếu Lâm (46.917 tris); ô lớn hơn cho mesh lưới đều (sphere/box) vốn khó giảm */
   var MIN_HEIGHT = 1.2, MAX_HEIGHT = 3.5, NORM_HEIGHT = 1.8; /* như fbx-binary.js */
 
@@ -58,6 +66,8 @@
   MixamoSafeExport.TARGET_TRIS = TARGET_TRIS;
   MixamoSafeExport.MAX_OPEN_RATIO = MAX_OPEN_RATIO;
   MixamoSafeExport.UV_QUANT = UV_QUANT;
+  MixamoSafeExport.WELD_EPS = WELD_EPS;
+  MixamoSafeExport.WELD_RATIO = WELD_RATIO;
   MixamoSafeExport.CELLS = CELLS.slice();
 
   /* ---------------- đếm ---------------- */
@@ -330,7 +340,7 @@
     var report = {
       ok: false, errors: [], warnings: [],
       trisBefore: 0, trisAfter: 0, decimated: false, cell: null, attempts: 0,
-      openRatio: 1, worstUvSpread: 0, weldMaxDisp: 0,
+      openRatio: 1, worstUvSpread: 0, weldMaxDisp: 0, weldEps: null,
       meshes: 0, bonesTotal: 0, bonesUnskinned: 0, hasTexture: false
     };
     if (!THREE) { report.errors.push('THREE chưa sẵn sàng'); return { group: null, report: report }; }
@@ -397,6 +407,13 @@
       var best = null;
       for (var ci = 0; ci < cells.length; ci++) {
         var cell = cells[ci];
+        /* Hàn theo ô: khe hở sau decimate tỉ lệ với cỡ ô (tâm cluster
+           cách nhau ~ô), nên weld eps cố định 0.004 chỉ hàn được khi
+           ô ≤ 0.008. Ở ô lớn hơn, các cặp seam nằm ngoài tầm eps nên
+           cạnh hở tăng vọt theo ô (lenhhosung: 0,08% ở ô 0.007 →
+           2,17% ở ô 0.010 → 19,5% ở ô 0.028). eps = max(sàn, ô*0.5)
+           hàn được seam ở mọi ô; maxDisp vẫn ~1 cm ở ô được chọn. */
+        var cellWeldEps = Math.max(weldEps, cell * WELD_RATIO);
         var trial = [];
         var totalTris = 0, worstOpen = 0, worstSpread = 0, worstDisp = 0;
         var okTrial = true;
@@ -406,7 +423,7 @@
           if (it2.reducible) {
             var d = decimateUV(it2.geo, cell, UV_QUANT);
             g2 = d.geometry;
-            var w = weldPositions(g2, weldEps);
+            var w = weldPositions(g2, cellWeldEps);
             if (w.maxDisp > worstDisp) worstDisp = w.maxDisp;
             if (d.worstUvSpread > worstSpread) worstSpread = d.worstUvSpread;
           }
@@ -415,7 +432,7 @@
           var op = openRatio(g2);
           if (op > worstOpen) worstOpen = op;
         }
-        var attempt = { cell: cell, tris: totalTris, openRatio: worstOpen, worstUvSpread: worstSpread, weldMaxDisp: worstDisp, geos: trial };
+        var attempt = { cell: cell, weldEps: cellWeldEps, tris: totalTris, openRatio: worstOpen, worstUvSpread: worstSpread, weldMaxDisp: worstDisp, geos: trial };
         if (!best || totalTris < best.tris) best = attempt;
         report.attempts = ci + 1;
         /* UV spread bị chặn bởi lượng tử hoá 1/64 theo cấu trúc key —
@@ -426,15 +443,17 @@
         report.errors.push('Không giảm được xuống dưới ' + targetTris + ' tam giác (thử ' + report.attempts + ' ô, tốt nhất ' + (best ? best.tris : '?') + ' tris, cạnh hở ' + (best ? (best.openRatio * 100).toFixed(1) + '%' : '?') + ') — hãy giảm tay bằng Decimate/LOD trước khi xuất');
         report.trisAfter = best ? best.tris : trisBefore;
         report.openRatio = best ? best.openRatio : 1;
+        report.weldEps = best ? best.weldEps : null;
         return { group: null, report: report };
       }
       finalGeos = accepted.geos;
       report.decimated = true;
       report.cell = accepted.cell;
+      report.weldEps = accepted.weldEps;
       report.openRatio = accepted.openRatio;
       report.worstUvSpread = accepted.worstUvSpread;
       report.weldMaxDisp = accepted.weldMaxDisp;
-      report.warnings.push('Đã tự giảm ' + trisBefore.toLocaleString('en-US') + ' → ' + accepted.tris.toLocaleString('en-US') + ' tam giác (ô ' + accepted.cell + ', giữ UV) để vừa giới hạn Mixamo');
+      report.warnings.push('Đã tự giảm ' + trisBefore.toLocaleString('en-US') + ' → ' + accepted.tris.toLocaleString('en-US') + ' tam giác (ô ' + accepted.cell + ', weld ' + accepted.weldEps.toFixed(4) + ', giữ UV) để vừa giới hạn Mixamo');
     } else {
       /* Không decimate: vẫn đo cạnh hở/UV trên geometry gốc để báo cáo */
       var worstOpen0 = 0, worstSpread0 = 0;
