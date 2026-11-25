@@ -505,3 +505,119 @@ này phụ thuộc từng model — đúng kiểu "lúc được lúc không" us
   (convert-tripo3.js + fbx2gltf trích đúng byte). Cần user thử trên
   trình duyệt thật: xuất từ studio rồi upload Mixamo, kiểm tra file
   còn màu không.
+
+## Lần 6 — Xuất FBX có sẵn rig + animation (2026-11-25/26)
+
+Mục đích: 1 file FBX chứa skeleton + skin VÀ 3 animation (Idle/Run/Attack)
+của Coco — dùng cho Blender/Unity/Unreal/studio, KHÔNG phải để Mixamo
+auto-rig (file đã có sẵn skeleton nên Mixamo sẽ đi nhánh map-skeleton).
+
+### Cách dùng (opt mới `animations`)
+
+```js
+FBXBinary.write(root, {
+  version: 7300, upAxis: 'Y', embedTextures: true, textureBytes: {...},
+  keepSkeleton: true, noSkeleton: false, fps: 30,   // fps mặc định 30
+  animations: [
+    { name: 'Idle',   clip: idleClip },    // THREE.AnimationClip
+    { name: 'Run',    clip: runClip },     // track trỏ tới xương theo tên
+    { name: 'Attack', clip: attackClip }   // canonical (mixamorig:Spine...)
+  ]
+});
+```
+
+Mỗi clip ghi đúng chuẩn FBX: 1 AnimationStack + 1 AnimationLayer +
+AnimationCurveNode (Lcl Translation / Lcl Rotation / Lcl Scaling cho từng
+xương có track) + AnimationCurve (KeyTime int64 KTime + KeyValueFloat
+float32 + KeyAttrFlags 8456 + KeyAttrRefCount 1 + node `Default`) +
+Connections (stack OO→layer OO→curveNode OP→bone, curve OP→curveNode).
+`Takes.Current` + Documents `ActiveAnimStackName` trỏ stack đầu tiên.
+`GlobalSettings.TimeSpanStop` = duration clip dài nhất (KTime).
+
+Chuyển đổi: quaternion track (local tuyệt đối) → Euler **extrinsic XYZ**
+độ; position track cùng đơn vị với bone Lcl Translation; scale giữ nguyên.
+Tên curveNode ghi bare (`R`/`T`/`S`, không prefix `AnimCurveNode::`) vì
+three.js BinaryParser giữ nguyên attrName (TextParser mới bỏ prefix).
+Connection curveNode→bone dùng tên đầy đủ `Lcl Translation`/`Lcl Rotation`
+(như XBot.fbx thật), không dùng `d|T`/`d|R`.
+
+### ASCII là đường đã kiểm chứng, binary hiện lỗi ở fbx2gltf 0.9.7
+
+- **ASCII 7.3 là file chính**: FBX SDK (fbx2gltf 0.9.7) đọc đủ 3 stack
+  (Idle 7 / Run 10 / Attack 10 channels), 1 skin 23 joints, 2 texture
+  trích đúng byte; three.js FBXLoader parse đủ (1 SkinnedMesh 50.000 tris,
+  23 xương, 3 clip đúng duration/tracks); playback + round-trip khớp.
+- **Binary 7.3 chỉ là reference**: cùng cây node, cùng nội dung, nhưng
+  fbx2gltf 0.9.7 báo `animation 'Idle'/'Run'/'Attack' has zero channels`
+  (đã thử 15 biến thể: layer không Properties70, KeyAttrDataFloat,
+  KeyVer 4008, TimeMode 6, thứ tự connection, version 7400,
+  RotationActive, Take nodes, UnitScaleFactor... — đều không sửa được;
+  nguyên nhân gốc chưa tìm ra). three.js đọc được binary (bare names).
+  File binary vẫn trích đúng 2 texture byte-exact và validator 16/16.
+
+### 4 lỗi ASCII đã sửa để three.js + SDK đọc được (đều trong fbx-binary.js)
+
+1. **Video.Content phải là base64, không phải hex**: SDK ASCII đọc Content
+   dạng base64 — chuỗi hex 525.400 ký tự bị giải mã thành 394.050 byte rác
+   (= 525.400 × 3/4), normalMap mất hẳn. Sửa `asciiProp` 'R' sang base64
+   → cả 2 texture trích đúng byte (md5 khớp bản binary).
+2. **Không ghi `FileId`/`CreationTime`/`Creator` top-level ở ASCII**:
+   thành property ngoài mọi node làm TextParser crash (stack rỗng).
+   File ASCII thật của SDK (XBot.fbx) cũng không có chúng.
+3. **Node lá không props (References, Properties70 rỗng) ghi dạng block
+   rỗng `Name:  {` + `}`** như SDK — ghi dòng trơ `Name:` làm parser
+   hiểu nhầm là continuation line rồi crash.
+4. **Array (`Vertices`, `Indexes`, `KeyTime`...) phải ghi dạng
+   `*N {` + dòng `a:` ở indent+1 + chunk tiếp ở cột 0 + `}` đóng ở đúng
+   indent node** (như XBot). Ghi `}` ở cột 0 làm TextParser không pop
+   được node → mọi node sau array đó bị nuốt (Objects chỉ còn tới
+   Deformer, mất Material/Texture/Animation/Connections/Takes).
+5. **Không gắn footer nhị phân vào file ASCII**: TextParser tách cả phần
+   nhị phân thành "dòng" rồi crash ở `parseNodePropertyContinued`.
+   File ASCII thuần chỉ kết thúc bằng newline.
+6. **Nối props bằng `,` (không khoảng trắng)**: nối `", "` làm
+   `parseNodeSpecialProperty` của three.js thay khoảng trắng đầu tiên
+   của đuôi số bằng `_` → `parseFloat("_0.036")` = NaN → toàn bộ xương
+   NaN (position/quaternion). SDK ghi `,0,0,0` (số không có khoảng trắng).
+
+### Thứ tự Euler — lỗi 30° ở Attack RightArm
+
+Writer chuyển quaternion → Euler bằng `setFromQuaternion(q, 'XYZ')`
+(three.js intrinsic XYZ), nhưng FBX lưu Euler **extrinsic XYZ** và
+three.js `getEulerOrder(0)` trả về `'ZYX'` (intrinsic 'ZYX' = extrinsic
+XYZ). Đọc lại bằng 'ZYX' trong khi ghi bằng 'XYZ' làm track xoay lớn
+lệch tới 30,285° (Attack RightArm). Đã sửa: writer dùng
+`setFromQuaternion(q, 'ZYX')` cho cả Lcl Rotation xương lẫn AnimationCurve,
+và ghi `P: "RotationOrder", "enum", "", "", 0` vào Properties70 của mọi
+Model (như XBot.fbx). Round-trip sau sửa: 27/27 track khớp, lệch tối đa
+0,037° (ngưỡng 0,5°). Lưu ý: `RotationOrder = 0` cho `getEulerOrder(0) =
+'ZYX'` là đúng — đừng "sửa" thành 5.
+
+### Kiểm thử (file `coco-Rigged-Animated.fbx`, ASCII 7.3, 18.581.948 B)
+
+- Harness `~/workspace/.test-fbx/test-fbx-animation.js`: **42 pass, 0 fail**
+  (cấu trúc ASCII 15, FBXLoader parse 17, playback 8, fbx2gltf 1,
+  validator 1). 1 SkinnedMesh 50.000 tris (không decimate), skeleton
+  23 xương, skin weights tổng 1.0, cao 1,8 m, chân y=0, 5 mesh kiếm là
+  con của RightHand (đi theo tay khi animate), 3 clip Idle 2,4 s loop /
+  Run 0,8 s loop / Attack 0,9 s once, 7/10/10 tracks, 5/9/5 keyframes.
+- Round-trip `test-fbx-roundtrip.js`: so track parse lại với clip gốc
+  coco.js — **27/27 khớp, lệch góc tối đa 0,037°, lệch position 0,
+  lệch times 0**.
+- fbx2gltf 0.9.7 (SDK thật): Idle [0–57] / Run [0–19] / Attack [0–21]
+  (24 fps), 7/10/10 channels, 1 skin 23 joints, buffer 2.250.008 B,
+  2 ảnh JPEG trích đúng byte (map 262.700 B, normalMap 112.327 B).
+  Duration trong glTF là frame đã sample: 2,38 / 0,79 / 0,88 s.
+- Validator `tools/fbx-validate-mixamo.mjs`: **16/16 trên file binary
+  reference** (cùng nội dung; validator là parser nhị phân nên không
+  đọc được file ASCII chính). Các check auto-rig (mesh-to-root, ≤60k
+  tris, cạnh hở < 2%) đều đạt, nhưng file này KHÔNG dùng để Mixamo
+  auto-rig — nó đã có sẵn skeleton.
+- Hồi quy sau sửa: `test-fbx-mixamo.js` 73/73,
+  `test-mixamo-safe-export.js` 40/40, `test-coco-character.js` 70/70,
+  `test-rig-oneclick.js` 41/41. `node --check` 0 lỗi.
+  Server smoke 200 cho `js/exporter/fbx-binary.js` + `index.html`.
+- Giới hạn: FBX không lưu cờ loop (Idle/Run loop, Attack once lấy từ
+  metadata nguồn); file binary reference hiện zero channels ở fbx2gltf
+  0.9.7 (xem trên); chưa thử mở bằng Blender/Unity/Unreal thật —
+  cần user thử trên máy thật.

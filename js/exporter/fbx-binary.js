@@ -20,6 +20,14 @@
  * phải truyền opts.version = 7300. Bản rig (có skeleton + skin) và bản
  * mesh-only (prepareMixamo, để Mixamo tự auto-rig) đều được Mixamo nhận.
  *
+ * ANIMATION (opts.animations = [{name, clip}] — clip là THREE.AnimationClip,
+ * track trỏ tới xương theo tên): mỗi clip → 1 AnimationStack + Layer +
+ * CurveNode (T/R/S) + Curve (KeyTime KTime int64 + KeyValueFloat float32).
+ * Quaternion → Euler extrinsic XYZ độ (three.js 'ZYX' — getEulerOrder(0)='ZYX'); position cùng đơn vị với bone Lcl Translation.
+ * Takes.Current + ActiveAnimStackName trỏ stack đầu tiên. fps mặc định 30.
+ * Mixamo KHÔNG dùng file này (đã có sẵn skeleton) — file rigged + animation
+ * dùng cho Blender/Unity/Unreal/studio.
+ *
  * LỖI GỐC LẦN 2 (2026-11-23): mọi OBJECT ID (Geometry/Model/NodeAttribute/
  * Deformer/Cluster/Pose/Material/Video/Texture/Document) từng ghi bằng
  * pI = int32, trong khi FBX SDK yêu cầu int64 ('L') — Connections thì
@@ -102,6 +110,8 @@
   function pS(v) { return { k: 'S', v: String(v) }; }
   function pB(v) { return { k: 'C', v: v ? 1 : 0 }; }
   function arrD(list) { return { k: 'd', v: list }; }
+  function arrF(list) { return { k: 'f', v: list }; }   /* float32 — KeyValueFloat / KeyAttrDataFloat */
+  function arrL(list) { return { k: 'l', v: list }; }   /* int64 — KeyTime (KTime) */
   function arrI(list) { return { k: 'i', v: list }; }
   function arrB(list) { return { k: 'b', v: list }; }
   function pR(bytes) { return { k: 'R', v: bytes }; }
@@ -142,6 +152,26 @@
       const head = new Uint8Array(13);
       const hv = new DataView(head.buffer);
       head[0] = 0x64; hv.setUint32(1, n, true); hv.setUint32(5, 0, true); hv.setUint32(9, n * 8, true);
+      out.push(head, body);
+    } else if (p.k === 'f') {
+      /* float32 array (0x66) — KeyValueFloat, KeyAttrDataFloat */
+      const a = p.v, n = a.length;
+      const body = new Uint8Array(n * 4);
+      const dv = new DataView(body.buffer);
+      for (let i = 0; i < n; i++) dv.setFloat32(i * 4, a[i], true);
+      const head = new Uint8Array(13);
+      const hv = new DataView(head.buffer);
+      head[0] = 0x66; hv.setUint32(1, n, true); hv.setUint32(5, 0, true); hv.setUint32(9, n * 4, true);
+      out.push(head, body);
+    } else if (p.k === 'l') {
+      /* int64 array (0x6c) — KeyTime: KTime, 46186158000/giây */
+      const a = p.v, n = a.length;
+      const body = new Uint8Array(n * 8);
+      const dv = new DataView(body.buffer);
+      for (let i = 0; i < n; i++) dv.setBigInt64(i * 8, BigInt(Math.round(a[i])), true);
+      const head = new Uint8Array(13);
+      const hv = new DataView(head.buffer);
+      head[0] = 0x6c; hv.setUint32(1, n, true); hv.setUint32(5, 0, true); hv.setUint32(9, n * 8, true);
       out.push(head, body);
     } else if (p.k === 'i') {
       const a = p.v, n = a.length;
@@ -260,6 +290,11 @@
       node('P', [pS('Lcl Translation'), pS('Lcl Translation'), pS(''), pS('A'), pD(p[0]), pD(p[1]), pD(p[2])]),
       node('P', [pS('Lcl Rotation'), pS('Lcl Rotation'), pS(''), pS('A'), pD(e[0]), pD(e[1]), pD(e[2])]),
       node('P', [pS('Lcl Scaling'), pS('Lcl Scaling'), pS(''), pS('A'), pD(s[0]), pD(s[1]), pD(s[2])]),
+      /* RotationOrder = 0 (XYZ) BẮT BUỘC: writer ghi Lcl Rotation + AnimationCurve
+       * theo Euler XYZ; three.js FBXLoader mặc định eulerOrder='ZYX' khi model
+       * thiếu RotationOrder → track xoay lớn (Attack RightArm) lệch tới 30°.
+       * XBot.fbx thật cũng ghi RotationOrder 0. SDK mặc định XYZ nên không đổi. */
+      node('P', [pS('RotationOrder'), pS('enum'), pS(''), pS(''), pI(0)]),
       node('P', [pS('DefaultAttributeIndex'), pS('int'), pS('Integer'), pS(''), pI(0)]),
       node('P', [pS('InheritType'), pS('enum'), pS(''), pS(''), pI(1)])
     ];
@@ -301,7 +336,7 @@
      * Build từ CÙNG cây node (roots) ở cuối hàm nên nội dung khớp bản binary 1:1.
      * Nhiều pipeline upload chỉ chấp nhận ASCII ("Unsupported FBX type" với binary lạ).
      * ------------------------------------------------------------------------------------ */
-    function asciiProp(p) {
+    function asciiProp(p, depth) {
       const num = function (x) {
         const v = +x;
         if (!isFinite(v)) return '0';
@@ -319,25 +354,49 @@
       if (p.k === 'C') return p.v ? 'T' : 'F';
       if (p.k === 'D' || p.k === 'F') return num(p.v);
       if (p.k === 'R') {
+        /* Content nhị phân (Video.Content) ở ASCII phải là BASE64 — FBX SDK
+           đọc Content ASCII dạng base64 (hex làm SDK giải mã sai: chuỗi hex
+           525400 ký tự bị đọc thành 394050 byte rác = 525400×3/4). */
         const b = p.v || new Uint8Array(0);
-        return esc(Array.prototype.map.call(b, function (x) { return (x < 16 ? '0' : '') + x.toString(16); }).join(''));
+        const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+        let s = '';
+        for (let i = 0; i < b.length; i += 3) {
+          const n = (b[i] << 16) | ((i + 1 < b.length ? b[i + 1] : 0) << 8) | (i + 2 < b.length ? b[i + 2] : 0);
+          s += B64[(n >> 18) & 63] + B64[(n >> 12) & 63] + (i + 1 < b.length ? B64[(n >> 6) & 63] : '=') + (i + 2 < b.length ? B64[n & 63] : '=');
+        }
+        return esc(s);
       }
-      if (p.k === 'd' || p.k === 'i' || p.k === 'b') {
-        const a = p.v, per = p.k === 'd' ? 100 : 200, lines = [];
+      if (p.k === 'd' || p.k === 'f' || p.k === 'i' || p.k === 'b' || p.k === 'l') {
+        const a = p.v, per = (p.k === 'd' || p.k === 'f') ? 100 : 200, lines = [];
         for (let i = 0; i < a.length; i += per) {
           const part = [];
-          for (let j = i; j < Math.min(i + per, a.length); j++) part.push(p.k === 'd' ? num(a[j]) : String(a[j] | 0));
+          /* 'l' là int64 (KTime tới ~1e11) — KHÔNG dùng a[j]|0 (tràn int32) */
+          for (let j = i; j < Math.min(i + per, a.length); j++) part.push((p.k === 'd' || p.k === 'f') ? num(a[j]) : (p.k === 'l' ? String(Math.round(a[j])) : String(a[j] | 0)));
           lines.push(part.join(','));
         }
-        if (!lines.length) return '*' + a.length + ' {\n\n}';
-        return '*' + a.length + ' {\n' + lines.join(',\n') + '\n}';
+        /* Định dạng array chuẩn SDK (XBot): dòng "a:" ở indent+1, các chunk
+         * tiếp theo ở CỘT 0 (continuation line), "}" đóng ở đúng indent
+         * của node. Ghi "}" ở cột 0 làm three.js TextParser không pop
+         * được node — mọi node sau array đó bị nuốt mất. */
+        const ind = new Array((depth || 0) + 1).join('\t');
+        const indA = ind + '\t';
+        if (!lines.length) return '*' + a.length + ' {\n' + indA + 'a: \n' + ind + '}';
+        return '*' + a.length + ' {\n' + indA + 'a: ' + lines.join(',\n') + '\n' + ind + '}';
       }
       return '0';
     }
     function asciiNode(n, depth, out) {
       const ind = new Array(depth + 1).join('\t');
-      const props = n.props.map(asciiProp).join(', ');
+      /* Nối props bằng "," KHÔNG khoảng trắng (như SDK thật: "A",0,0,0) —
+       * nối ", " làm three.js parseNodeSpecialProperty thay khoảng trắng
+       * đầu tiên của đuôi số bằng "_" → parseFloat("_0.036") = NaN,
+       * toàn bộ xương thành NaN (đã chứng minh bằng probe). */
+      const props = n.props.map(function (p) { return asciiProp(p, depth); }).join(',');
       const head = ind + n.name + ':' + (props ? ' ' + props : '');
+      /* Node lá KHÔNG props (References, Properties70 rỗng) phải ghi dạng
+       * block rỗng "Name:  {" + "}" như SDK thật — ghi dòng trơ "Name:"
+       * làm three.js TextParser hiểu nhầm là continuation line rồi crash. */
+      if (!n.children.length && !props) { out.push(head + '  {\n' + ind + '}\n'); return; }
       if (!n.children.length) { out.push(head + '\n'); return; }
       out.push(head + ' {\n');
       n.children.forEach(function (c) { asciiNode(c, depth + 1, out); });
@@ -424,7 +483,7 @@
       else local.copy(boneWorldX[b.uuid]);
       const p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
       local.decompose(p, q, s);
-      const e = new THREE.Euler().setFromQuaternion(q, 'XYZ');
+      const e = new THREE.Euler().setFromQuaternion(q, 'ZYX');   /* FBX lưu Euler extrinsic XYZ = three.js intrinsic 'ZYX' (getEulerOrder(0)='ZYX'); dùng 'XYZ' ở đây làm track xoay lớn lệch tới 30° */
       return {
         p: [p.x, p.y, p.z],
         e: [THREE.MathUtils.radToDeg(e.x), THREE.MathUtils.radToDeg(e.y), THREE.MathUtils.radToDeg(e.z)],
@@ -448,6 +507,20 @@
       const idx = geo.index;
       const triCount = idx ? idx.count : pos.count;
       const world = xform.clone().multiply(mesh.matrixWorld);
+
+      /* Mesh gắn dưới xương (vd kiếm là con của RightHand): bake geometry
+         vào không gian local của xương đó và nối Model vào xương, để mesh
+         đi theo xương khi phát animation (Blender/Unity/FBXLoader).
+         M = boneWorld'⁻¹ · world — độc lập với xform vì xform là similarity
+         (scale đều + xoay + tịnh tiến). Mesh không có cha xương: như cũ. */
+      let boneParent = null;
+      if (!noSkeleton) {
+        let walker = mesh.parent;
+        while (walker) {
+          if (walker.isBone && boneIds[walker.uuid] != null) { boneParent = walker; break; }
+          walker = walker.parent;
+        }
+      }
 
       /* vertices baked world */
       const verts = [], norms = [], uvs = [], uvIndex2 = [], piv = [];
@@ -483,6 +556,20 @@
       /* UV theo PolygonVertex: Mixamo/3ds Max đọc kiểu này chắc chắn nhất
        * (file Mixamo gốc cũng ghi ByPolygonVertex + IndexToDirect với UVIndex = 0..n-1). */
       if (uvs.length) { for (let i = 0; i < triList.length; i++) uvIndex2.push(i); }
+      /* Mesh gắn dưới xương: đổi vertex/normal world sang không gian local
+         của xương (bbox ở trên đã tính trên vertex world nên không đổi). */
+      if (boneParent) {
+        const toBoneLocal = boneWorldX[boneParent.uuid].clone().invert().multiply(world);
+        for (let i = 0; i < verts.length; i += 3) {
+          v3.set(verts[i], verts[i + 1], verts[i + 2]).applyMatrix4(toBoneLocal);
+          verts[i] = v3.x; verts[i + 1] = v3.y; verts[i + 2] = v3.z;
+        }
+        const nmBone = new THREE.Matrix3().getNormalMatrix(toBoneLocal);
+        for (let i = 0; i < norms.length; i += 3) {
+          n3.set(norms[i], norms[i + 1], norms[i + 2]).applyMatrix3(nmBone).normalize();
+          norms[i] = n3.x; norms[i + 1] = n3.y; norms[i + 2] = n3.z;
+        }
+      }
 
       const gid = id();
       geoms.push(gid);
@@ -534,7 +621,9 @@
 
       objects.push(node('Geometry', [pL(gid), pS('Geometry::' + (mesh.name || ('mesh_' + mi))), pS('Mesh')], gChildren));
 
-      /* mesh model node — geometry đã bake world nên Lcl = identity */
+      /* mesh model node — geometry đã bake world nên Lcl = identity;
+         mesh gắn dưới xương thì geometry đã bake vào không gian xương
+         nên Lcl vẫn identity nhưng Model nối vào xương đó (kiếm theo tay). */
       const meshModelId = id();
       models.push({ id: meshModelId, name: mesh.name || ('mesh_' + mi), matrixWorld: world });
       objects.push(node('Model', [pL(meshModelId), pS('Model::' + (mesh.name || ('mesh_' + mi))), pS('Mesh')], [
@@ -545,7 +634,7 @@
         node('Shading', [pB(true)]),
         node('Culling', [pS('CullingOff')])
       ]));
-      connections.push({ type: 'OO', child: meshModelId, parent: 0 });
+      connections.push({ type: 'OO', child: meshModelId, parent: boneParent ? boneIds[boneParent.uuid] : 0 });
       connections.push({ type: 'OO', child: gid, parent: meshModelId });
       connections.push({ type: 'OO', child: mid, parent: meshModelId });
 
@@ -773,6 +862,201 @@
       });
     }
 
+    /* ---------------- animation (opts.animations) ----------------
+     * Mỗi clip [{name, clip}] (clip = THREE.AnimationClip, track trỏ tới
+     * xương theo tên) → 1 AnimationStack + 1 AnimationLayer +
+     * AnimationCurveNode (T/R/S cho từng xương có track) + AnimationCurve
+     * (KeyTime KTime int64 + KeyValueFloat float32 + KeyAttr* chuẩn SDK).
+     * Connections: stack OO→ layer OO→ curveNode OP('Lcl Translation'/
+     * 'Lcl Rotation'/'Lcl Scaling' — tên đầy đủ như file XBot thật, dạng
+     * rút gọn 'd|T' làm SDK không tìm được kênh) → bone model;
+     * curve OP(d|X/Y/Z)→ curveNode. Takes.Current + Documents
+     * ActiveAnimStackName trỏ stack đầu tiên. fps (mặc định 30) chỉ ghi
+     * vào CustomFrameRate — KeyTime tính từ giây tuyệt đối nên không phụ
+     * thuộc fps. Bỏ qua khi noSkeleton (không có xương để gắn track).
+     * TÊN BARE (không prefix 'AnimationStack::'/'AnimCurveNode::'):
+     * BinaryParser của three r128 giữ nguyên attrName (không lột prefix
+     * như TextParser) nên tên có prefix làm FBXLoader không nhận ra kênh
+     * T/R/S (clip ra 0 track — đã chứng minh với XBot-Mixamo.fbx).
+     * Tên bare vẫn đúng chuẩn FBX (tên chỉ là nhãn, SDK nhận diện object
+     * theo loại node, không theo prefix) và Blender/Unity/Unreal đọc được.
+     * CHUYỂN ĐỔI: track quaternion (local TUYỆT ĐỐI, như three.js) →
+     * Euler XYZ ĐỘ (FBX lưu độ, thứ tự XYZ mặc định); track position
+     * cùng đơn vị với bone Lcl Translation của writer — xform là
+     * similarity (scale đều + xoay + tịnh tiến) nên local của xương CÓ
+     * cha xương không đổi, chỉ xương GỐC (không cha xương) mới áp xform
+     * (quay + scale + tịnh tiến cho T, quay cho R, scale cho S). */
+    const KT_SEC = 46186158000;   /* KTime/giây (FBXLoader: time / 46186158000) */
+    const animFps = (opts.fps && isFinite(+opts.fps) && +opts.fps > 0) ? +opts.fps : 30;
+    const animEntries = Array.isArray(opts.animations) ? opts.animations : [];
+    const animReport = [];
+    let firstStackName = '';
+    let maxAnimKTime = 0;
+    if (animEntries.length && !noSkeleton && sc.bones.length) {
+      const xformDecomp = (function () {
+        const p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
+        xform.decompose(p, q, s);
+        return { p: p, q: q, s: s.x };
+      })();
+      const boneByName = {};
+      sc.bones.forEach(function (b) {
+        boneByName[b.name] = b;
+        const short = String(b.name).replace(/^.*:/, '');
+        if (!boneByName[short]) boneByName[short] = b;
+      });
+      const isRootBone = function (bone) {
+        let w = bone.parent;
+        while (w) { if (w.isBone) return false; w = w.parent; }
+        return true;
+      };
+      animEntries.forEach(function (entry, stackIdx) {
+        const clip = (entry && entry.clip) || entry;
+        const stackName = String((entry && entry.name) || (clip && clip.name) || ('Take' + (stackIdx + 1)));
+        if (!clip || !Array.isArray(clip.tracks) || !clip.tracks.length) return;
+        /* gom track theo xương + kênh (T/R/S); trùng xương+kênh: giữ track đầu */
+        const perBone = {};
+        clip.tracks.forEach(function (tr) {
+          if (!tr || typeof tr.name !== 'string') return;
+          const dot = tr.name.lastIndexOf('.');
+          if (dot < 0) return;
+          const nodeName = tr.name.slice(0, dot);
+          const prop = tr.name.slice(dot + 1);
+          const attr = prop === 'position' ? 'T' : prop === 'quaternion' ? 'R' : prop === 'scale' ? 'S' : null;
+          if (!attr) return;   /* vd morphTargetInfluences: chưa hỗ trợ */
+          const bone = boneByName[nodeName] || boneByName[String(nodeName).replace(/^.*:/, '')];
+          if (!bone) return;
+          const times = Array.prototype.slice.call(tr.times || []);
+          const values = Array.prototype.slice.call(tr.values || []);
+          if (!times.length || !values.length) return;
+          if (!perBone[bone.uuid]) perBone[bone.uuid] = { bone: bone, T: null, R: null, S: null };
+          if (perBone[bone.uuid][attr]) return;
+          const rootBone = isRootBone(bone);
+          const slot = { times: times, x: [], y: [], z: [] };
+          perBone[bone.uuid][attr] = slot;
+          const n = times.length;
+          if (attr === 'R') {
+            const e = new THREE.Euler();
+            const q = new THREE.Quaternion();
+            for (let i = 0; i < n; i++) {
+              q.set(values[i * 4], values[i * 4 + 1], values[i * 4 + 2], values[i * 4 + 3]);
+              if (rootBone) q.premultiply(xformDecomp.q);
+              /* FBX lưu Euler extrinsic XYZ = three.js intrinsic 'ZYX'
+               * (getEulerOrder(0)='ZYX'); dùng 'XYZ' làm track xoay lớn
+               * (Attack RightArm) lệch tới 30° khi đọc lại. */
+              e.setFromQuaternion(q, 'ZYX');
+              slot.x.push(THREE.MathUtils.radToDeg(e.x));
+              slot.y.push(THREE.MathUtils.radToDeg(e.y));
+              slot.z.push(THREE.MathUtils.radToDeg(e.z));
+            }
+          } else {
+            for (let i = 0; i < n; i++) {
+              let x = values[i * 3], y = values[i * 3 + 1], z = values[i * 3 + 2];
+              if (rootBone) {
+                if (attr === 'T') {
+                  const v = new THREE.Vector3(x, y, z).multiplyScalar(xformDecomp.s).applyQuaternion(xformDecomp.q).add(xformDecomp.p);
+                  x = v.x; y = v.y; z = v.z;
+                } else {
+                  x *= xformDecomp.s; y *= xformDecomp.s; z *= xformDecomp.s;
+                }
+              }
+              slot.x.push(x); slot.y.push(y); slot.z.push(z);
+            }
+          }
+        });
+        const boneUuids = Object.keys(perBone).filter(function (u) {
+          const rec = perBone[u];
+          return !!(rec.T || rec.R || rec.S);
+        });
+        if (!boneUuids.length) return;
+        let dur = (typeof clip.duration === 'number' && isFinite(clip.duration) && clip.duration > 0) ? clip.duration : 0;
+        if (!dur) {
+          boneUuids.forEach(function (u) {
+            const rec = perBone[u];
+            ['T', 'R', 'S'].forEach(function (a) {
+              if (rec[a]) dur = Math.max(dur, rec[a].times[rec[a].times.length - 1]);
+            });
+          });
+        }
+        if (!dur) return;
+        const durK = Math.round(dur * KT_SEC);
+        if (durK > maxAnimKTime) maxAnimKTime = durK;
+        const stackId = id();
+        const layerId = id();
+        if (!firstStackName) firstStackName = stackName;
+        objects.push(node('AnimationStack', [pL(stackId), pS(stackName), pS('')], [
+          node('Properties70', [], [
+            node('P', [pS('LocalStart'), pS('KTime'), pS('Time'), pS(''), pL(0)]),
+            node('P', [pS('LocalStop'), pS('KTime'), pS('Time'), pS(''), pL(durK)]),
+            node('P', [pS('ReferenceStart'), pS('KTime'), pS('Time'), pS(''), pL(0)]),
+            node('P', [pS('ReferenceStop'), pS('KTime'), pS('Time'), pS(''), pL(durK)])
+          ])
+        ]));
+        objects.push(node('AnimationLayer', [pL(layerId), pS(stackName), pS('')], [
+          node('Properties70', [], [
+            node('P', [pS('Weight'), pS('Number'), pS(''), pS('A'), pD(100)]),
+            node('P', [pS('Mute'), pS('bool'), pS(''), pS(''), pB(false)]),
+            node('P', [pS('Lock'), pS('bool'), pS(''), pS(''), pB(false)])
+          ])
+        ]));
+        connections.push({ type: 'OO', child: layerId, parent: stackId });
+        let curveNodeCount = 0, curveCount = 0, trackCount = 0;
+        boneUuids.forEach(function (u) {
+          const rec = perBone[u];
+          const bone = rec.bone;
+          const lx = boneLocalX(bone);   /* giá trị mặc định d|X/Y/Z = rest local */
+          ['T', 'R', 'S'].forEach(function (attr) {
+            const slot = rec[attr];
+            if (!slot) return;
+            trackCount++;
+            const cnId = id();
+            const def = attr === 'T' ? lx.p : attr === 'R' ? lx.e : lx.s;
+            objects.push(node('AnimationCurveNode', [pL(cnId), pS(attr), pS('')], [
+              node('Properties70', [], [
+                node('P', [pS('d|X'), pS('Number'), pS(''), pS('A'), pD(def[0])]),
+                node('P', [pS('d|Y'), pS('Number'), pS(''), pS('A'), pD(def[1])]),
+                node('P', [pS('d|Z'), pS('Number'), pS(''), pS('A'), pD(def[2])])
+              ])
+            ]));
+            /* OP curveNode→bone dùng TÊN PROPERTY ĐẦY ĐỦ 'Lcl Translation'/
+               'Lcl Rotation'/'Lcl Scaling' (như file XBot thật) — dạng rút
+               gọn 'd|T'/'d|R' làm FBX SDK không tìm được kênh nào
+               (fbx2gltf báo 'zero channels'). three r128 chỉ cần
+               relationship khác undefined nên vẫn đọc được. */
+            connections.push({ type: 'OP', child: cnId, parent: boneIds[bone.uuid], prop: attr === 'T' ? 'Lcl Translation' : attr === 'R' ? 'Lcl Rotation' : 'Lcl Scaling' });
+            connections.push({ type: 'OO', child: cnId, parent: layerId });
+            curveNodeCount++;
+            const keyTimes = slot.times.map(function (t) { return Math.round(t * KT_SEC); });
+            ['x', 'y', 'z'].forEach(function (axis) {
+              const cuId = id();
+              const vals = slot[axis];
+              /* KeyAttrFlags 8456 = Cubic(8) | TangentAuto(256) |
+                 GenericTimeIndependent(8192) — đúng file XBot thật.
+                 Flags 256 (chỉ TangentAuto, không có interpolation type)
+                 làm FBX SDK (fbx2gltf 0.9.7) segfault. KeyAttrRefCount = 1
+                 như file thật (0 cũng làm SDK đọc sai). Default = giá trị
+                 key đầu (file thật: Default ≈ giá trị key đầu). */
+              const flags = vals.map(function () { return 8456; });
+              const dataFloats = [];
+              for (let i = 0; i < vals.length; i++) dataFloats.push(0, 0, 0, 0);
+              const refCounts = vals.map(function () { return 1; });
+              objects.push(node('AnimationCurve', [pL(cuId), pS(String(bone.name).replace(/[^A-Za-z0-9_]/g, '_') + '_' + attr + axis.toUpperCase()), pS('')], [
+                node('Default', [pD(vals[0])]),
+                node('KeyVer', [pI(4009)]),
+                node('KeyTime', [arrL(keyTimes)]),
+                node('KeyValueFloat', [arrF(vals)]),
+                node('KeyAttrFlags', [arrI(flags)]),
+                node('KeyAttrDataFloat', [arrF(dataFloats)]),
+                node('KeyAttrRefCount', [arrI(refCounts)])
+              ]));
+              connections.push({ type: 'OP', child: cuId, parent: cnId, prop: 'd|' + axis.toUpperCase() });
+              curveCount++;
+            });
+          });
+        });
+        animReport.push({ name: stackName, duration: +dur.toFixed(3), tracks: trackCount, curveNodes: curveNodeCount, curves: curveCount });
+      });
+    }
+
     /* ---------------- header sections ---------------- */
     /* CreationTimeStamp cố định 1970-01-01 10:00:00.000 như Blender
      * (xem FIXED_TS phía trên): FBX SDK kiểm tra bộ ba CreationTime +
@@ -826,8 +1110,8 @@
         node('P', [pS('DefaultCamera'), pS('KString'), pS(''), pS(''), pS('Producer Perspective')]),
         node('P', [pS('TimeMode'), pS('enum'), pS(''), pS(''), pI(11)]),
         node('P', [pS('TimeSpanStart'), pS('KTime'), pS('Time'), pS(''), pL(0)]),
-        node('P', [pS('TimeSpanStop'), pS('KTime'), pS('Time'), pS(''), pL(46186158000)]),
-        node('P', [pS('CustomFrameRate'), pS('double'), pS('Number'), pS(''), pD(24)])
+        node('P', [pS('TimeSpanStop'), pS('KTime'), pS('Time'), pS(''), pL(maxAnimKTime || 46186158000)]),
+        node('P', [pS('CustomFrameRate'), pS('double'), pS('Number'), pS(''), pD(animReport.length ? animFps : 24)])
       ])
     ]);
 
@@ -837,7 +1121,7 @@
       node('Document', [pL(docId), pS(''), pS('Scene')], [
         node('Properties70', [], [
           node('P', [pS('SourceObject'), pS('object'), pS(''), pS('')]),
-          node('P', [pS('ActiveAnimStackName'), pS('KString'), pS(''), pS(''), pS('')])
+          node('P', [pS('ActiveAnimStackName'), pS('KString'), pS(''), pS(''), pS(firstStackName)])
         ]),
         node('RootNode', [pL(0)])
       ])
@@ -857,7 +1141,11 @@
       ['Texture', texRecords.length],
       ['Video', texRecords.length],
       ['Deformer', noSkeleton ? 0 : clusters.length + (clusters.length ? 1 : 0)],
-      ['Pose', noSkeleton ? 0 : (sc.bones.length ? 1 : 0)]
+      ['Pose', noSkeleton ? 0 : (sc.bones.length ? 1 : 0)],
+      ['AnimationStack', animReport.length],
+      ['AnimationLayer', animReport.length],
+      ['AnimationCurveNode', animReport.reduce(function (a, r) { return a + r.curveNodes; }, 0)],
+      ['AnimationCurve', animReport.reduce(function (a, r) { return a + r.curves; }, 0)]
     ].filter(function (t) { return t[1] > 0; });
     const defs = node('Definitions', [], [
       node('Version', [pI(100)]),
@@ -874,7 +1162,7 @@
       return node('C', props);
     }));
 
-    const takes = node('Takes', [], [node('Current', [pS('')])]);
+    const takes = node('Takes', [], [node('Current', [pS(firstStackName)])]);
 
     /* ---------------- assemble ---------------- */
     const roots = [header,
@@ -907,17 +1195,19 @@
       lines.push('\t}');
       lines.push('\tCreator: "PixiJS Studio x Tripo3D AI Studio v' + (window.PixiStudio && PixiStudio.VERSION || '20.0') + ' (Mixamo-ready)"');
       lines.push('}');
-      /* toàn bộ cây còn lại trừ FBXHeaderExtension/Creator (đã viết tay phía trên) */
-      roots.filter(function (n) { return n.name !== 'FBXHeaderExtension'; })
+      /* toàn bộ cây còn lại trừ FBXHeaderExtension (đã viết tay phía trên) và
+       * FileId/CreationTime/Creator: 3 node lá này ở ASCII thành property
+       * top-level ngoài mọi node, làm three.js TextParser crash (stack rỗng)
+       * — file ASCII thật của SDK (XBot.fbx) cũng KHÔNG có chúng ở top-level. */
+      roots.filter(function (n) { return n.name !== 'FBXHeaderExtension' && n.name !== 'FileId' && n.name !== 'CreationTime' && n.name !== 'Creator'; })
         .forEach(function (n) { asciiNode(n, 0, lines); });
-      /* đuôi file: null record + footer chuẩn SDK (buildFooter: foot-id
-       * + version ở offset chia hết cho 16 + magic) */
+      /* đuôi file ASCII: CHỈ text thuần (kết thúc bằng newline) — KHÔNG gắn
+       * footer nhị phân (null record + foot-id + magic) như trước: khi đọc
+       * dạng text, three.js TextParser tách cả phần nhị phân thành "dòng"
+       * rồi crash ở parseNodePropertyContinued (stack rỗng). File ASCII thật
+       * của SDK (XBot.fbx) cũng không có footer nhị phân. */
       const enc = new TextEncoder();
-      const head = enc.encode(lines.join('\n') + '\n');
-      const tailNull = new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-      const tailFoo = buildFooter(vi, head.length + tailNull.length);
-      const asc = new Uint8Array(head.length + tailNull.length + tailFoo.length);
-      asc.set(head, 0); asc.set(tailNull, head.length); asc.set(tailFoo, head.length + tailNull.length);
+      const asc = enc.encode(lines.join('\n') + '\n');
       return {
         bytes: asc,
         report: {
@@ -927,7 +1217,8 @@
           geometryIds: geoms.length, hasSkin: useSkin && clusters.length > 0,
           upAxis: xformApplied ? ('baked: ' + upAxisName + ' → Y, feet at y=0') : 'kept as-is',
           srcUpAxis: upAxisName,
-          version: ver, unitScale: +unitScale.toFixed(4), meshOnly: !!noSkeleton
+          version: ver, unitScale: +unitScale.toFixed(4), meshOnly: !!noSkeleton,
+          animations: animReport, animationStacks: animReport.length, fps: animFps
         }
       };
     }
@@ -976,7 +1267,10 @@
         version: ver,
         versionName: ver === 7300 ? 'FBX 2013' : (ver === 7400 ? 'FBX 2014' : 'FBX ' + ver),
         unitScale: +unitScale.toFixed(4),
-        meshOnly: !!noSkeleton
+        meshOnly: !!noSkeleton,
+        animations: animReport,
+        animationStacks: animReport.length,
+        fps: animFps
       }
     };
   };
