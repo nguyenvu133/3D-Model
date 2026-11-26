@@ -846,11 +846,21 @@
       ];
       const seen = {};
       const provided = opts.textureBytes || null;   /* {matName:{slot:{b64,mime}}} — bytes lấy sẵn từ FBX nguồn */
+      /* Fallback tên material: nút GLB→FBX trích textureBytes theo tên
+         trong GLB; nếu tên material sau GLTFLoader/prepare lệch (vd
+         material không tên) mà chỉ có đúng 1 material trong map thì
+         dùng luôn entry đó — file vẫn có màu thay vì mất hẳn. */
+      var providedSingle = null;
+      if (provided) {
+        var pk = Object.keys(provided);
+        if (pk.length === 1) providedSingle = provided[pk[0]];
+      }
       mats.forEach(function (m) {
         const mt = (Array.isArray(m.material) ? m.material[0] : m.material) || {};
         SLOTS.forEach(function (s) {
           const tex = mt[s[0]];
-          const pb = provided && provided[m.name] ? provided[m.name][s[0]] : null;
+          var pbEntry = provided && provided[m.name] ? provided[m.name] : providedSingle;
+          const pb = pbEntry ? pbEntry[s[0]] : null;
           if (!pb && (!tex || !tex.image)) return;
           const key = m.id + '|' + s[0] + '|' + (tex ? (tex.uuid || '') : 'provided');
           if (seen[key]) return;

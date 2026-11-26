@@ -662,7 +662,7 @@ tỉ lệ.
     return prepared;
   }
 
-  function saveFBXMixamo(target, modelName, finish, fmt) {
+  function saveFBXMixamo(target, modelName, finish, fmt, textureBytes) {
     PixiStudio.Notifications.updateLoading(20, 'Chờ texture decode để nhúng màu vào FBX...');
     return new Promise(function (resolve) {
       /* Chờ meshopt WASM sẵn sàng SONG SONG với texture (không thêm
@@ -696,7 +696,10 @@ tỉ lệ.
               upAxis: 'Y',
               autoScale: true,
               includeTextures: true,
-              embedTextures: true
+              embedTextures: true,
+              /* textureBytes: nút GLB→FBX trích trực tiếp từ file GLB
+                 (không qua tex.image/canvas) — file LUÔN có màu. */
+              textureBytes: textureBytes || null
             });
             const blob = new Blob([res.bytes], { type: 'application/octet-stream' });
             const name = buildFileName(modelName, 'mixamo', fmt ? fmt.ext : '.fbx');
@@ -737,9 +740,139 @@ tỉ lệ.
      Dùng chung code nên file ra giống hệt nút Save Mixamo
      (đã kiểm chứng bằng fbx2gltf: v7300, 0 xương, 0 skin).
      ============================================================ */
+  /* ============================================================
+     GLB → FBX: trích texture TRỰC TIẾP từ file GLB (bytes gốc).
+     ------------------------------------------------------------
+     Lý do: GLTFLoader trên Chrome/Android dùng ImageBitmapLoader —
+     tex.image là ImageBitmap, và canvas.toDataURL trên ảnh 3072²
+     có thể fail trên máy yếu → nút GLB→FBX ra file mất màu (người
+     dùng báo 2026-11-26). Cách này đọc bytes gốc từ GLB (bufferView)
+     rồi lật dọc bằng canvas: lật được → JPEG đã lật (đúng chiều FBX);
+     lật fail → nhúng bytes gốc (vẫn có màu, chỉ có thể lộn chiều).
+     File LUÔN có texture, không còn mất màu. Trả Promise -> map
+     {matName: {map: {b64,mime,w,h}, normalMap: {...}}} (định dạng
+     textureBytes mà FBXBinary.write đã hỗ trợ).
+     ============================================================ */
+  function bytesToBase64(u8) {
+    var s = '';
+    var CH = 0x8000;
+    for (var i = 0; i < u8.length; i += CH) {
+      s += String.fromCharCode.apply(null, u8.subarray(i, i + CH));
+    }
+    return btoa(s);
+  }
+  function imageDims(u8, mime) {
+    /* PNG: IHDR width/height big-endian tại byte 16/20. JPEG: quét
+       marker tìm SOF0 (0xFFC0) / SOF2 (0xFFC2), height/width tại +5/+7. */
+    try {
+      if (mime === 'image/png' && u8.length > 24 && u8[0] === 0x89 && u8[1] === 0x50) {
+        var w = (u8[16] << 24) | (u8[17] << 16) | (u8[18] << 8) | u8[19];
+        var h = (u8[20] << 24) | (u8[21] << 16) | (u8[22] << 8) | u8[23];
+        return { w: w, h: h };
+      }
+      if (mime === 'image/jpeg' && u8.length > 4 && u8[0] === 0xFF && u8[1] === 0xD8) {
+        var p = 2;
+        while (p + 9 < u8.length) {
+          if (u8[p] !== 0xFF) { p++; continue; }
+          var mk = u8[p + 1];
+          if (mk === 0xC0 || mk === 0xC2) {
+            return { w: (u8[p + 7] << 8) | u8[p + 8], h: (u8[p + 5] << 8) | u8[p + 6] };
+          }
+          if (mk === 0xD8 || mk === 0x01 || (mk >= 0xD0 && mk <= 0xD7)) { p += 2; continue; }
+          var len = (u8[p + 2] << 8) | u8[p + 3];
+          p += 2 + len;
+        }
+      }
+    } catch (e) { /* bỏ qua */ }
+    return { w: 0, h: 0 };
+  }
+  function flipImageBytes(u8, mime, isNormal) {
+    /* Lật dọc ảnh bytes -> JPEG (map) / PNG (normal) bằng canvas.
+       Trả Promise<{b64,mime,w,h}>; fail -> null (caller dùng bytes gốc). */
+    return new Promise(function (resolve) {
+      try {
+        var blob = new Blob([u8], { type: mime });
+        var url = (window.URL || window.webkitURL).createObjectURL(blob);
+        var img = new Image();
+        var done = function (ok) {
+          try { (window.URL || window.webkitURL).revokeObjectURL(url); } catch (e) { /* noop */ }
+          if (!ok || !img.width || !img.height) { resolve(null); return; }
+          try {
+            var c = document.createElement('canvas');
+            c.width = img.width; c.height = img.height;
+            var cx = c.getContext('2d');
+            cx.translate(0, img.height); cx.scale(1, -1);
+            cx.drawImage(img, 0, 0, img.width, img.height);
+            var outMime = isNormal ? 'image/png' : 'image/jpeg';
+            var dataUrl = c.toDataURL(outMime, outMime === 'image/jpeg' ? 0.92 : undefined);
+            var b64 = dataUrl.split(',')[1];
+            resolve({ b64: b64, mime: outMime, w: img.width, h: img.height });
+          } catch (e) { resolve(null); }
+        };
+        img.onload = function () { done(true); };
+        img.onerror = function () { done(false); };
+        setTimeout(function () { done(false); }, 8000);
+        img.src = url;
+      } catch (e) { resolve(null); }
+    });
+  }
+  function extractGLBTextureBytes(arrayBuffer) {
+    return new Promise(function (resolve) {
+      var out = {};
+      try {
+        var dv = new DataView(arrayBuffer);
+        if (dv.getUint32(0, true) !== 0x46546C67) { resolve(out); return; }  /* 'glTF' */
+        var jsonLen = dv.getUint32(12, true);
+        var json = JSON.parse(new TextDecoder('utf-8').decode(new Uint8Array(arrayBuffer, 20, jsonLen)));
+        var off = 20 + jsonLen;
+        if (off + 8 > arrayBuffer.byteLength) { resolve(out); return; }
+        var binLen = dv.getUint32(off, true);
+        var bin = new Uint8Array(arrayBuffer, off + 8, binLen);
+        var images = (json.images || []).map(function (im) {
+          if (im.bufferView === undefined) return null;
+          var bv = json.bufferViews[im.bufferView];
+          var o = bv.byteOffset || 0;
+          var bytes = bin.slice(o, o + bv.byteLength);
+          var mime = im.mimeType || (bytes[0] === 0x89 && bytes[1] === 0x50 ? 'image/png' : 'image/jpeg');
+          return { bytes: bytes, mime: mime };
+        });
+        var jobs = [];
+        (json.materials || []).forEach(function (mat, mi) {
+          var name = mat.name || ('mat_' + mi);
+          var pbr = mat.pbrMetallicRoughness || {};
+          var slots = [];
+          if (pbr.baseColorTexture !== undefined) slots.push(['map', pbr.baseColorTexture.index, false]);
+          if (mat.normalTexture !== undefined) slots.push(['normalMap', mat.normalTexture.index, true]);
+          slots.forEach(function (sl) {
+            var tex = (json.textures || [])[sl[1]];
+            if (!tex || tex.source === undefined) return;
+            var im = images[tex.source];
+            if (!im) return;
+            var dims = imageDims(im.bytes, im.mime);
+            var raw = { b64: bytesToBase64(im.bytes), mime: im.mime, w: dims.w, h: dims.h };
+            jobs.push(flipImageBytes(im.bytes, im.mime, sl[2]).then(function (flipped) {
+              if (!out[name]) out[name] = {};
+              /* Ưu tiên ảnh đã lật (đúng chiều FBX); lật fail -> bytes gốc. */
+              out[name][sl[0]] = flipped || raw;
+            }));
+          });
+        });
+        if (!jobs.length) { resolve(out); return; }
+        Promise.all(jobs).then(function () { resolve(out); });
+      } catch (e) { resolve(out); }
+    });
+  }
+
+  /* Expose để test harness kiểm chứng (không dùng trong UI). */
+  SaveManager._extractGLBTextureBytes = extractGLBTextureBytes;
+
   SaveManager.convertGLBBufferToMixamoFBX = function (arrayBuffer, baseName) {
     if (!THREE.GLTFLoader) return Promise.reject(new Error('GLTFLoader chưa sẵn sàng (CDN lỗi?) — tải lại trang rồi thử lại.'));
     PixiStudio.Notifications.showLoading('Đang đọc file GLB…', 5);
+    /* Trích texture TRỰC TIẾP từ GLB song song với GLTFLoader — không
+       phụ thuộc tex.image/ImageBitmap + canvas.toDataURL (hay fail trên
+       máy yếu -> file mất màu). */
+    var texP = extractGLBTextureBytes(arrayBuffer);
     return new Promise(function (resolve, reject) {
       new THREE.GLTFLoader().parse(arrayBuffer, '', resolve, reject);
     }).then(function (gltf) {
@@ -747,17 +880,29 @@ tỉ lệ.
       if (!model) throw new Error('File GLB không chứa scene nào.');
       var name = String(baseName || 'model').replace(/\.[^.]+$/, '');
       var out = null;
-      return saveFBXMixamo(model, name, function (blob, report, filename) {
-        U.downloadBlob(blob, filename);
-        PixiStudio.Notifications.hideLoading();
-        SaveManager.logSave({ name: filename, format: 'fbx-mixamo', sizeBytes: blob.size });
-        bus.emit('notify', {
-          type: 'success', title: 'Đã chuyển ' + filename,
-          message: (blob.size / 1048576).toFixed(2) + ' MB · mesh-only (Mixamo tự auto-rig) — mở https://www.mixamo.com → Characters → Upload Character.',
-          duration: 12000
+      return texP.then(function (textureBytes) {
+        /* GLTFLoader đặt material.name theo tên trong GLB; material nào
+           không tên thì gán tên 'mat_i' cho khớp key textureBytes. */
+        var mi = 0;
+        model.traverse(function (o) {
+          if (!o.isMesh || !o.material) return;
+          var mats = Array.isArray(o.material) ? o.material : [o.material];
+          mats.forEach(function (m) {
+            if (m && !m.name) { m.name = 'mat_' + (mi++); }
+          });
         });
-        out = { blob: blob, filename: filename };
-      }, { id: 'fbx-mixamo', ext: '.fbx' }).then(function () { return out; });
+        return saveFBXMixamo(model, name, function (blob, report, filename) {
+          U.downloadBlob(blob, filename);
+          PixiStudio.Notifications.hideLoading();
+          SaveManager.logSave({ name: filename, format: 'fbx-mixamo', sizeBytes: blob.size });
+          bus.emit('notify', {
+            type: 'success', title: 'Đã chuyển ' + filename,
+            message: (blob.size / 1048576).toFixed(2) + ' MB · mesh-only (Mixamo tự auto-rig) — mở https://www.mixamo.com → Characters → Upload Character.',
+            duration: 12000
+          });
+          out = { blob: blob, filename: filename };
+        }, { id: 'fbx-mixamo', ext: '.fbx' }, textureBytes);
+      }).then(function () { return out; });
     });
   };
 
