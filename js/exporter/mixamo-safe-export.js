@@ -512,6 +512,27 @@
     var degenRemoved = 0;
     finalGeos.forEach(function (g) { degenRemoved += removeDegenerate(g).removed; });
     if (degenRemoved > 0) report.warnings.push('Đã bỏ ' + degenRemoved.toLocaleString('en-US') + ' tam giác suy biến (diện tích ≈ 0) do decimate tạo ra để Mixamo auto-rig không đo sai');
+    /* FIX (2026-11-26, GLB V2Fun 500k tris): GLB khong co normal thi
+       decimateUV tao attribute 'normal' TOAN 0 (no trung binh 0/0/0),
+       writer ghi LayerElementNormal toan 0 vao FBX. Tinh lai normal
+       khi thieu hoac toan 0 — ap dung ca khi khong decimate (mesh goc
+       khong co normal thi writer bo qua normal, nhung tinh ra thi tot
+       hon cho Mixamo/viewer). */
+    finalGeos.forEach(function (g) {
+      var nAttr = g.attributes.normal;
+      var needNormals = !nAttr;
+      if (nAttr) {
+        var allZero = true;
+        for (var i = 0; i < nAttr.count; i++) {
+          if (nAttr.getX(i) !== 0 || nAttr.getY(i) !== 0 || nAttr.getZ(i) !== 0) { allZero = false; break; }
+        }
+        needNormals = allZero;
+      }
+      if (needNormals && g.computeVertexNormals) {
+        g.computeVertexNormals();
+        report.warnings.push('Đã tự tính normal (file gốc không có normal)');
+      }
+    });
     finalGeos.forEach(function (g) { trisAfter += triCountOf(g); });
     report.trisAfter = trisAfter;
     if (trisAfter >= MAX_TRIS) {
