@@ -35,6 +35,8 @@
         if (PixiStudio.RigAutoGen) PixiStudio.RigAutoGen.update(dt);
         if (PixiStudio.FbxRig) PixiStudio.FbxRig.update(dt);
         if (PixiStudio.Thandieu) PixiStudio.Thandieu.update(dt);
+        if (PixiStudio.Coco) PixiStudio.Coco.update(dt);
+        if (PixiStudio.Hy3d) PixiStudio.Hy3d.update(dt);
         /* v21.0 Smart Studio: IK giữ target, crossfade ramp, WASD controller */
         if (PixiStudio.IKSolver) PixiStudio.IKSolver.update(dt);
         if (PixiStudio.AnimBlender) PixiStudio.AnimBlender.update(dt);
