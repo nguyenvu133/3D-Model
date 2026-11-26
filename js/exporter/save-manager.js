@@ -665,7 +665,13 @@ tỉ lệ.
   function saveFBXMixamo(target, modelName, finish, fmt) {
     PixiStudio.Notifications.updateLoading(20, 'Chờ texture decode để nhúng màu vào FBX...');
     return new Promise(function (resolve) {
-      waitForTextures(target, 8000).then(function (tx) {
+      /* Chờ meshopt WASM sẵn sàng SONG SONG với texture (không thêm
+         thời gian chờ — texture decode lâu hơn nhiều). prepare() dùng
+         meshopt khi sẵn sàng, rơi về voxel khi chưa kịp load. */
+      var MSE0 = PixiStudio.MixamoSafeExport;
+      var readyP = (MSE0 && MSE0.waitMeshoptReady) ? MSE0.waitMeshoptReady(5000) : Promise.resolve(false);
+      Promise.all([waitForTextures(target, 8000), readyP]).then(function (results) {
+        var tx = results[0];
         PixiStudio.Notifications.updateLoading(60, 'Ghi FBX 2013 cho Mixamo (mesh-only + texture nhúng)...');
         setTimeout(function () {
           try {
@@ -847,7 +853,10 @@ tỉ lệ.
           ? 'Đã có khung xương chuẩn Mixamo — chờ texture rồi ghi FBX 2013...'
           : (rig ? 'Đã có rig (auto-gen) — chờ texture rồi ghi FBX 2013...' : 'Không rig được — xuất mesh-only FBX 2013...'));
 
-        waitForTextures(out, 8000).then(function (tx) {
+        var MSE0r = PixiStudio.MixamoSafeExport;
+        var readyPr = (MSE0r && MSE0r.waitMeshoptReady) ? MSE0r.waitMeshoptReady(5000) : Promise.resolve(false);
+        Promise.all([waitForTextures(out, 8000), readyPr]).then(function (results) {
+          var tx = results[0];
           setTimeout(function () {
             try {
               const info = built

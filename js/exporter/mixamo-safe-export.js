@@ -60,6 +60,7 @@
                                   Tỉ lệ 0.5 = pipeline làm tay (weld 0.003 ở ô 0.006). */
   var CELLS = [0.007, 0.010, 0.015, 0.022, 0.028];  /* tối đa 5 lần thử — 0.007 là ô đã chứng minh trên file Thiếu Lâm (46.917 tris); ô lớn hơn cho mesh lưới đều (sphere/box) vốn khó giảm */
   var MIN_HEIGHT = 1.2, MAX_HEIGHT = 3.5, NORM_HEIGHT = 1.8; /* như fbx-binary.js */
+  var MESHOPT_TARGET_ERROR = 0.01; /* sai số tối đa meshopt (m) — 1cm trên model 1.8m */
 
   var MixamoSafeExport = {};
   MixamoSafeExport.MAX_TRIS = MAX_TRIS;
@@ -69,6 +70,78 @@
   MixamoSafeExport.WELD_EPS = WELD_EPS;
   MixamoSafeExport.WELD_RATIO = WELD_RATIO;
   MixamoSafeExport.CELLS = CELLS.slice();
+
+  /* ---------------- meshoptimizer (giữ hình dạng) ---------------- */
+  /* MeshoptSimplifier (js/vendor/meshopt_simplifier.js, WASM nhúng
+     base64 — không cần fetch .wasm riêng) là edge-collapse giữ hình
+     dạng, thay cho voxel decimate khi mesh quá dày. Voxel gom đỉnh
+     theo ô + hàn chaining làm méo mặt / mọc gai ở file 500k tris
+     (V2Fun: weldMaxDisp 0.31m). Meshopt chỉ đổi index (giữ nguyên
+     đỉnh → UV theo đỉnh được bảo toàn), sai số 0.0008m ở 45k tris,
+     0.8s cho 500k tris. */
+  MixamoSafeExport._meshoptReady = false;
+  if (typeof window !== 'undefined' && window.MeshoptSimplifier && window.MeshoptSimplifier.ready) {
+    window.MeshoptSimplifier.ready.then(function () { MixamoSafeExport._meshoptReady = true; }).catch(function () { MixamoSafeExport._meshoptReady = false; });
+  }
+  function meshoptReady() {
+    return MixamoSafeExport._meshoptReady &&
+      typeof window !== 'undefined' && window.MeshoptSimplifier &&
+      typeof window.MeshoptSimplifier.simplify === 'function';
+  }
+  MixamoSafeExport.meshoptReady = meshoptReady;
+  /* Chờ meshopt sẵn sàng (WASM load) — save-manager gọi trước khi
+     prepare, tối đa timeoutMs, rồi trả true/false. */
+  MixamoSafeExport.waitMeshoptReady = function (timeoutMs) {
+    var M = (typeof window !== 'undefined') ? window.MeshoptSimplifier : null;
+    if (!M || !M.ready) return Promise.resolve(false);
+    if (MixamoSafeExport._meshoptReady) return Promise.resolve(true);
+    return Promise.race([
+      M.ready.then(function () { MixamoSafeExport._meshoptReady = true; return true; }).catch(function () { return false; }),
+      new Promise(function (res) { setTimeout(function () { res(false); }, timeoutMs || 5000); })
+    ]);
+  };
+  /* Giảm tris bằng meshopt edge-collapse — giữ hình dạng + UV.
+     Trả { geometry, trisAfter, err } hoặc null khi không dùng được. */
+  function decimateMeshopt(geometry, targetTris) {
+    var THREE = window.THREE;
+    var M = (typeof window !== 'undefined') ? window.MeshoptSimplifier : null;
+    if (!M || typeof M.simplify !== 'function') return null;
+    var pos = geometry.attributes.position;
+    var index = geometry.index;
+    if (!pos || !pos.array) return null;
+    var posArr = pos.array;
+    var idxArr;
+    if (index && index.array) {
+      idxArr = index.array;
+    } else {
+      /* non-indexed: tạo index 0..n-1 */
+      idxArr = new Uint32Array(pos.count);
+      for (var i = 0; i < pos.count; i++) idxArr[i] = i;
+    }
+    var srcTris = Math.floor(idxArr.length / 3);
+    if (srcTris <= targetTris) return null; /* không cần giảm */
+    var out;
+    try {
+      out = M.simplify(idxArr, posArr, 3, targetTris * 3, MESHOPT_TARGET_ERROR, ['LockBorder']);
+    } catch (e) { return null; }
+    if (!out || !out[0] || !out[0].length) return null;
+    var newIndex = out[0];
+    var err = out[1];
+    var g = new THREE.BufferGeometry();
+    /* Giữ nguyên mọi attribute theo đỉnh (position/uv/normal/color) —
+       meshopt chỉ đổi index nên UV được bảo toàn. */
+    Object.keys(geometry.attributes).forEach(function (name) {
+      g.setAttribute(name, geometry.attributes[name].clone());
+    });
+    g.setIndex(new THREE.BufferAttribute(newIndex, 1));
+    /* Tam giác đổi → tính lại normal cho lưới mới (mịn, đúng hướng). */
+    if (g.attributes.normal) g.deleteAttribute('normal');
+    g.computeVertexNormals();
+    g.computeBoundingBox();
+    g.computeBoundingSphere();
+    return { geometry: g, trisAfter: Math.floor(newIndex.length / 3), err: err };
+  }
+  MixamoSafeExport.decimateMeshopt = decimateMeshopt;
 
   /* ---------------- đếm ---------------- */
   function triCountOf(geo) {
@@ -444,6 +517,45 @@
     /* --- decimate nếu cần --- */
     var finalGeos = items.map(function (it) { return it.geo; });
     if (trisBefore >= MAX_TRIS) {
+      /* ƯU TIÊN meshopt (edge-collapse giữ hình dạng) trước voxel sweep.
+         Voxel gom đỉnh theo ô + hàn chaining làm méo mặt / mọc gai ở
+         file dày (V2Fun 500k tris: weldMaxDisp 0.31m, mặt méo như ảnh
+         user gửi). Meshopt chỉ đổi index (giữ nguyên đỉnh → UV bảo
+         toàn), sai số ~0.001m, 0.8s cho 500k tris. Nếu meshopt chưa
+         sẵn sàng / thất bại / cạnh hở vượt ngưỡng → rơi về voxel sweep
+         cũ bên dưới (không đổi hành vi cho file thường). */
+      var meshoptGeos = null, meshoptErr = 0, meshoptOpen = 0, meshoptTris = 0;
+      if (meshoptReady()) {
+        var reducibleTris = 0, fixedTris = 0;
+        items.forEach(function (it) { if (it.reducible) reducibleTris += triCountOf(it.geo); else fixedTris += triCountOf(it.geo); });
+        var meshoptOk = reducibleTris > 0;
+        var trialM = [];
+        items.forEach(function (it) {
+          if (!meshoptOk) return;
+          if (!it.reducible) { trialM.push(it.geo); return; }
+          var share = Math.max(1, Math.floor(targetTris * triCountOf(it.geo) / Math.max(1, reducibleTris)));
+          /* Trừ phần mesh cố định (không giảm được) khỏi đích. */
+          share = Math.max(1, Math.min(share, Math.max(1, targetTris - fixedTris)));
+          var m = decimateMeshopt(it.geo, share);
+          if (!m) { meshoptOk = false; return; }
+          trialM.push(m.geometry);
+          if (m.err > meshoptErr) meshoptErr = m.err;
+        });
+        if (meshoptOk) {
+          trialM.forEach(function (g) { meshoptTris += triCountOf(g); var op = openRatio(g); if (op > meshoptOpen) meshoptOpen = op; });
+          if (meshoptTris <= targetTris && meshoptOpen < MAX_OPEN_RATIO) meshoptGeos = trialM;
+        }
+      }
+      if (meshoptGeos) {
+        finalGeos = meshoptGeos;
+        report.decimated = true;
+        report.cell = 'meshopt';
+        report.weldEps = null;
+        report.openRatio = meshoptOpen;
+        report.worstUvSpread = 0;
+        report.weldMaxDisp = meshoptErr;
+        report.warnings.push('Đã tự giảm ' + trisBefore.toLocaleString('en-US') + ' → ' + meshoptTris.toLocaleString('en-US') + ' tam giác bằng meshopt (giữ hình dạng, sai số ' + meshoptErr.toFixed(4) + 'm) để vừa giới hạn Mixamo');
+      } else {
       var accepted = null;
       var best = null;
       for (var ci = 0; ci < cells.length; ci++) {
@@ -495,6 +607,7 @@
       report.worstUvSpread = accepted.worstUvSpread;
       report.weldMaxDisp = accepted.weldMaxDisp;
       report.warnings.push('Đã tự giảm ' + trisBefore.toLocaleString('en-US') + ' → ' + accepted.tris.toLocaleString('en-US') + ' tam giác (ô ' + accepted.cell + ', weld ' + accepted.weldEps.toFixed(4) + ', giữ UV) để vừa giới hạn Mixamo');
+      } /* else: voxel sweep (meshopt không dùng được) */
     } else {
       /* Không decimate: vẫn đo cạnh hở/UV trên geometry gốc để báo cáo */
       var worstOpen0 = 0, worstSpread0 = 0;
