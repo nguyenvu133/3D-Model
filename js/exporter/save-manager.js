@@ -943,27 +943,34 @@ tỉ lệ.
      Tối ưu model ĐANG Ở TRONG SCENE xuống dưới 1 MiB để chia sẻ /
      upload nơi giới hạn dung lượng: giảm tris bằng meshopt (giữ
      hình dạng + UV + skin weights) + thu nhỏ texture về JPEG
-     (map + normalMap, 512px rồi 256px) + giữ nguyên skeleton/skin
-     (khác nút Save Mixamo là mesh-only). Lặp tối đa 5 mức, dừng
-     ngay khi file < 1MB; nếu 5 mức vẫn chưa đủ thì tải bản nhỏ
-     nhất kèm cảnh báo.
+     256px (map + normalMap, q70 — như bản v2-tex256 làm bằng
+     Blender: 15.520 tris / 955KB) + giữ nguyên skeleton/skin
+     (khác nút Save Mixamo là mesh-only). Lặp tối đa 5 mức quanh
+     ~15.500 tris, dừng ngay khi file < 1MB; nếu 5 mức vẫn chưa
+     đủ thì tải bản nhỏ nhất kèm cảnh báo.
 
      QUAN TRỌNG — writer ghi Vertices/Normals/UV dạng double (8
-     byte) và Normals/UV theo từng polygon-vertex, nên 1 tri tốn
-     ~150 byte (đã đo): 5.000 tris ≈ 750KB + texture 130KB mới
-     vừa 1MB. Vì vậy mức đầu đã là 5.000 tris (không phải 47k như
-     nút Mixamo). Ngoài ra writer ghi TOÀN BỘ đỉnh trong attribute
-     (kể cả đỉnh không còn trong index sau decimate) nên sau khi
-     decimate PHẢI compact geometry (chỉ giữ đỉnh còn dùng) — nếu
-     không file vẫn to như gốc dù tris đã giảm.
+     byte); FBX SDK (fbx2gltf/Blender) SEGFAULT khi gặp mảng float
+     cho geometry nên KHÔNG đổi sang float được. Thay vào đó writer
+     nén zlib (enc=1, chuẩn Blender — FBXLoader r128 đọc bằng
+     fflate.unzlibSync) + ghi Normal/UV dạng IndexToDirect (mảng
+     chỉ chứa giá trị duy nhất + Index map từng polygon-vertex,
+     như Blender) → ~60 byte/tri (đã đo trên Thiếu Lâm: 15.520
+     tris ≈ 955KB, ngang Blender). KHÔNG dùng ByVertex cho UV:
+     1 vị trí có nhiều UV (UV seam) nên reader sẽ bỏ UV và gộp
+     đỉnh theo vị trí (đã đo 2026-11-26: 9.495 đỉnh → 4.353).
+     Ngoài ra writer ghi TOÀN BỘ đỉnh trong attribute (kể cả đỉnh
+     không còn trong index sau decimate) nên sau khi decimate
+     PHẢI compact geometry (chỉ giữ đỉnh còn dùng) — nếu không
+     file vẫn to như gốc dù tris đã giảm.
      ============================================================ */
   var OPT_1MB = 1048576; /* 1 MiB */
   var OPT_ATTEMPTS = [
-    { tris: 5000, tex: 512, q: 0.70, dropNormal: false, err: 0.02 },
-    { tris: 3500, tex: 512, q: 0.60, dropNormal: false, err: 0.02 },
-    { tris: 2500, tex: 256, q: 0.70, dropNormal: false, err: 0.03 },
-    { tris: 1800, tex: 256, q: 0.60, dropNormal: false, err: 0.03 },
-    { tris: 1200, tex: 256, q: 0.50, dropNormal: true, err: 0.04 }
+    { tris: 16000, tex: 256, q: 0.70, dropNormal: false, err: 0.02 },
+    { tris: 15500, tex: 256, q: 0.70, dropNormal: false, err: 0.02 },
+    { tris: 14000, tex: 256, q: 0.70, dropNormal: false, err: 0.03 },
+    { tris: 12000, tex: 256, q: 0.60, dropNormal: false, err: 0.03 },
+    { tris: 10000, tex: 256, q: 0.50, dropNormal: true, err: 0.04 }
   ];
 
   /* Số tam giác của 1 geometry (triCountOf nằm trong
@@ -1049,9 +1056,22 @@ tỉ lệ.
      không có cạnh chung để collapse nên simplify trả nguyên không
      giảm (đã đo: 46.917 → 46.917, err 0). Key gồm đủ attribute để
      không gộp nhầm đỉnh khác normal (cạnh sắc) hay khác skin weights. */
+  /* Weld/index geometry: gộp các đỉnh trùng (vị trí + normal + UV +
+     skin) thành 1 đỉnh duy nhất, trả geometry đã index. BẮT BUỘC
+     trước meshopt vì FBXLoader trả geometry non-indexed (mỗi tam
+     giác 3 đỉnh riêng, 140.751 verts cho 46.917 tris) → meshopt
+     không có cạnh chung để collapse nên simplify trả nguyên không
+     giảm (đã đo: 46.917 → 46.917, err 0). Key gồm đủ attribute để
+     không gộp nhầm đỉnh khác normal (cạnh sắc) hay khác skin weights.
+     CHẠY ĐƯỢC CẢ TRÊN GEOMETRY ĐÃ INDEXED: sau meshopt,
+     decimateMeshopt xóa normal cũ + computeVertexNormals() tính lại
+     → các đỉnh từng khác normal gốc (weld giữ riêng) giờ có cùng
+     normal mới nên thành trùng y hệt (đã đo: 9.487 đỉnh ghi ra
+     nhưng chỉ 4.353 duy nhất) — vì vậy decimateCloneToBudget gọi
+     weld LẠI sau compact để gộp số đỉnh trùng này. */
   function weldGeometry(geometry) {
     var THREE = window.THREE;
-    if (!geometry || geometry.index) return geometry;
+    if (!geometry) return geometry;
     var pos = geometry.attributes.position;
     if (!pos) return geometry;
     var names = Object.keys(geometry.attributes);
@@ -1075,6 +1095,7 @@ tỉ lệ.
       remap[i] = idx;
     }
     if (used.length === n) {
+      if (geometry.index) return geometry; /* đã index, không gộp được thêm */
       /* Không gộp được đỉnh nào — vẫn cần index để meshopt chạy. */
       var g0 = new THREE.BufferGeometry();
       Object.keys(geometry.attributes).forEach(function (nm) { g0.setAttribute(nm, geometry.attributes[nm]); });
@@ -1096,8 +1117,10 @@ tỉ lệ.
       }
       g.setAttribute(name, new THREE.BufferAttribute(out, itemSize));
     });
-    var newIdx = new Uint32Array(n);
-    for (var j = 0; j < n; j++) newIdx[j] = remap[j];
+    var oldIdx = geometry.index ? geometry.index.array : null;
+    var idxLen = oldIdx ? oldIdx.length : n;
+    var newIdx = new Uint32Array(idxLen);
+    for (var j = 0; j < idxLen; j++) newIdx[j] = remap[oldIdx ? oldIdx[j] : j];
     g.setIndex(new THREE.BufferAttribute(newIdx, 1));
     g.computeBoundingBox();
     g.computeBoundingSphere();
@@ -1126,10 +1149,13 @@ tỉ lệ.
         var share = (i === meshes.length - 1)
           ? Math.max(1, triBudget - done)
           : Math.max(1, Math.floor(triBudget * t / Math.max(1, total)));
-        /* Weld trước (FBX non-indexed) rồi mới meshopt, xong compact. */
+        /* Weld trước (FBX non-indexed) rồi mới meshopt, xong compact,
+           rồi weld LẠI: meshopt tính lại normal nên nhiều đỉnh thành
+           trùng y hệt (khác normal gốc, cùng normal mới) — weld lần 2
+           gộp chúng, file gọn ~2 lần (đã đo 9.487 → 4.353 đỉnh). */
         var welded = weldGeometry(m.geometry);
         var d = MSE.decimateMeshopt(welded, share, targetError);
-        if (d) { m.geometry = compactGeometry(d.geometry); done += d.trisAfter; }
+        if (d) { m.geometry = weldGeometry(compactGeometry(d.geometry)); done += d.trisAfter; }
         else { m.geometry = welded; done += t; }
       });
       trisAfter = done;

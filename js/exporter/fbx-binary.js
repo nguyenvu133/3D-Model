@@ -126,6 +126,63 @@
     return { name: name, props: props || [], children: children || [] };
   }
 
+  /* Nén zlib cho mảng FBX binary (enc=1) — chuẩn Blender: file gốc
+     thieulam-Mixamo.fbx (Blender export) dùng enc=1 cho mọi mảng,
+     FBXLoader r128 đọc bằng fflate.unzlibSync, FBX SDK đọc ngon.
+     Không nén thì file to gấp ~2 lần (đã đo: Vertices 228KB → 163KB
+     sau nén ở file Blender). Chỉ nén khi fflate có sẵn và nén ra
+     nhỏ hơn thật; nếu không thì giữ enc=0 (tương thích tuyệt đối). */
+  function getFflate() {
+    try {
+      if (typeof window !== 'undefined' && window.fflate && window.fflate.zlibSync) return window.fflate;
+      if (typeof self !== 'undefined' && self.fflate && self.fflate.zlibSync) return self.fflate;
+      if (typeof globalThis !== 'undefined' && globalThis.fflate && globalThis.fflate.zlibSync) return globalThis.fflate;
+    } catch (e) { /* ignore */ }
+    return null;
+  }
+  /* Đóng gói 1 mảng binary: [head 13B, data]. head = type(1) +
+     count(4) + encoding(4) + byteLen(4). encoding 1 = zlib. */
+  function encArrayProp(typeCode, count, body) {
+    var enc = 0, data = body;
+    if (body && body.length > 512) {
+      var fl = getFflate();
+      if (fl) {
+        try {
+          var comp = fl.zlibSync(body, { level: 6 });
+          if (comp && comp.length < body.length) { enc = 1; data = comp; }
+        } catch (e) { /* giữ nguyên không nén */ }
+      }
+    }
+    var head = new Uint8Array(13);
+    var hv = new DataView(head.buffer);
+    head[0] = typeCode; hv.setUint32(1, count, true); hv.setUint32(5, enc, true); hv.setUint32(9, data.length, true);
+    return [head, data];
+  }
+
+  /* Gộp các giá trị trùng trong 1 mảng phẳng (vd normal/UV theo
+     polygon-vertex) thành mảng duy nhất + index map — để ghi
+     IndexToDirect như Blender (NormalsIndex/UVIndex). Key toFixed(6)
+     đủ phân biệt giá trị thật, gộp nhiễu float32 (vd normal tính lại
+     sau meshopt). Trả {values, index}. */
+  function dedupIndexed(flat, itemSize) {
+    const map = new Map();
+    const values = [];
+    const count = Math.floor(flat.length / itemSize);
+    const index = new Array(count);
+    for (let i = 0; i < count; i++) {
+      let key = '';
+      for (let k = 0; k < itemSize; k++) key += flat[i * itemSize + k].toFixed(6) + ',';
+      let idx = map.get(key);
+      if (idx === undefined) {
+        idx = values.length / itemSize;
+        map.set(key, idx);
+        for (let k = 0; k < itemSize; k++) values.push(flat[i * itemSize + k]);
+      }
+      index[i] = idx;
+    }
+    return { values: values, index: index };
+  }
+
   function encProp(p) {
     const out = [];
     if (p.k === 'I') { const b = new Uint8Array(5); b[0] = 0x49; new DataView(b.buffer).setInt32(1, p.v, true); out.push(b); }
@@ -149,39 +206,27 @@
       const body = new Uint8Array(n * 8);
       const dv = new DataView(body.buffer);
       for (let i = 0; i < n; i++) dv.setFloat64(i * 8, a[i], true);
-      const head = new Uint8Array(13);
-      const hv = new DataView(head.buffer);
-      head[0] = 0x64; hv.setUint32(1, n, true); hv.setUint32(5, 0, true); hv.setUint32(9, n * 8, true);
-      out.push(head, body);
+      encArrayProp(0x64, n, body).forEach(function (b) { out.push(b); });
     } else if (p.k === 'f') {
       /* float32 array (0x66) — KeyValueFloat, KeyAttrDataFloat */
       const a = p.v, n = a.length;
       const body = new Uint8Array(n * 4);
       const dv = new DataView(body.buffer);
       for (let i = 0; i < n; i++) dv.setFloat32(i * 4, a[i], true);
-      const head = new Uint8Array(13);
-      const hv = new DataView(head.buffer);
-      head[0] = 0x66; hv.setUint32(1, n, true); hv.setUint32(5, 0, true); hv.setUint32(9, n * 4, true);
-      out.push(head, body);
+      encArrayProp(0x66, n, body).forEach(function (b) { out.push(b); });
     } else if (p.k === 'l') {
       /* int64 array (0x6c) — KeyTime: KTime, 46186158000/giây */
       const a = p.v, n = a.length;
       const body = new Uint8Array(n * 8);
       const dv = new DataView(body.buffer);
       for (let i = 0; i < n; i++) dv.setBigInt64(i * 8, BigInt(Math.round(a[i])), true);
-      const head = new Uint8Array(13);
-      const hv = new DataView(head.buffer);
-      head[0] = 0x6c; hv.setUint32(1, n, true); hv.setUint32(5, 0, true); hv.setUint32(9, n * 8, true);
-      out.push(head, body);
+      encArrayProp(0x6c, n, body).forEach(function (b) { out.push(b); });
     } else if (p.k === 'i') {
       const a = p.v, n = a.length;
       const body = new Uint8Array(n * 4);
       const dv = new DataView(body.buffer);
       for (let i = 0; i < n; i++) dv.setInt32(i * 4, a[i] | 0, true);
-      const head = new Uint8Array(13);
-      const hv = new DataView(head.buffer);
-      head[0] = 0x69; hv.setUint32(1, n, true); hv.setUint32(5, 0, true); hv.setUint32(9, n * 4, true);
-      out.push(head, body);
+      encArrayProp(0x69, n, body).forEach(function (b) { out.push(b); });
     } else if (p.k === 'b') {
       const a = p.v, n = a.length;
       const body = new Uint8Array(n);
@@ -549,7 +594,7 @@
       }
 
       /* vertices baked world */
-      const verts = [], norms = [], uvs = [], uvIndex2 = [], piv = [];
+      const verts = [], norms = [], uvs = [], piv = [];
       const uvAttr = geo.attributes.uv;
       const nAttr = geo.attributes.normal;
 
@@ -570,7 +615,12 @@
       for (let t = 0; t + 2 < triList.length; t += 3) {
         piv.push(triList[t], triList[t + 1], ~triList[t + 2]);
       }
-      /* normals + uv theo polygon-vertex */
+      /* normals + uv theo polygon-vertex (chuẩn FBX/Blender — 1 đỉnh có
+         thể mang nhiều UV khác nhau ở các tam giác khác nhau = UV seam,
+         nên KHÔNG ghi theo đỉnh/ByVertex được: reader sẽ bỏ UV và gộp
+         đỉnh theo vị trí, đã đo 2026-11-26). Ghi IndexToDirect như
+         Blender: mảng chỉ chứa giá trị duy nhất + Index map từng
+         polygon-vertex (xem dedupIndexed bên dưới). */
       const nm = new THREE.Matrix3().getNormalMatrix(world);
       for (let t = 0; t + 2 < triList.length; t += 3) {
         for (let k = 0; k < 3; k++) {
@@ -579,9 +629,6 @@
           if (uvAttr) uvs.push(uvAttr.getX(vi), uvAttr.getY(vi));
         }
       }
-      /* UV theo PolygonVertex: Mixamo/3ds Max đọc kiểu này chắc chắn nhất
-       * (file Mixamo gốc cũng ghi ByPolygonVertex + IndexToDirect với UVIndex = 0..n-1). */
-      if (uvs.length) { for (let i = 0; i < triList.length; i++) uvIndex2.push(i); }
       /* Mesh gắn dưới xương: đổi vertex/normal world sang không gian local
          của xương (bbox ở trên đã tính trên vertex world nên không đổi).
          FIX (2026-11-26, Thiếu Lâm mocap): verts ở trên đã bake `world`
@@ -614,27 +661,36 @@
           node('P', [pS('BoundingBoxMax'), pS('Vector3D'), pS('Vector'), pS(''), pD(maxX), pD(maxY), pD(maxZ)]),
           node('P', [pS('Primary Visibility'), pS('bool'), pS(''), pS(''), pB(true)])
         ]),
+        /* Vertices/Normals/UV/Weights BẮT BUỘC là double (arrD): FBX SDK
+           (fbx2gltf) SEGFAULT khi gặp mảng float ('f') cho geometry —
+           đã đo 2026-11-26 (file 8,3MB → segfault exit 139). Chỉ
+           animation key (KeyValueFloat) mới dùng float được. Muốn gọn
+           file thì dùng nén zlib (enc=1, xem encArrayProp) +
+           IndexToDirect cho Normal/UV (xem dedupIndexed). */
         node('Vertices', [arrD(verts)]),
         node('PolygonVertexIndex', [arrI(piv)]),
         node('GeometryVersion', [pI(124)])
       ];
       if (norms.length) {
+        const nDedup = dedupIndexed(norms, 3);
         gChildren.push(node('LayerElementNormal', [pI(0)], [
           node('Version', [pI(101)]),
           node('Name', [pS('')]),
           node('MappingInformationType', [pS('ByPolygonVertex')]),
-          node('ReferenceInformationType', [pS('Direct')]),
-          node('Normals', [arrD(norms)])
+          node('ReferenceInformationType', [pS('IndexToDirect')]),
+          node('Normals', [arrD(nDedup.values)]),
+          node('NormalsIndex', [arrI(nDedup.index)])
         ]));
       }
       if (uvs.length) {
+        const uvDedup = dedupIndexed(uvs, 2);
         gChildren.push(node('LayerElementUV', [pI(0)], [
           node('Version', [pI(101)]),
           node('Name', [pS('UVMap')]),
           node('MappingInformationType', [pS('ByPolygonVertex')]),
           node('ReferenceInformationType', [pS('IndexToDirect')]),
-          node('UV', [arrD(uvs)]),
-          node('UVIndex', [arrI(uvIndex2)])
+          node('UV', [arrD(uvDedup.values)]),
+          node('UVIndex', [arrI(uvDedup.index)])
         ]));
       }
       gChildren.push(node('LayerElementMaterial', [pI(0)], [
@@ -695,7 +751,16 @@
             clusters.push({
               id: cid, boneId: boneIds[rec.bone.uuid] || 0, bone: rec.bone,
               indexes: rec.indexes, weights: rec.weights, transformLink: link,
-              transform: new THREE.Matrix4()   /* geometry đã ở world → mesh bind = identity */
+              /* FIX (2026-11-26, skin lệch áo): Transform = inverse(TransformLink),
+                 KHÔNG phải identity. File gốc (Blender) ghi Transform ≈
+                 inverse(TransformLink) theo từng xương (vd xương chân có xoay
+                 180°). three.js FBXLoader BỎ QUA Transform (chỉ dùng
+                 TransformLink) nên round-trip qua three.js vẫn đúng, nhưng
+                 FBX SDK (fbx2gltf/Blender) DÙNG Transform để tính IBM —
+                 identity làm mất phép xoay 180° ở xương chân/tay → áo xòe
+                 như cánh. Geometry đã bake world + mesh node identity nên
+                 mesh bind = identity, tức Transform = inverse(TransformLink). */
+              transform: link.clone().invert()
             });
             connections.push({ type: 'OO', child: cid, parent: skinId });
             connections.push({ type: 'OO', child: boneIds[rec.bone.uuid] || 0, parent: cid });
