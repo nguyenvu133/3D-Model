@@ -756,19 +756,33 @@ tỉ lệ.
   };
 
   SaveManager.convertGLBToMixamoFBX = function () {
-    var input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.glb,.gltf';
-    input.onchange = function () {
-      var file = input.files && input.files[0];
-      if (!file) return;
-      U.readFileAsArrayBuffer(file).then(function (buf) {
-        return SaveManager.convertGLBBufferToMixamoFBX(buf, file.name);
-      }).catch(function (err) {
-        PixiStudio.Notifications.hideLoading();
-        bus.emit('notify', { type: 'error', title: 'Chuyển GLB → FBX lỗi', message: String(err && err.message || err) });
-      });
-    };
+    /* Input file PHẢI gắn vào DOM (ẩn) trước khi click(): input tạo bằng
+       createElement mà không append thì click() im lặng trên headless
+       Chrome và một số trình duyệt Android — nút bấm không mở hộp chọn
+       file, không toast, không lỗi (phát hiện 2026-11-26 khi kiểm thử
+       nút thật trên studio live: bấm 3 lần, không phản hồi gì). Dùng 1
+       input ẩn cố định, tái sử dụng mỗi lần bấm; reset value sau mỗi
+       lần chọn để chọn lại cùng file vẫn kích hoạt onchange. */
+    var input = SaveManager._glbFileInput;
+    if (!input) {
+      input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.glb,.gltf';
+      input.style.cssText = 'position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;';
+      input.onchange = function () {
+        var file = input.files && input.files[0];
+        input.value = '';
+        if (!file) return;
+        U.readFileAsArrayBuffer(file).then(function (buf) {
+          return SaveManager.convertGLBBufferToMixamoFBX(buf, file.name);
+        }).catch(function (err) {
+          PixiStudio.Notifications.hideLoading();
+          bus.emit('notify', { type: 'error', title: 'Chuyển GLB → FBX lỗi', message: String(err && err.message || err) });
+        });
+      };
+      document.body.appendChild(input);
+      SaveManager._glbFileInput = input;
+    }
     input.click();
   };
 
