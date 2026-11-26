@@ -1,7 +1,7 @@
 /* ============================================================
  * assets/importers.js — Pipeline import thật:
- * GLB/GLTF/OBJ/STL model · PNG/JPG/WebP/SVG texture · audio.
- * FBX → trạng thái trung thực (cần converter/fflate runtime).
+ * GLB/GLTF/OBJ/STL/FBX model · PNG/JPG/WebP/SVG texture · audio.
+ * FBX → load thật bằng FBXLoader r128 + fflate (CDN, index.html:494-497).
  * ============================================================ */
 (function () {
   'use strict';
@@ -14,8 +14,8 @@
   };
 
   const TYPE_MAP = {
-    'glb': 'model', 'gltf': 'model', 'obj': 'model', 'stl': 'model',
-    'fbx': 'fbx', 'mtl': 'mtl',
+    'glb': 'model', 'gltf': 'model', 'obj': 'model', 'stl': 'model', 'fbx': 'model',
+    'mtl': 'mtl',
     'png': 'image', 'jpg': 'image', 'jpeg': 'image', 'webp': 'image', 'svg': 'image', 'gif': 'image',
     'mp3': 'audio', 'wav': 'audio', 'ogg': 'audio',
     'bin': 'bin', 'zip': 'bin'
@@ -80,6 +80,8 @@
       return U.readFileAsArrayBuffer(file).then(function (buf) {
         if (ext === 'glb' || ext === 'gltf') {
           return PixiStudio.Models.loadGLBFromBuffer(buf, name, file.size);
+        } else if (ext === 'fbx') {
+          return PixiStudio.Models.loadFBXFromBuffer(buf, name, file.size);
         } else if (ext === 'obj') {
           /* kèm batch: model-manager tự tra MTL + ảnh đi kèm */
           return PixiStudio.Models.loadOBJFromBuffer(buf, name, batch
@@ -90,7 +92,8 @@
       }).then(function (entry) {
         bus.emit('notify', {
           type: 'success', title: 'Import thành công',
-          message: name + ' — ' + U.formatNumber(entry.stats.triangles) + ' tris · ' + U.formatBytes(file.size)
+          message: name + ' — ' + U.formatNumber(entry.stats.triangles) + ' tris · ' + U.formatBytes(file.size) +
+            (entry.clips && entry.clips.length ? ' · ' + entry.clips.length + ' clip' : '')
         });
         Importers._log(file, 'model');
         bus.emit('asset:imported', { name: file.name, type: 'model', size: file.size });
@@ -134,19 +137,9 @@
       });
     }
 
-    if (type === 'fbx') {
-      /* Trung thực: FBXLoader cần fflate — không giả lập */
-      bus.emit('notify', {
-        type: 'warning', title: 'FBX import chưa khả dụng',
-        message: 'FBXLoader cần runtime fflate (bundled). Chuyển FBX → GLB bằng Blender/online rồi import — hoặc chờ v5.1.',
-        duration: 7000
-      });
-      return Promise.resolve({ name: file.name, ok: false, type: 'fbx' });
-    }
-
     bus.emit('notify', {
       type: 'warning', title: 'Định dạng chưa hỗ trợ',
-      message: file.name + ' (.' + ext + ') — hỗ trợ: GLB/GLTF/OBJ/STL/ảnh/audio'
+      message: file.name + ' (.' + ext + ') — hỗ trợ: GLB/GLTF/OBJ/STL/FBX/ảnh/audio'
     });
     return Promise.resolve({ name: file.name, ok: false, type: type });
   };

@@ -100,6 +100,7 @@
       object3D: object3D,
       stats: stats,
       isGLB: !!opts.isGLB,
+      isFBX: !!opts.isFBX,
       fileSize: opts.fileSize || 0,
       url: opts.url || null,
       clips: opts.clips || []        // AnimationClip từ GLB
@@ -171,6 +172,50 @@
         PixiStudio.Notifications.hideLoading();
         reject(err);
       }
+    });
+  };
+
+  /* ---------- FBX (Binary 7300/7400 + ASCII) — FBXLoader r128 + fflate (CDN) ----------
+     Sửa 2026-11-26: import .fbx từng bị importers.js chặn cứng ("FBX import chưa
+     khả dụng") dù fflate + FBXLoader đã load sẵn ở index.html:494-497. File
+     thieulam-Rigged-FixedAxes.fbx (Binary 7300, 46.847 tris, 41 bones mixamorig,
+     1 clip Walk 5.958s) parse OK bằng chính loader này — chỉ thiếu đường dây. */
+  Manager.loadFBXFromBuffer = function (arrayBuffer, name, fileSize) {
+    return new Promise(function (resolve, reject) {
+      if (!window.THREE || !THREE.FBXLoader) {
+        reject(new Error('FBXLoader chưa sẵn sàng (CDN lỗi?). Kiểm tra kết nối mạng.'));
+        return;
+      }
+      if (typeof fflate === 'undefined') {
+        reject(new Error('fflate chưa sẵn sàng (CDN lỗi?). Kiểm tra kết nối mạng.'));
+        return;
+      }
+      PixiStudio.Notifications.showLoading('Đang parse ' + (name || 'model') + '…');
+      var object;
+      try {
+        object = new THREE.FBXLoader().parse(arrayBuffer, '');
+      } catch (err) {
+        PixiStudio.Notifications.hideLoading();
+        console.error('[ModelManager] FBX parse lỗi:', err);
+        reject(new Error('Parse FBX thất bại: ' + (err && err.message ? err.message : 'file lỗi')));
+        return;
+      }
+      PixiStudio.Notifications.hideLoading();
+      if (!object) { reject(new Error('FBX không chứa object')); return; }
+      Manager.normalize(object);
+      object.traverse(function (o) {
+        if (o.isMesh) { o.castShadow = true; o.receiveShadow = false; }
+      });
+      /* FIX IAB BLOCK: downscale texture display — như GLB */
+      if (PixiStudio.Textures) PixiStudio.Textures.optimizeDisplay(object, (PixiStudio.State.settings && PixiStudio.State.settings.displayTextureMax) || 512);
+      var entry = registerModel(object, {
+        name: name || 'FBX Model',
+        isGLB: false,
+        isFBX: true,
+        fileSize: fileSize || 0,
+        clips: object.animations || []   // AnimationClip từ FBX (vd Walk 5.958s)
+      });
+      resolve(entry);
     });
   };
 

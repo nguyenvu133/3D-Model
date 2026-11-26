@@ -83,12 +83,12 @@
       bus.emit('notify', { type: 'warning', title: 'Auto Animate', message: 'Chưa có model nào.' });
       return;
     }
-    /* Nếu model GLB có clip sẵn → phát clip đầu tiên */
+    /* Nếu model GLB/FBX có clip sẵn → phát clip đầu tiên */
     const entry = target.userData && target.userData.modelEntry;
-    if (entry && entry.isGLB && entry.clips && entry.clips.length) {
+    if (entry && (entry.isGLB || entry.isFBX) && entry.clips && entry.clips.length) {
       Anim.setTarget(target);
       Anim.play(entry.clips[0].name || 'Clip');
-      bus.emit('notify', { type: 'success', title: 'Auto Animate', message: 'Phát clip "' + (entry.clips[0].name || 'Clip') + '" từ GLB (' + entry.clips.length + ' clips).' });
+      bus.emit('notify', { type: 'success', title: 'Auto Animate', message: 'Phát clip "' + (entry.clips[0].name || 'Clip') + '" từ ' + (entry.isFBX ? 'FBX' : 'GLB') + ' (' + entry.clips.length + ' clips).' });
       return;
     }
     /* Không có clip → áp preset Idle + Walk */

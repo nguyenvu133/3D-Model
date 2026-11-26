@@ -400,7 +400,12 @@
      ============================================================ */
   FbxRig.renderPanel = function () {
     const body = document.getElementById('animation-page-body');
-    if (!body || document.getElementById('fbx-rig-section')) return;
+    if (!body) return;
+    /* Re-render: gỡ section cũ để vẽ lại trạng thái mới (đã load / chưa load).
+       Trước đây return sớm khi section đã tồn tại nên sau khi load xong panel
+       vẫn kẹt ở trạng thái "chưa load". */
+    const old = document.getElementById('fbx-rig-section');
+    if (old) old.remove();
 
     const section = U.el('div', { class: 'section-block', id: 'fbx-rig-section' }, [
       U.el('div', { class: 'section-head' }, [
@@ -427,7 +432,34 @@
           });
         }
       }));
-      sc.appendChild(U.el('div', { class: 'dim small', style: 'line-height:1.5;', text: 'Auto-detect file FBX trong assets/models (Meshy_AI_…Running.fbx). Cần fflate + FBXLoader (CDN).' }));
+      sc.appendChild(U.el('button', {
+        class: 'btn lg block',
+        style: 'margin-bottom:8px;',
+        html: U.icon('import') + '&nbsp; Chọn file FBX từ máy',
+        onclick: function () {
+          /* Sửa 2026-11-26: trước đây panel chỉ có auto-detect qua
+             fetch('/api/fbx-list') — API này chỉ có trên localhost server,
+             trên GitHub Pages luôn 404 nên không load được FBX nào. */
+          var input = document.createElement('input');
+          input.type = 'file';
+          input.accept = '.fbx';
+          input.onchange = function () {
+            var file = input.files && input.files[0];
+            if (!file) return;
+            PixiStudio.Notifications.showLoading('Đang parse ' + file.name + '…', 30);
+            FbxRig.loadFromFile(file).then(function () {
+              PixiStudio.Notifications.hideLoading();
+              FbxRig.fileName = file.name;
+              FbxRig.renderPanel();
+            }).catch(function (e) {
+              PixiStudio.Notifications.hideLoading();
+              bus.emit('notify', { type: 'error', title: 'FBX load fail', message: e.message });
+            });
+          };
+          input.click();
+        }
+      }));
+      sc.appendChild(U.el('div', { class: 'dim small', style: 'line-height:1.5;', text: 'Auto-detect file FBX trong assets/models (chỉ chạy trên localhost server), hoặc chọn file FBX bất kỳ từ máy. Cần fflate + FBXLoader (CDN).' }));
       section.appendChild(sc);
       body.insertBefore(section, body.firstChild);
       return;
