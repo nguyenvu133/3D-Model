@@ -826,7 +826,17 @@
     const texRecords = [];
     const texReport = [];
     if (opts.embedTextures !== false) {
-      const SLOTS = [
+      /* Đường Mixamo (prepareMixamo: Save Mixamo / Save Mixamo Rig / Rig 1 Lượt /
+         nút GLB → FBX — tất cả đều qua saveFBXMixamo): CHỈ nhúng map + normalMap.
+         Mixamo chỉ đọc 2 texture này cho auto-rig/preview, roughness/metalness
+         bị bỏ qua — nhưng GLTFLoader gắn đủ 4 slot (map/normal/roughness/metalness)
+         nên file nút bấm ra 4 texture, to hơn và khác công thức 2 file mẫu đã
+         auto-rig được (thieulam-Mixamo.fbx, coco v2: đúng 2 texture). Sửa
+         2026-11-26: nút GLB → FBX phải ra đúng công thức đã chứng minh. */
+      const SLOTS = opts.prepareMixamo ? [
+        ['map', 'DiffuseColor'],
+        ['normalMap', 'NormalMap']
+      ] : [
         ['map', 'DiffuseColor'],
         ['normalMap', 'NormalMap'],
         ['roughnessMap', 'ShininessExponent'],
