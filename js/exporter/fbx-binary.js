@@ -1231,6 +1231,29 @@
       lines.push('\t}');
       lines.push('\tCreator: "PixiJS Studio x Tripo3D AI Studio v' + (window.PixiStudio && PixiStudio.VERSION || '20.0') + '"');
       lines.push('}');
+      /* GUARD — three.js r128 FBXLoader.isFbxFormatASCII là heuristic mong manh:
+       * nó đọc ký tự tại các vị trí tam giác 0,1,3,6,10,15,21,28,36,45,55,66,
+       * 78,91,105,120,136,153,171,190 và nếu BẤT KỲ ký tự nào trùng CORRECT
+       * ('Kaydara\\FBX\\Binary\\\\') thì kết luận KHÔNG phải ASCII -> throw
+       * 'THREE.FBXLoader: Unknown format'. Header ngắn đi 15 ký tự khi bỏ
+       * '(Mixamo-ready)' (bản sửa Mixamo) đã làm vị trí 136 rơi đúng chữ 'r'
+       * của 'FBXHeaderExtension' nên file WushuAttack V3 bị loader từ chối
+       * (V2 dài hơn nên thoát — đo 2026-11-26, mô phỏng Python khớp). Đệm dấu
+       * '.' vào dòng 'Created by' cho tới khi heuristic qua — đảm bảo file
+       * ASCII luôn đọc được bằng FBXLoader r128 (studio dùng loader này). */
+      (function () {
+        const CORRECT_ASCII = ['K', 'a', 'y', 'd', 'a', 'r', 'a', '\\', 'F', 'B', 'X', '\\', 'B', 'i', 'n', 'a', 'r', 'y', '\\', '\\'];
+        const SAMPLE_POS = [0, 1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 66, 78, 91, 105, 120, 136, 153, 171, 190];
+        for (let tries = 0; tries < 24; tries++) {
+          const head = lines.join('\n').slice(0, 200);
+          let bad = false;
+          for (let i = 0; i < SAMPLE_POS.length; i++) {
+            if (head[SAMPLE_POS[i]] === CORRECT_ASCII[i]) { bad = true; break; }
+          }
+          if (!bad) return;
+          lines[1] += '.';
+        }
+      })();
       /* toàn bộ cây còn lại trừ FBXHeaderExtension (đã viết tay phía trên) và
        * FileId/CreationTime/Creator: 3 node lá này ở ASCII thành property
        * top-level ngoài mọi node, làm three.js TextParser crash (stack rỗng)
