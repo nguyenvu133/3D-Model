@@ -368,6 +368,17 @@
         else bus.emit('notify', { type: 'error', title: 'GLB → FBX Mixamo', message: 'SaveManager chưa sẵn sàng.' });
       });
     }
+    /* Topbar "Auto Rig Pro Blend" → đo landmark + dựng skeleton Mixamo
+       41 xương + skin tự động trên model CHƯA rig, xuất FBX rigged +
+       script Blender (.py) để lưu thành .blend. Model đã rig thì báo
+       và dừng, không ghi đè. */
+    const topAutoRigPro = document.getElementById('btn-auto-rig-pro');
+    if (topAutoRigPro) {
+      topAutoRigPro.addEventListener('click', function () {
+        if (PixiStudio.AutoRigPro && PixiStudio.AutoRigPro.run) PixiStudio.AutoRigPro.run();
+        else bus.emit('notify', { type: 'error', title: 'Auto Rig Pro Blend', message: 'AutoRigPro chưa sẵn sàng.' });
+      });
+    }
     /* Topbar "Save Mixamo" → xuất FBX Mixamo-safe (mesh-only < 50k
        tris + texture nhúng, tự decimate giữ UV khi cần) ngay,
        không mở Save Center. Ctrl+Shift+M cũng chạy. */

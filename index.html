@@ -67,6 +67,7 @@
       <button class="btn sm" id="btn-save-mixamo-rig" data-tooltip="Save Mixamo Rig — FBX 2013 mesh-only (< 50k tris, texture nhúng), Mixamo tự auto-rig — giống file Thiếu Lâm/Thần Điêu đã sửa → upload mixamo.com"><i data-ic="model"></i><span class="lbl">Save Mixamo Rig</span></button>
       <button class="btn sm" id="btn-save-objzip" data-tooltip="Save OBJ ZIP — xuất ZIP gồm .obj + .mtl + ảnh texture (map_Kd) nên OBJ có màu"><i data-ic="scene"></i><span class="lbl">Save OBJ ZIP</span></button>
       <button class="btn sm" id="btn-convert-glb-fbx" data-tooltip="GLB → FBX Mixamo — chọn file .glb trên máy, chuyển thẳng thành FBX 2013 mesh-only (< 50k tris, texture nhúng) để upload mixamo.com — không cần load model vào scene"><i data-ic="wand"></i><span class="lbl">GLB → FBX Mixamo</span></button>
+      <button class="btn sm" id="btn-auto-rig-pro" data-tooltip="Auto Rig Pro Blend — tự đo landmark trên model chưa rig, dựng skeleton Mixamo 41 xương khớp đúng tỉ lệ model, skin tự động, xuất FBX rigged + script Blender (.py) để lưu thành .blend"><i data-ic="rig"></i><span class="lbl">Auto Rig Pro Blend</span></button>
       <button class="btn sm" id="btn-save-mixamo" data-tooltip="Save Mixamo — xuất FBX 2013 mesh-only (< 50k tris, tự giảm giữ UV khi cần) + texture nhúng (có màu), Mixamo tự auto-rig → upload mixamo.com"><i data-ic="wand"></i><span class="lbl">Save Mixamo</span></button>
       <button class="btn sm" id="btn-save" data-tooltip="Save Project (Ctrl+S)"><i data-ic="save"></i><span class="lbl">Save</span></button>
       <button class="btn sm primary" id="btn-export-top" data-tooltip="Export (GLB/JSON/Image)"><i data-ic="export"></i><span class="lbl">Export</span></button>
@@ -544,6 +545,7 @@
 <script src="js/rigging/mixamo-skeleton.js"></script>
 <script src="js/rigging/creature-rigs.js"></script>
 <script src="js/rigging/rig-oneclick.js"></script>
+<script src="js/rig/auto-rig-pro.js"></script>
 <script src="js/rigging/meshy-rigging.js"></script>
 <script src="js/rigging/character-controller.js"></script>
 <script src="js/animation/presets.js"></script>
