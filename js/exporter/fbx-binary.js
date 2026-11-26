@@ -415,7 +415,13 @@
     let srcBox = null;
     {
       const bb = new THREE.Box3();
-      sc.meshes.forEach(function (m) { bb.expandByObject(m); });
+      /* FIX (2026-11-26, Thiếu Lâm mocap): đo bbox trục dọc từ mesh SKINNED
+         (thân nhân vật) khi có skeleton — prop gắn tay (gậy dài 1.8m nằm
+         ngang, X dài ~2.1m) làm bbox X vượt chiều cao 1.8m, khiến auto-detect
+         nhận nhầm X là trục dọc và xoay cả nhân vật 90° (nằm ngang, cao theo
+         X). Không có skinned mesh (mesh-only / prop) thì dùng mọi mesh như cũ. */
+      const bodyMeshes = skinned.length ? skinned : sc.meshes;
+      bodyMeshes.forEach(function (m) { bb.expandByObject(m); });
       if (!bb.isEmpty()) srcBox = bb.clone();
     }
     let upAxisName = 'keep', origAxis = 1;
@@ -511,8 +517,10 @@
       /* Mesh gắn dưới xương (vd kiếm là con của RightHand): bake geometry
          vào không gian local của xương đó và nối Model vào xương, để mesh
          đi theo xương khi phát animation (Blender/Unity/FBXLoader).
-         M = boneWorld'⁻¹ · world — độc lập với xform vì xform là similarity
-         (scale đều + xoay + tịnh tiến). Mesh không có cha xương: như cũ. */
+         Mesh local → bone local: M = boneWorld'⁻¹ · world. Nhưng verts ở
+         dưới đã bake `world` trước (để tính bbox world) nên bước đổi sang
+         xương chỉ áp boneWorld'⁻¹ (xem FIX ở khối boneParent bên dưới).
+         Mesh không có cha xương: như cũ. */
       let boneParent = null;
       if (!noSkeleton) {
         let walker = mesh.parent;
@@ -557,9 +565,14 @@
        * (file Mixamo gốc cũng ghi ByPolygonVertex + IndexToDirect với UVIndex = 0..n-1). */
       if (uvs.length) { for (let i = 0; i < triList.length; i++) uvIndex2.push(i); }
       /* Mesh gắn dưới xương: đổi vertex/normal world sang không gian local
-         của xương (bbox ở trên đã tính trên vertex world nên không đổi). */
+         của xương (bbox ở trên đã tính trên vertex world nên không đổi).
+         FIX (2026-11-26, Thiếu Lâm mocap): verts ở trên đã bake `world`
+         (mesh local → world) nên chỉ cần boneWorld⁻¹ để về không gian xương.
+         Bản cũ dùng boneWorld⁻¹·world rồi áp lên verts đã ở world → nhân
+         đôi `world`: geometry prop (gậy/kiếm) lệch ~0.8m và sai hướng so
+         với tay (gậy đứng dọc, lơ lửng trên tay thay vì nằm ngang trong tay). */
       if (boneParent) {
-        const toBoneLocal = boneWorldX[boneParent.uuid].clone().invert().multiply(world);
+        const toBoneLocal = boneWorldX[boneParent.uuid].clone().invert();
         for (let i = 0; i < verts.length; i += 3) {
           v3.set(verts[i], verts[i + 1], verts[i + 2]).applyMatrix4(toBoneLocal);
           verts[i] = v3.x; verts[i + 1] = v3.y; verts[i + 2] = v3.z;
@@ -948,6 +961,29 @@
               slot.y.push(THREE.MathUtils.radToDeg(e.y));
               slot.z.push(THREE.MathUtils.radToDeg(e.z));
             }
+            /* UNWRAP Euler — sửa lỗi CHÂN BAY LÊN TRỜI (đo 2026-11-26):
+             * setFromQuaternion trả góc [-180,180] nên khi chuyển động
+             * xoay qua biên ±180° (Hips xoay ~360° lúc spin; local
+             * UpLeg/ForeArm ~177° do R_fix), 2 key kề nhau lệch ~±350°
+             * trong file (StaffSpin V2: 19 đoạn, Wushu: 19 đoạn — đo trực
+             * tiếp từ KeyValueFloat). three.js FBXLoader
+             * (interpolateRotations) chia đoạn ≥180° thành bước 180° và
+             * Blender nội suy tuyến tính Euler đều đi đường DÀI → xương
+             * lật ~180° giữa 2 key, chân bay 1,2-1,5 m (HipsErr 149-176°).
+             * Clip gốc KHÔNG sai (chân trong clip 0,03-0,20 m, khớp
+             * landmark) nên sửa track chân trong clip không có tác dụng.
+             * Unwrap: cộng/trừ 360° để 2 key kề lệch ≤180° — cùng góc
+             * quay tại mọi key (Euler lệch 360° là cùng 1 hướng), chỉ làm
+             * đường nội suy đi đường NGẮN đúng. Chỉ đổi khi span >180°
+             * (chuyển động thật ≤~30°/frame) nên file không có wrap thì
+             * không đổi gì. */
+            [slot.x, slot.y, slot.z].forEach(function (arr) {
+              for (let i = 1; i < arr.length; i++) {
+                let d = arr[i] - arr[i - 1];
+                while (d > 180) { arr[i] -= 360; d -= 360; }
+                while (d < -180) { arr[i] += 360; d += 360; }
+              }
+            });
           } else {
             for (let i = 0; i < n; i++) {
               let x = values[i * 3], y = values[i * 3 + 1], z = values[i * 3 + 2];
@@ -1180,7 +1216,7 @@
       const vi = VERSION_ASCII;
       const lines = [];
       lines.push('; FBX 7.3.0 project file');
-      lines.push('; Created by PixiJS Studio x Tripo3D AI Studio (Mixamo-ready)');
+      lines.push('; Created by PixiJS Studio x Tripo3D AI Studio');
       lines.push('; ----------------------------------------------------');
       lines.push('');
       /* "khai báo" file/version dạng comment có chứa đủ từ khóa FBX */
@@ -1193,7 +1229,7 @@
       lines.push('\t\tYear: ' + now.year + '\n\t\tMonth: ' + now.month + '\n\t\tDay: ' + now.day);
       lines.push('\t\tHour: ' + now.hour + '\n\t\tMinute: ' + now.minute + '\n\t\tSecond: ' + now.second + '\n\t\tMillisecond: ' + now.millisecond);
       lines.push('\t}');
-      lines.push('\tCreator: "PixiJS Studio x Tripo3D AI Studio v' + (window.PixiStudio && PixiStudio.VERSION || '20.0') + ' (Mixamo-ready)"');
+      lines.push('\tCreator: "PixiJS Studio x Tripo3D AI Studio v' + (window.PixiStudio && PixiStudio.VERSION || '20.0') + '"');
       lines.push('}');
       /* toàn bộ cây còn lại trừ FBXHeaderExtension (đã viết tay phía trên) và
        * FileId/CreationTime/Creator: 3 node lá này ở ASCII thành property

@@ -65,15 +65,17 @@ trên model đã skin mà không tháo trước sẽ không ra khung xuất.
 
 ## Nút Export FBX
 
-- Nút **📥 Export FBX (Mixamo 2013)**, chỉ bật sau khi rig xong
-  (`exportReady`), tên file: `<tên-model>_rigged_mixamo.fbx`.
+- Nút **📥 Export Mixamo (mesh-only, Mixamo tự rig)**, chỉ bật sau khi rig xong
+  (`exportReady`), tên file: `<tên-model>_mixamo.fbx` (Lần 7: bỏ chữ "rigged"
+  vì file là mesh-only, không có xương).
 - Dùng đúng writer đã sửa `js/exporter/fbx-binary.js` — **không viết writer
   mới, không sửa writer** (xem `docs/MIXAMO_EXPORT_FIX.md`: footer chuẩn SDK,
   FileId đúng, Video Path cho texture).
-- Preset (như nút Save Mixamo Rig trong `save-manager.js`):
-  `FBXBinary.write(out, { version: 7300, keepSkeleton: true, noSkeleton: false,
-  prepareMixamo: false, upAxis: 'Y', autoScale: true, embedTextures: true })`
-  — kèm `waitForTextures(out, 8000)`.
+- Preset (như nút Save Mixamo Rig trong `save-manager.js`, từ Lần 4 file xuất
+  ra LUÔN mesh-only): `FBXBinary.write(prepared.group, { version: 7300,
+  noSkeleton: true, prepareMixamo: true, upAxis: 'Y', autoScale: true,
+  embedTextures: true })` sau `MixamoSafeExport.prepare` + pre-flight
+  mesh-only — kèm `waitForTextures(out, 8000)`.
 - Nguồn xuất: khung 65 xương đã cache từ lúc rig (`lastBuild`); nếu chưa có
   thì dựng mới; bốn chân xuất thẳng model đã rig (không dựng khung humanoid);
   nếu dựng khung thất bại thì xuất model đã rig với rig viewport (fallback,

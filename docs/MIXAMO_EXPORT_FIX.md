@@ -621,3 +621,262 @@ Model (như XBot.fbx). Round-trip sau sửa: 27/27 track khớp, lệch tối đ
   metadata nguồn); file binary reference hiện zero channels ở fbx2gltf
   0.9.7 (xem trên); chưa thử mở bằng Blender/Unity/Unreal thật —
   cần user thử trên máy thật.
+
+### Mocap thật → FBX (Thiếu Lâm, StaffSpin 4,032 s, 2026-11-26)
+
+- Nguồn: video studio mocap thật (người mặc đồ marker + cầm gậy dài,
+  camera cố định, T-pose ở frame 0) + video chibi Thiếu Lâm làm mẫu
+  hình. MediaPipe PoseLandmarker heavy trích 96/96 frame, 24 fps,
+  clip `staffspin_clip.json` (format `pixistudio-mocap-clip-1`):
+  23 xương Mixamo, mỗi xương 96 quaternion delta so với T-pose frame 0
+  + Hips có root-motion position (delta mét), staff track = vector đơn
+  vị giữa 2 cổ tay + midpoint. `check_mocap.py` ALL HARD CHECKS PASS.
+- Compose clip: track rotation = delta × bind pose (rig studio có rest
+  quaternion identity nên track = delta); Hips position = restPos +
+  root-motion delta. **Đảo trái/phải khi map clip → xương rig** vì rig
+  studio bị mirror so với Mixamo + mesh (XBot thật: LeftArm ở +X;
+  rig đặt LeftArm ở −X; skin tay +X của mesh gắn vào xương tên
+  RightForeArm). Không đảo thì đòn đánh bị gương. Spine1/Spine2 không
+  có trong rig 23 xương (delta của chúng là identity nên không mất gì).
+- File `thieulam-Rigged-Mocap.fbx` (ASCII 7.3, **29.231.771 B**):
+  mesh đầy đủ 46.917 tris (không decimate), 23 xương, 1 clip StaffSpin
+  4,032 s once (22 tracks: 21 rotation + 1 Hips position, 96 keys),
+  gậy gỗ procedural dài 1,8 m (thân + 2 đầu) gắn RightHand, hướng theo
+  staff.direction[0], 2 texture nhúng đúng byte nguồn (map JPEG
+  269.271 B, normalMap PNG 1.294.122 B).
+- Kiểm thử: harness `test-thieulam-mocap.js` **41/41 ×2 lần** (cấu trúc
+  ASCII 14, FBXLoader parse 14, round-trip 1, playback 8, fbx2gltf +
+  texture 3, loop 1). Round-trip so với clip nguồn: **22/22 khớp,
+  lệch góc tối đa 0,0395°, lệch position 0**. fbx2gltf 0.9.7: 1 skin
+  23 joints, 1 animation StaffSpin 3,96 s (sample 24 fps), buffer
+  2.035.568 B, 2 texture trích đúng byte. Playback: f45 tay phải lệch
+  khỏi rest 1,701 (đòn đâm gậy), root motion Hips 0,316 m, gậy cách tay
+  0,0000 m ở mọi mốc, hướng gậy lúc nghỉ lệch staff.direction[0] 0,88°,
+  gậy xoay theo tay 36,1° ở t=2,52 s.
+- 2 bug thật của writer đã sửa trong `fbx-binary.js` (không chỉ cho
+  file này): (1) auto-detect trục dọc đo bbox của **mọi** mesh — gậy
+  dài 1,8 m nằm ngang làm bbox X (~2,1 m) vượt chiều cao 1,8 m nên
+  nhận nhầm X là trục dọc, xoay cả nhân vật 90° (nằm ngang). Giờ đo
+  bbox từ mesh skinned (thân nhân vật), không có skinned thì mới dùng
+  mọi mesh. (2) Geometry mesh gắn dưới xương bị nhân đôi `world`:
+  verts đã bake `world` rồi lại áp `boneWorld⁻¹·world` → prop lệch
+  ~0,8 m và sai hướng (gậy đứng dọc, lơ lửng trên tay). Giờ chỉ áp
+  `boneWorld⁻¹`. Bug (2) cũng làm **kiếm của file Coco đã giao bị lệch
+  khỏi tay 0,55–1,20 m** — đã re-export Coco bằng writer mới
+  (`coco-Rigged-Animated-FIXED.fbx`, kiếm về đúng tay, gap 0,01–0,75 m
+  dọc lưỡi kiếm); file Coco đã giao cần phát hành lại.
+- **V2 (2026-11-26) — sửa tay biến dạng bằng retarget world-space (Convention M'):**
+  User báo tay Thiếu Lâm bị biến dạng khi mở file. Đo thật: góc cổ tay lúc
+  nghỉ 147,5° (Thiếu Lâm) / 145,0° (Coco) so với XBot Mixamo thật 0,0° —
+  xương bàn tay trong rig studio bị lật (trục +Y chỉ ngược về khuỷu thay vì
+  ra đầu ngón tay). Gốc rễ: compose clip theo local space (`delta × rest`)
+  ngầm giả định rest model = T-pose performer, nhưng bind model là A-pose
+  và rest tay bị lật. Sửa: tính world orientation performer (Q^M = Q × C,
+  C đưa frame trích xuất về frame Mixamo +Y = hướng xương), rồi local đích
+  = (parent world)⁻¹ × source world — nhưng rig có rest quaternion identity
+  + child offset theo A-pose (không dọc +Y) nên cần thêm **R_fix**: phép quay
+  đưa +Y về hướng offset A-pose của xương (child local position, chuẩn hóa);
+  world đích W = Q^M × R_fix⁻¹ để **đoạn xương** (joint→joint) đi đúng hướng
+  performer. Tay khóa theo cẳng tay (H1, local tay = S_ForeArm, không track
+  tay) vì frame tay landmark bị lệch do ngón tay cong. Gậy KHÔNG gắn tay nữa:
+  xương riêng `ThieulamStaff` (không trong skin) với track T+R từ
+  `staff.midpoint_m` + `staff.direction` đo được. Kết quả V2
+  (`thieulam-Rigged-Mocap-V2.fbx`, 29.226.256 B): harness
+  `test-thieulam-mocap-v2.js` **46/46 ×2 lần** — góc cổ tay 0,00° (trước
+  147,45°), tay–gậy t=1,12: 0,115 m / t=2,25: 0,093 m (trước 0,778/0,857 m),
+  khuỷu 78,5–174,9°, round-trip world 0,117°, fbx2gltf 1 skin 23 joints +
+  1 anim, không warning. Coco V2 (`coco-Rigged-Animated-V2.fbx`,
+  18.589.608 B): sửa rest 2 tay về S_ForeArm + re-bind skin, kiếm local =
+  S_RightForeArm⁻¹ (world kiếm giữ nguyên, lệch 0,0000 m so với file FIXED),
+  build lại 3 clip (track giống hệt cũ vì clip không có track tay);
+  harness `test-coco-v2.js` **45/45 ×2 lần** — góc cổ tay 0,00° (trước
+  145°), gap gốc lưỡi 0,047 m, fbx2gltf 3 animations. Lưu ý: mô tả video
+  "gậy ngang t=1,12 / gậy dọc t=3,96" **không khớp clip đo được**
+  (f27 gậy chéo (-0,34,0,42,0,84); f95 gậy gần ngang (-0,86,0,22,0,46),
+  tay phải performer cầm gậy 0,040 m) — đối chiếu theo clip, không theo mô
+  tả. Hạn chế còn lại: tay model dài gấp ~2× tay performer (cẳng tay model
+  0,448 m vs performer 0,22 m) nên ở t=3,96 tay phải model cách gậy 0,214 m
+  (overshoot do tỷ lệ model Tripo, không phải lỗi retarget); chưa mở bằng
+  Blender/Unity/Unreal thật.
+- **WushuAttack — đòn múa võ tay không (2026-11-26, cùng pipeline V2, KHÔNG gậy):**
+  User gửi ảnh thủ thế (chibi Thiếu Lâm, FRONT/LEFT/BACK/RIGHT) + video mocap
+  studio mới (võ sư Thiếu Lâm thật, áo vàng, tay không, 10,03 s / 240 frame)
+  và yêu cầu đòn attack từ tư thế thủ trong ảnh tới các động tác trong video,
+  KHÔNG dang tay (cắt T-pose f0–49) và KHÔNG đá (cắt đá f114–144). Clip
+  `wushuattack_clip.json` (275.969 B, format `pixistudio-mocap-clip-1`):
+  WushuAttack 6,559 s / 157 frame / 24 fps / loop False, 23 xương Mixamo =
+  12 frame thủ thế procedural (0,5 s, từ ảnh FRONT: tay phải ngửa ngang ngực,
+  tay trái hướng ra trước ngang vai, khuỷu ~90°) + blend 7 frame vào đoạn A
+  (video f50–113, đánh tay) + crossfade 7 frame vào đoạn B (video f145–239,
+  xoay/đấm/thủ). `check_wushu.py` ALL HARD CHECKS PASS (không frame T-pose,
+  không frame đá — gót phải cao tối đa 0,081 m, gối phải ≥128°).
+  **Sửa clip trước khi xuất:** clip gốc có 8 frame cẳng tay bị tracking lỗi ở
+  đoạn xoay lưng (video f154–172, cổ tay visibility 0,002–0,015) làm khuỷu
+  gập tới 4,8–24° — đối chiếu video thấy sai thật (video f146 tay phải duỗi
+  thẳng đấm tới trước; video f107 hai tay thu về ngực, khuỷu ~60–90°). Slerp
+  nội suy delta thuần KHÔNG đủ (khuỷu vẫn 12–17° vì tay trên cũng xoay) nên
+  sửa trực tiếp góc khuỷu: xoay world orientation cẳng tay quanh trục bản lề
+  vừa đủ để khuỷu = nội suy tuyến tính giữa 2 frame tốt gần nhất (28–42°).
+  Chỉ sửa delta 2 cẳng tay (LeftForeArm f75–76, f86–87; RightForeArm f82–85),
+  clip gốc không đổi (`wushuattack_clip_fixed.json`, field `repair` ghi rõ).
+  File `thieulam-Rigged-WushuAttack.fbx` (ASCII 7.3, **29.340.180 B**): cùng
+  mesh 46.917 tris + rig 23 xương như V2, 1 take WushuAttack 6,559 s once,
+  20 tracks (19 rotation + 1 Hips position), KHÔNG xương gậy/mesh gậy,
+  2 texture nhúng đúng byte nguồn. Harness `test-thieulam-wushu.js`
+  **45/45 ×2 lần** — thủ thế t=0 khớp FK clip 0,0223 m (cả 2 cổ tay), khuỷu
+  t=0 95,7°/90,0°, T-pose 0 frame, gót phải cao nhất 0,149 m, gối phải nhỏ
+  nhất 115,5°, cổ tay tối đa 0,02°, khuỷu 26,8–174,1°, root motion 0,498 m,
+  round-trip 20/20 (0,1169°), world round-trip 0,1422°, fbx2gltf 1 skin
+  23 joints + 1 anim WushuAttack 6,50 s, không warning. Hồi quy:
+  `test-thieulam-mocap-v2.js` 46/46, `test-fbx-animation.js` 42/42.
+- **V3 / Wushu V2 (2026-11-26) — sửa lỗi CHÂN BAY LÊN TRỜI do Euler wrap
+  trong writer:** cả 2 file trên đều có chân bay 1,2–1,56 m ở nhiều frame
+  (StaffSpin V2: 16 frame, cao nhất 1,56 m @f65; WushuAttack V1: 10 frame,
+  cao nhất 1,43 m @f91) trong khi video cho thấy chân chạm đất (chỉ f65
+  StaffSpin có nhảy thật, ~0,15–0,25 m). **Nguyên nhân KHÔNG phải clip
+  data** (cổ chân landmark ≤0,169 m; chân clip ≤0,20 m) mà là writer:
+  Euler ZYX ghi wrap [-180°, +180°] từng key độc lập; khi quay thật vượt
+  ngưỡng ±180° giữa 2 key (Hips_RZ 178,6 → -179,3 ở keys 64→65, span
+  -357,9°; UpLeg_RZ tương tự), FBXLoader chèn key nội suy đi đường DÀI và
+  Hips world lệch 149–176° ở t=f/24 → chân bay. Ở đúng key time thì file
+  đúng nên harness cũ bỏ sót — nó chỉ sample ở key time (số "gót phải
+  0,149 m" của check (4d) Wushu là chiều cao xương Foot lúc nghỉ đo ở key
+  time, không phải lỗi). **Sửa:** unwrap Euler trong writer
+  (`fbx-binary.js`, nhánh animation `R`: cộng/trừ 360° cho 2 key liên tiếp
+  lệch ≤180°). Góc quay tại mỗi key không đổi (Euler ±360° là cùng 1
+  rotation), chỉ đường nội suy đổi sang đường ngắn; không sửa clip JSON.
+  File mới `thieulam-Rigged-Mocap-V3.fbx` (29.226.196 B, StaffSpin) +
+  `thieulam-Rigged-WushuAttack-V2.fbx` (29.340.115 B, WushuAttack): harness
+  mới `test-thieulam-mocap-v3.js` **50/50 ×2** và `test-thieulam-wushu-v2.js`
+  **49/49 ×2** — check chân mới (section 8) đo Foot bone world Y khi
+  playback FBX dày đặc (key + midpoint + t=f/24, 287/470 mẫu): chân tối đa
+  0,211 m / 0,163 m (≤0,30 m), các frame lỗi cũ nay ≤0,193 m / ≤0,118 m,
+  Hips world ở t=f/24 lệch ≤10,3° / ≤5,11° (trước 149–176°), không còn
+  span Euler ≥180° trong file (tối đa 162,6° / 178,5°), loader không chèn
+  thêm key (mọi track đúng 96 / 157 keys). Ngưỡng 0,30 m: cổ chân thật cao
+  nhất 0,169 m + biên cho chân model ngắn hơn performer; nhảy thật f65 vẫn
+  dưới ngưỡng nên không cần ngoại lệ. Hồi quy: V2 46/46, Wushu V1 45/45,
+  `test-fbx-animation.js` 42/42, `test-fbx-roundtrip.js` 27/27,
+  `test-coco-v2.js` 45/45. **Bài học:** mọi harness playback sau này phải
+  sample cả giữa key (midpoint + t=f/24), không chỉ key time — lỗi nội suy
+  chỉ xuất hiện giữa key.
+  Hạn chế: cú sửa khuỷu để lại 1 jump world cẳng tay 64,9° @f76 (ranh giới
+  đoạn tracking lỗi; clip gốc đã có jump 61,5° @f132 nên cùng bậc); khuỷu
+  nhỏ nhất sau sửa 26,8° (sát ngưỡng 25°, là tư thế thu tay đấm thật, không
+  phải gập lỗi); đo khuỷu phải dùng khớp tay (Arm), không dùng khớp vai —
+  đo bằng vai sai tới 72° (vai cách khớp tay 0,195 m); chưa mở bằng
+  Blender/Unity/Unreal thật.
+- Giới hạn: Spine/Spine1/Spine2 delta = identity theo cấu trúc (toàn
+  bộ gập/xoắn thân nằm trong track Hips — tư thế vẫn đúng nhưng hông
+  nghiêng theo thân); đoạn xoay f59–77 visibility thấp (tay trái khuất
+  sau thân, MediaPipe mirror nhãn trái/phải); tay trái chuyển ~55–79°
+  trong 1 frame ở f45 (đòn đâm gậy, điểm kỳ dị twist) — giữ nguyên như
+  đo được; bind pose là A-pose còn delta tính từ T-pose (compose
+  delta×bind vẫn đúng); gậy chỉ theo RightHand (tay trái không cầm
+  gậy); Hips yaw quét ~344° qua wrap ±180° nên FBXLoader chèn thêm
+  key nội suy ở 5 track (97–101 keys thay vì 96 — hành vi của loader,
+  writer vẫn ghi đúng 96 keys/curve); chưa mở bằng Blender/Unity/Unreal
+  thật — cần user thử trên máy thật.
+
+## Lần 7 — Preset Mixamo không ép mesh-only + nút Save Mixamo im lặng trên model đã rig (2026-11-26)
+
+**Triệu chứng:** user bấm xuất FBX thường rồi upload lên Mixamo, nhận
+"Sorry, unable to map your existing skeleton" (ảnh chụp màn hình).
+
+**Gốc 1 — preset không ép mesh-only:** `saveFBXBinary` chỉ truyền
+`{fps:30}` + version/upAxis/autoScale từ preset cho `FBXBinary.write`,
+KHÔNG có `noSkeleton/prepareMixamo` — file giữ nguyên skeleton (A-pose,
+chỉ 24/65 xương có skin) nên Mixamo đi nhánh map-skeleton và thất bại
+đúng như ảnh. Preset mặc định là `'mixamo'` nên bấm xuất FBX thường là
+dính lỗi này. **Sửa:** `saveFBXBinary` (`js/exporter/save-manager.js`)
+khi `SaveManager.exportPreset === 'mixamo'` thì chuyển thẳng sang đường
+Mixamo-safe (`saveFBXMixamo`: prepareMixamoSafe + preflight +
+`noSkeleton: true, prepareMixamo: true, version 7300`); preset
+Unity/Unreal/không preset vẫn giữ skeleton như cũ. Dispatch `case 'fbx'`
+đã đi qua `saveFBXBinary` nên tự đúng đường; nút topbar "Save Mixamo"
+vẫn gọi `save('fbx-mixamo')`.
+
+**Gốc 2 — nhãn gây hiểu lầm:** format `'fbx'` tên "FBX Binary
+(Mixamo-ready)", thông báo sau lưu nói "Mixamo/Blender/Unity đọc được"
+— SAI với file có skeleton; format `'fbx-mixamo-rig'` mô tả còn nói
+file có 22 xương mixamorig (từ round 4 file xuất ra đã là mesh-only);
+Rig 1 Lượt đặt tên file `name_rigged_mixamo.fbx` cho file mesh-only
+(chữ "rigged" gây nhầm ngược). **Sửa:** `'fbx'` đổi thành "FBX Binary
+(có rig — Blender/Unity/Unreal)", desc nói rõ KHÔNG dùng cho Mixamo
+(Mixamo sẽ báo "unable to map your existing skeleton" — muốn lên Mixamo
+thì dùng FBX Mixamo mesh-only); `'fbx-mixamo-rig'` đổi thành "FBX 2013
+Mixamo-safe (mesh-only, tự auto-rig)", desc sửa theo thực tế (khung 65
+xương chỉ ở trong scene để làm animation, không xuất xương ra file);
+Rig 1 Lượt đổi tên file thành `name_mixamo.fbx`; thông báo sau lưu ở
+`saveFBXBinary` phân biệt file có skeleton ("dùng cho Blender/Unity/
+Unreal. KHÔNG upload file này lên Mixamo") và file mesh-only
+("Mixamo-safe, upload Mixamo được"); creator string "(Mixamo-ready)"
+trong `fbx-binary.js` (header ASCII + Creator) bị gỡ — trước đây nó
+đóng dấu vào MỌI file xuất ra kể cả file có rig.
+
+**Gốc 3 — nút Save Mixamo KHÔNG RA FILE trên model vừa rig (harness
+mới bắt được):** `MixamoSafeExport.prepare` (và `countTris`) bỏ qua mọi
+mesh có `userData.skipSkin` — nhưng `bindSkin` đánh dấu chính SkinnedMesh
+của nhân vật bằng `skipSkin: true` (nghĩa là "đã skin, đừng skin lại",
+không phải "đừng xuất"), và thay thế mesh gốc bằng SkinnedMesh đó nên
+scene sau rig chỉ còn đúng 1 mesh thật — prepare tìm được 0 mesh, báo
+"Không có mesh nào để xuất FBX", không có file. Validator
+(`mixamo-validator.js`) đã từng sửa đúng lỗi này ("Mesh đã skin
+(skipSkin) VẪN là mesh thật phải đếm") nhưng exporter chưa sửa theo.
+**Sửa:** `js/exporter/mixamo-safe-export.js` — `countTris` và `prepare`
+chỉ bỏ `isBoneVisual`, giữ lại mesh `skipSkin` (prepare đã xử lý đúng
+SkinnedMesh: clone geometry, nướng matrixWorld, xoá skinIndex/skinWeight,
+dựng lại bằng THREE.Mesh thường).
+
+**Kiểm thử:** harness mới `test-mixamo-preset.js` **48/48 ×2 lần** trên
+GLB thật `tripo_convert_lenhhosung.glb` đã rig trước bằng RigOneClick
+(23 xương, 1 SkinnedMesh — đúng điều kiện gây lỗi): baseline
+`save('fbx-mixamo')` và preset-mixamo `save('fbx')` đều ra file v7300,
+0 xương / 0 skin qua FBXLoader + fbx2gltf (1 mesh, 0 LimbNode thô),
+43.504 tris (< 50.000, đã decimate giữ UV), thông báo "Save Mixamo xong"
++ "mesh-only (Mixamo tự auto-rig)"; preset Unity/Unreal/không preset
+vẫn giữ skeleton v7400 (23 xương, 1 skin); nhãn F1–F8 + tên file Rig 1
+Lượt đều đúng; scene nguồn vẫn còn xương sau khi xuất. Hồi quy:
+`test-studio-export-real-glb.js` 80/80, `test-mixamo-safe-export.js`
+40/40, `test-rig-oneclick.js` 41/41 (check 3.2 cập nhật theo tên file
+mới), `test-fbx-mixamo.js` 73/73, `node --check` OK trên 4 file sửa.
+**Chưa đẩy GitHub** — chờ user duyệt (gộp cùng lần đẩy writer + docs
+đang chờ).
+
+- **HeartDraw + Idle/Run (2026-11-26) — nhân vật Thiếu Lâm 3 trạng thái:**
+  user gửi video nhà sư vẽ hình trái tim (T-pose → thu tay → vẽ tim bằng
+  2 tay, có vệt sáng hình tim là HIỆU ỨNG video, không phải chuyển động
+  thân) và nhờ làm nhân vật Thiếu Lâm trạng thái idle/run + vẽ tim.
+  Clip `heartdraw_clip.json` (170.455 B, HeartDraw "Vẽ trái tim", 4,032 s /
+  96 frames / 24 fps / loop False, 23 xương, KHÔNG staff track):
+  `check_heart.py` ALL HARD CHECKS PASS — f57 hai cổ tay trước ngực
+  (Z 0,325/0,378 m), khuỷu gập 101,4°/97,4°; cổ chân chỉ nhích 0,010 m
+  (chân chạm đất suốt clip, chân trong video nằm ngoài khung hình nên
+  track chân gần như identity); gối ≥145,8°; jump tệ nhất 42,2°
+  LeftForeArm @f37. Hips Z bị ZERO có chủ ý (người đứng yên, proxy Z đo
+  độ co thân chứ không phải dịch chuyển). File rest riêng
+  `heart_rest_locals.json` (tên trường khác: `rest_local_quat` /
+  `rest_world_quat` thay vì `L0`/`Q0` — converter phải map lại).
+  File mới `thieulam-Rigged-IdleRunHeart.fbx` (29.173.484 B, ASCII 7.3):
+  1 SkinnedMesh 46.917 tris + rig 23 xương, 3 takes — Idle 2,4 s loop +
+  Run 0,8 s loop (procedural theo mẫu Coco) + HeartDraw 4,032 s once
+  (mocap, converter V2 world-space retarget + writer unwrap Euler),
+  KHÔNG gậy, 2 texture nhúng đúng byte nguồn. Harness mới
+  `test-thieulam-heart.js` **44/44 ×2 lần**: cổ tay 0,00° lúc nghỉ /
+  tối đa 0,01° cả 3 clip; vẽ tim f57 cổ tay trước ngực (chest+0,573 /
+  +0,440 m), khuỷu 97,7°/99,4° (đo bằng khớp tay); tay khép 0,420 m
+  (đáy tim) rồi mở 1,824 m (2 thùy), X-range 1,797 m; chân dày đặc
+  (key + midpoint + t=f/24) tối đa 0,169 m (HeartDraw) / 0,120 m (Idle) /
+  0,251 m (Run); không còn span Euler ≥180° (tối đa 70,3°);
+  round-trip HeartDraw 20/20 (lệch tối đa 0,1262°) + world round-trip
+  0,0725°; fbx2gltf SDK: 1 skin 23 joints, 3 anim đúng thời lượng,
+  2 images đúng byte, không warning. Hồi quy: V3 50/50, Wushu V2 49/49,
+  `test-fbx-animation.js` 42/42. Hai điểm sửa so với mẫu Coco gốc:
+  (1) Run GIẢM (chân ±26°/gối 50°/bob 0,04 → ±20°/32°/0,02) để cổ chân
+  không bay quá 0,30 m; (2) Run key cuối = key đầu ở mọi track (Coco
+  gốc để key cuối = 0/rest nên nối loop giật 20° — harness bắt được,
+  đã sửa để loop mượt thật; worstQ sau sửa 0,0000°). Lưu ý đo lường:
+  `2*acos(|dot|)` khuếch đại nhiễu float32 thành lệch ảo 0,02–0,04°
+  khi so 2 quaternion giống hệt nhau — check loop-seam phải dùng góc
+  ổn định (quaternion tương đối + atan2). Chưa mở bằng
+  Blender/Unity/Unreal thật.

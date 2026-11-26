@@ -13,7 +13,7 @@
  *
  * Một cú nhấp "Rig 1 Lượt" chạy hết pipeline; chỉnh marker xong bấm
  * "Rig lại" không cần làm lại từ đầu; rig xong bấm "Export FBX" để
- * tải file <tên-model>_rigged_mixamo.fbx về, upload thẳng lên Mixamo.
+ * tải file <tên-model>_mixamo.fbx về, upload thẳng lên Mixamo.
  *
  * LƯU Ý TRUNG THỰC (khác Meshy cloud):
  *  • Rig trong viewport dùng RigAutoGen: 23 xương (+20 ngón tay nếu bật
@@ -445,7 +445,7 @@
       return Promise.resolve(null);
     }
     const name = sanitizeName(modelName || (PixiStudio.Models && PixiStudio.Models.current && PixiStudio.Models.current.name) || target.name || 'model');
-    const filename = name + '_rigged_mixamo.fbx';
+    const filename = name + '_mixamo.fbx';
     const V = PixiStudio.MixamoValidator;
     const W = PixiStudio.FBXBinary;
     if (!W || !W.write) {

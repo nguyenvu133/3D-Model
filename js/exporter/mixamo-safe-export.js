@@ -81,7 +81,12 @@
     if (!root || !root.traverse) return { tris: 0, meshes: 0 };
     root.traverse(function (o) {
       if (!o.isMesh || !o.geometry || !o.geometry.attributes || !o.geometry.attributes.position) return;
-      if (o.userData && (o.userData.isBoneVisual || o.userData.skipSkin)) return;
+      /* Chỉ bỏ visual xương. Mesh đã skin (skipSkin) VẪN là mesh thật
+         phải đếm — giống validator (đã sửa): trước đây bị bỏ qua nên
+         prepare báo "Không có mesh nào" trên model vừa rig xong, nút
+         Save Mixamo không ra file. skipSkin chỉ nghĩa là "đã skin,
+         đừng skin lại", không phải "đừng xuất". */
+      if (o.userData && o.userData.isBoneVisual) return;
       meshes++;
       tris += triCountOf(o.geometry);
     });
@@ -362,7 +367,14 @@
     var items = [];   /* { name, geo, material, reducible } */
     root.traverse(function (o) {
       if (!o.isMesh || !o.geometry || !o.geometry.attributes || !o.geometry.attributes.position) return;
-      if (o.userData && (o.userData.isBoneVisual || o.userData.skipSkin)) return;
+      /* Chỉ bỏ visual xương (joint sphere / octahedron). Mesh đã skin
+         (skipSkin — SkinnedMesh do Rig 1 Lượt tạo) VẪN là mesh thật
+         phải xuất: prepare clone geometry, nướng matrixWorld rồi XOÁ
+         skinIndex/skinWeight và dựng lại bằng THREE.Mesh thường bên
+         dưới. Bỏ qua skipSkin ở đây thì trên model vừa rig xong
+         prepare báo "Không có mesh nào để xuất FBX" và nút Save
+         Mixamo không ra file — đúng lỗi validator từng gặp (đã sửa). */
+      if (o.userData && o.userData.isBoneVisual) return;
       var geo = o.geometry.clone();
       geo.applyMatrix4(o.matrixWorld);
       geo.deleteAttribute('skinIndex');

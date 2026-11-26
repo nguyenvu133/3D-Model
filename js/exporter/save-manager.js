@@ -30,10 +30,10 @@
     { id: 'gltf', name: 'GLTF (JSON)', ext: '.gltf', icon: 'file', real: true, desc: 'JSON text — dễ inspect, dung lượng lớn hơn' },
     { id: 'zip-gltf', name: 'GLTF Source Pack (ZIP)', ext: '.zip', icon: 'folder', real: true, desc: 'GLTF JSON + textures tách file — chuẩn nguồn cho pipeline' },
     { id: 'dae', name: 'DAE Collada + Textures', ext: '.zip', icon: 'scene', real: true, desc: 'Collada XML + texture PNG — Blender/Maya/Unity import chuẩn' },
-    { id: 'fbx', name: 'FBX Binary (Mixamo-ready)', ext: '.fbx', icon: 'file', real: true, desc: 'FBX 7.4 BINARY có skeleton + skin + bind pose — Mixamo, Blender, Unity, Maya đều đọc. Cần Auto-Rig trước khi xuất.' },
+    { id: 'fbx', name: 'FBX Binary (có rig — Blender/Unity/Unreal)', ext: '.fbx', icon: 'file', real: true, desc: 'FBX 7.4 BINARY có skeleton + skin + bind pose — dùng cho Blender/Unity/Unreal/Maya. KHÔNG dùng cho Mixamo: file có xương sẽ bị Mixamo báo "unable to map your existing skeleton" — muốn lên Mixamo thì dùng FBX Mixamo (mesh-only) hoặc nút Save Mixamo.' },
     { id: 'fbx-mixamo', name: 'FBX Mixamo (MÀU + auto-rig)', ext: '.fbx', icon: 'wand', real: true, desc: 'FBX 2013 BINARY đã sửa cho Mixamo: mesh-only (Mixamo tự auto-rig), hướng +Y, đáy y=0, cao 1.8, mặt +Z, MẶT KÍN — VÀ nhúng texture vào Video.Content + nối Texture→Material (DiffuseColor/NormalMap) nên model có MÀU khi lên Mixamo.' },
     { id: 'blend-kit', name: 'BLEND — Blender Import Kit', ext: '.zip', icon: 'model', real: true, desc: 'ZIP: model.glb + script .py chạy trong Blender (Scripting → Run) tạo mesh+texture thật → Save As .blend' },
-    { id: 'fbx-mixamo-rig', name: 'FBX 2013 + Mixamo rig (giống X Bot.fbx)', ext: '.fbx', icon: 'model', real: true, desc: 'Bản sao cấu trúc file X Bot.fbx của Mixamo: FBX 2013 (version 7300), có 22 xương tên mixamorig:*, NodeAttribute TypeFlags "Skeleton", Model::LimbNode, Deformer::Skin + Cluster, Pose BindPose, Material + texture nhúng. Tự auto-rig + auto-skin nếu model chưa có xương.' },
+    { id: 'fbx-mixamo-rig', name: 'FBX 2013 Mixamo-safe (mesh-only, tự auto-rig)', ext: '.fbx', icon: 'model', real: true, desc: 'FBX 2013 (version 7300) Mixamo-safe: file xuất ra là mesh-only (Mixamo tự auto-rig) + texture nhúng, < 50k tris. Khung 65 xương mixamorig:* chỉ dựng TRONG SCENE để làm animation, KHÔNG xuất xương ra file — vì file có xương bị Mixamo từ chối ở bước map-skeleton (xem MIXAMO_EXPORT_FIX.md Lần 4).' },
     { id: 'obj', name: 'OBJ', ext: '.obj', icon: 'file', real: true, desc: 'Wavefront — chỉ geometry, phổ biến Universal' },
     { id: 'obj-color', name: 'OBJ + MTL + Texture (ZIP CÓ MÀU)', ext: '.zip', icon: 'scene', real: true, desc: 'ZIP: model.obj + model.mtl + ảnh texture (map_Kd / norm). OBJ chỉ mang màu khi đi kèm .mtl và ảnh — ZIP giữ đủ bộ 3 để Blender/Maya/Unity/Mixamo import ra CÓ MÀU.' },
     { id: 'stl', name: 'STL', ext: '.stl', icon: 'print', real: true, desc: '3D Printing — binary mesh không màu' },
@@ -835,6 +835,14 @@ tỉ lệ.
   }
 
   function saveFBXBinary(target, modelName, finish, fmt) {
+    /* Lần 7 (11-2026) — preset Mixamo KHÔNG được ghi skeleton: file có
+       xương (A-pose, chỉ 24/65 xương có skin) bị Mixamo từ chối ở bước
+       map-skeleton ("unable to map your existing skeleton"). Preset
+       Mixamo luôn đi đường Mixamo-safe (mesh-only, Mixamo tự auto-rig)
+       giống hệt nút Save Mixamo; preset Unity/Unreal vẫn giữ skeleton. */
+    if (SaveManager.exportPreset === 'mixamo') {
+      return saveFBXMixamo(target, modelName, finish, fmt);
+    }
     PixiStudio.Notifications.updateLoading(30, 'Đang ghi FBX Binary 7.4 (skeleton + skin + bind pose)...');
     return new Promise(function (resolve) {
       setTimeout(function () {
@@ -858,8 +866,8 @@ tỉ lệ.
             title: 'FBX Binary đã lưu',
             message: r.meshes + ' mesh · ' + r.bones + ' bone · ' + r.clusters + ' skin cluster · ' + U.formatBytes(r.bytes) +
               (r.hasSkin
-                ? ' — có rig + skin: Mixamo/Blender/Unity đọc được.'
-                : ' — CHƯA có skin: bấm Auto-Rig trước khi upload lên Mixamo.'),
+                ? ' — có rig + skin: dùng cho Blender/Unity/Unreal. KHÔNG upload file này lên Mixamo (Mixamo sẽ báo "unable to map your existing skeleton") — muốn lên Mixamo thì dùng nút Save Mixamo (FBX Mixamo mesh-only).'
+                : ' — mesh-only (không xương): Mixamo-safe, upload Mixamo được; Blender/Unity cũng đọc được.'),
             duration: 11000
           });
           resolve(null);
@@ -1783,7 +1791,9 @@ tỉ lệ.
 
       /* ===== FBX ASCII 7.4 — Maya/Autodesk (Blender cần binary) ===== */
       case 'fbx': {
-        /* Ưu tiên FBX BINARY 7.4 có skeleton + skin (Mixamo/Blender/Unity đọc được).
+        /* Ưu tiên FBX BINARY 7.4 có skeleton + skin (Blender/Unity/Unreal đọc được).
+           Lần 7: preset Mixamo KHÔNG đi đường này — saveFBXBinary tự chuyển sang
+           đường Mixamo-safe (mesh-only) vì file có xương bị Mixamo từ chối.
            ASCII cũ chỉ có geometry nên Mixamo từ chối — chỉ dùng làm fallback. */
         if (PixiStudio.FBXBinary) return saveFBXBinary(target, modelName, finish, fmt);
         PixiStudio.Notifications.updateLoading(40, 'Tạo FBX ASCII…');
