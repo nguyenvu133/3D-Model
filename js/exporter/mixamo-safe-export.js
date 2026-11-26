@@ -101,8 +101,11 @@
     ]);
   };
   /* Giảm tris bằng meshopt edge-collapse — giữ hình dạng + UV.
-     Trả { geometry, trisAfter, err } hoặc null khi không dùng được. */
-  function decimateMeshopt(geometry, targetTris) {
+     Trả { geometry, trisAfter, err } hoặc null khi không dùng được.
+     targetError (tùy chọn): sai số tối đa cho phép (m) — mặc định
+     0.01 (1cm). Nút "Tối ưu FBX <1MB" truyền 0.02 để giảm mạnh hơn
+     (mục tiêu 5k tris cần sai số lớn hơn 1cm mới đạt được). */
+  function decimateMeshopt(geometry, targetTris, targetError) {
     var THREE = window.THREE;
     var M = (typeof window !== 'undefined') ? window.MeshoptSimplifier : null;
     if (!M || typeof M.simplify !== 'function') return null;
@@ -120,9 +123,10 @@
     }
     var srcTris = Math.floor(idxArr.length / 3);
     if (srcTris <= targetTris) return null; /* không cần giảm */
+    var err = (typeof targetError === 'number' && targetError > 0) ? targetError : MESHOPT_TARGET_ERROR;
     var out;
     try {
-      out = M.simplify(idxArr, posArr, 3, targetTris * 3, MESHOPT_TARGET_ERROR, ['LockBorder']);
+      out = M.simplify(idxArr, posArr, 3, targetTris * 3, err, ['LockBorder']);
     } catch (e) { return null; }
     if (!out || !out[0] || !out[0].length) return null;
     var newIndex = out[0];

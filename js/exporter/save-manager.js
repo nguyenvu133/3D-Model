@@ -938,6 +938,348 @@ tỉ lệ.
   };
 
   /* ============================================================
+     TỐI ƯU FBX < 1MB — nút "Tối ưu FBX" (11-2026)
+     ------------------------------------------------------------
+     Tối ưu model ĐANG Ở TRONG SCENE xuống dưới 1 MiB để chia sẻ /
+     upload nơi giới hạn dung lượng: giảm tris bằng meshopt (giữ
+     hình dạng + UV + skin weights) + thu nhỏ texture về JPEG
+     (map + normalMap, 512px rồi 256px) + giữ nguyên skeleton/skin
+     (khác nút Save Mixamo là mesh-only). Lặp tối đa 5 mức, dừng
+     ngay khi file < 1MB; nếu 5 mức vẫn chưa đủ thì tải bản nhỏ
+     nhất kèm cảnh báo.
+
+     QUAN TRỌNG — writer ghi Vertices/Normals/UV dạng double (8
+     byte) và Normals/UV theo từng polygon-vertex, nên 1 tri tốn
+     ~150 byte (đã đo): 5.000 tris ≈ 750KB + texture 130KB mới
+     vừa 1MB. Vì vậy mức đầu đã là 5.000 tris (không phải 47k như
+     nút Mixamo). Ngoài ra writer ghi TOÀN BỘ đỉnh trong attribute
+     (kể cả đỉnh không còn trong index sau decimate) nên sau khi
+     decimate PHẢI compact geometry (chỉ giữ đỉnh còn dùng) — nếu
+     không file vẫn to như gốc dù tris đã giảm.
+     ============================================================ */
+  var OPT_1MB = 1048576; /* 1 MiB */
+  var OPT_ATTEMPTS = [
+    { tris: 5000, tex: 512, q: 0.70, dropNormal: false, err: 0.02 },
+    { tris: 3500, tex: 512, q: 0.60, dropNormal: false, err: 0.02 },
+    { tris: 2500, tex: 256, q: 0.70, dropNormal: false, err: 0.03 },
+    { tris: 1800, tex: 256, q: 0.60, dropNormal: false, err: 0.03 },
+    { tris: 1200, tex: 256, q: 0.50, dropNormal: true, err: 0.04 }
+  ];
+
+  /* Số tam giác của 1 geometry (triCountOf nằm trong
+     MixamoSafeExport, không có sẵn trong scope này). */
+  function triCountOfGeo(geo) {
+    if (!geo || !geo.attributes || !geo.attributes.position) return 0;
+    return Math.floor((geo.index ? geo.index.count : geo.attributes.position.count) / 3);
+  }
+
+  /* Clone 1 model (kể cả rig) để xuất file mà KHÔNG sửa scene.
+     THREE.Object3D.clone() của SkinnedMesh giữ skeleton trỏ về
+     xương GỐC (không phải xương clone) → writer tra
+     boneIds[bone.uuid] sẽ lệch / crash (boneWorldX[uuid] undefined).
+     Hàm này rebind skeleton của mesh clone về xương clone (khớp
+     theo tên — xương rig có tên duy nhất), giữ nguyên boneInverses
+     (bind matrix không đổi vì xương clone cùng transform local). */
+  function cloneModelForExport(root) {
+    var THREE = window.THREE;
+    var clone = root.clone(true);
+    var origBones = [], cloneBones = [];
+    root.traverse(function (o) { if (o.isBone) origBones.push(o); });
+    clone.traverse(function (o) { if (o.isBone) cloneBones.push(o); });
+    var byName = {};
+    cloneBones.forEach(function (b) { byName[b.name] = b; });
+    var boneMap = new Map();
+    origBones.forEach(function (b) { if (byName[b.name]) boneMap.set(b, byName[b.name]); });
+    clone.traverse(function (o) {
+      if (o.isSkinnedMesh && o.skeleton && o.skeleton.bones) {
+        var nb = o.skeleton.bones.map(function (b) { return boneMap.get(b) || b; });
+        o.skeleton = new THREE.Skeleton(nb, o.skeleton.boneInverses);
+      }
+    });
+    return clone;
+  }
+
+  /* Compact geometry: chỉ giữ các đỉnh còn được index dùng tới, remap
+     index theo. BẮT BUỘC sau decimateMeshopt vì nó chỉ đổi index
+     (attribute vẫn giữ đủ đỉnh gốc) mà writer ghi toàn bộ đỉnh trong
+     attribute thành double → file không nhỏ lại. Compact là phép
+     biến đổi không mất mát (chỉ bỏ đỉnh thừa), giữ nguyên mọi
+     attribute theo đỉnh (kể cả skinIndex/skinWeight). */
+  function compactGeometry(geometry) {
+    var THREE = window.THREE;
+    var index = geometry.index;
+    if (!index || !index.array) return geometry;
+    var idxArr = index.array;
+    var pos = geometry.attributes.position;
+    if (!pos) return geometry;
+    var n = pos.count;
+    var remap = new Int32Array(n);
+    for (var i = 0; i < n; i++) remap[i] = -1;
+    var used = [];
+    for (var j = 0; j < idxArr.length; j++) {
+      var vi = idxArr[j];
+      if (remap[vi] === -1) { remap[vi] = used.length; used.push(vi); }
+    }
+    if (used.length === n) return geometry; /* không có đỉnh thừa */
+    var newCount = used.length;
+    var g = new THREE.BufferGeometry();
+    Object.keys(geometry.attributes).forEach(function (name) {
+      var attr = geometry.attributes[name];
+      var itemSize = attr.itemSize;
+      var Arr = attr.array.constructor;
+      var out = new Arr(newCount * itemSize);
+      for (var u = 0; u < newCount; u++) {
+        var src = used[u];
+        for (var k = 0; k < itemSize; k++) out[u * itemSize + k] = attr.array[src * itemSize + k];
+      }
+      g.setAttribute(name, new THREE.BufferAttribute(out, itemSize));
+    });
+    var newIdx = new Uint32Array(idxArr.length);
+    for (var j2 = 0; j2 < idxArr.length; j2++) newIdx[j2] = remap[idxArr[j2]];
+    g.setIndex(new THREE.BufferAttribute(newIdx, 1));
+    g.computeBoundingBox();
+    g.computeBoundingSphere();
+    return g;
+  }
+
+  /* Weld/index geometry: gộp các đỉnh trùng (vị trí + normal + UV +
+     skin) thành 1 đỉnh duy nhất, trả geometry đã index. BẮT BUỘC
+     trước meshopt vì FBXLoader trả geometry non-indexed (mỗi tam
+     giác 3 đỉnh riêng, 140.751 verts cho 46.917 tris) → meshopt
+     không có cạnh chung để collapse nên simplify trả nguyên không
+     giảm (đã đo: 46.917 → 46.917, err 0). Key gồm đủ attribute để
+     không gộp nhầm đỉnh khác normal (cạnh sắc) hay khác skin weights. */
+  function weldGeometry(geometry) {
+    var THREE = window.THREE;
+    if (!geometry || geometry.index) return geometry;
+    var pos = geometry.attributes.position;
+    if (!pos) return geometry;
+    var names = Object.keys(geometry.attributes);
+    var n = pos.count;
+    var map = new Map();
+    var remap = new Int32Array(n);
+    var used = [];
+    for (var i = 0; i < n; i++) {
+      var parts = [];
+      for (var a = 0; a < names.length; a++) {
+        var attr = geometry.attributes[names[a]];
+        var base = i * attr.itemSize;
+        for (var k = 0; k < attr.itemSize; k++) {
+          var v = attr.array[base + k];
+          parts.push(typeof v === 'number' ? v.toFixed(5) : String(v));
+        }
+      }
+      var key = parts.join('|');
+      var idx = map.get(key);
+      if (idx === undefined) { idx = used.length; map.set(key, idx); used.push(i); }
+      remap[i] = idx;
+    }
+    if (used.length === n) {
+      /* Không gộp được đỉnh nào — vẫn cần index để meshopt chạy. */
+      var g0 = new THREE.BufferGeometry();
+      Object.keys(geometry.attributes).forEach(function (nm) { g0.setAttribute(nm, geometry.attributes[nm]); });
+      var idx0 = new Uint32Array(n);
+      for (var j0 = 0; j0 < n; j0++) idx0[j0] = j0;
+      g0.setIndex(new THREE.BufferAttribute(idx0, 1));
+      g0.computeBoundingBox(); g0.computeBoundingSphere();
+      return g0;
+    }
+    var g = new THREE.BufferGeometry();
+    names.forEach(function (name) {
+      var at = geometry.attributes[name];
+      var itemSize = at.itemSize;
+      var Arr = at.array.constructor;
+      var out = new Arr(used.length * itemSize);
+      for (var u = 0; u < used.length; u++) {
+        var src = used[u];
+        for (var k2 = 0; k2 < itemSize; k2++) out[u * itemSize + k2] = at.array[src * itemSize + k2];
+      }
+      g.setAttribute(name, new THREE.BufferAttribute(out, itemSize));
+    });
+    var newIdx = new Uint32Array(n);
+    for (var j = 0; j < n; j++) newIdx[j] = remap[j];
+    g.setIndex(new THREE.BufferAttribute(newIdx, 1));
+    g.computeBoundingBox();
+    g.computeBoundingSphere();
+    return g;
+  }
+
+  /* Decimate toàn bộ mesh trong clone về tổng triBudget (chia theo tỉ
+     lệ tris gốc, như prepare). targetError: sai số meshopt (m).
+     Trả {trisBefore, trisAfter}. */
+  function decimateCloneToBudget(clone, triBudget, targetError) {
+    var MSE = PixiStudio.MixamoSafeExport;
+    var meshes = [];
+    clone.traverse(function (o) {
+      if (o.isMesh && o.geometry && o.geometry.attributes && o.geometry.attributes.position) {
+        if (o.userData && o.userData.isBoneVisual) return;
+        meshes.push(o);
+      }
+    });
+    var total = 0;
+    meshes.forEach(function (m) { total += triCountOfGeo(m.geometry); });
+    var trisAfter = total;
+    if (MSE && typeof MSE.decimateMeshopt === 'function' && total > triBudget) {
+      var done = 0;
+      meshes.forEach(function (m, i) {
+        var t = triCountOfGeo(m.geometry);
+        var share = (i === meshes.length - 1)
+          ? Math.max(1, triBudget - done)
+          : Math.max(1, Math.floor(triBudget * t / Math.max(1, total)));
+        /* Weld trước (FBX non-indexed) rồi mới meshopt, xong compact. */
+        var welded = weldGeometry(m.geometry);
+        var d = MSE.decimateMeshopt(welded, share, targetError);
+        if (d) { m.geometry = compactGeometry(d.geometry); done += d.trisAfter; }
+        else { m.geometry = welded; done += t; }
+      });
+      trisAfter = done;
+    }
+    return { trisBefore: total, trisAfter: trisAfter };
+  }
+
+  /* Downscale 1 texture qua canvas: thu nhỏ về maxDim (giữ tỉ lệ),
+     lật dọc (FBX bottom-up; cùng logic flipY như encodeTextureToBytes),
+     encode JPEG. Trả {b64, mime, w, h} (định dạng textureBytes mà
+     FBXBinary.write đã hỗ trợ — bytes đã lật sẵn nên writer không
+     lật lại) hoặc null. Tối ưu: cả map lẫn normalMap đều JPEG
+     (normal PNG gốc 1.3MB → JPEG 512² ~70KB). */
+  function downscaleTextureToBytes(tex, slot, maxDim, quality) {
+    try {
+      var img = (tex.userData && tex.userData.originalImage) || tex.image;
+      if (!img) return null;
+      var w0 = img.width || img.videoWidth || 0;
+      var h0 = img.height || img.videoHeight || 0;
+      if (!w0 || !h0) return null;
+      var scale = Math.min(1, maxDim / Math.max(w0, h0));
+      var w = Math.max(1, Math.round(w0 * scale));
+      var h = Math.max(1, Math.round(h0 * scale));
+      var c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      var cx = c.getContext('2d');
+      if (tex.flipY === false) { cx.translate(0, h); cx.scale(1, -1); }
+      cx.drawImage(img, 0, 0, w, h);
+      var url = c.toDataURL('image/jpeg', quality);
+      var b64 = url.split(',')[1];
+      if (!b64) return null;
+      return { b64: b64, mime: 'image/jpeg', w: w, h: h };
+    } catch (e) { return null; }
+  }
+
+  /* Thu thập textureBytes đã downscale cho cả model (chỉ map +
+     normalMap, đúng công thức 2 texture). Key theo tên material
+     (writer tra provided[m.name]). */
+  function collectDownscaledTextures(root, maxDim, quality, dropNormal) {
+    var out = {};
+    if (!root || !root.traverse) return out;
+    root.traverse(function (o) {
+      if (!o.isMesh || !o.material) return;
+      var mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach(function (m) {
+        if (!m || out[m.name]) return;
+        var entry = {};
+        if (m.map) { var mb = downscaleTextureToBytes(m.map, 'map', maxDim, quality); if (mb) entry.map = mb; }
+        if (!dropNormal && m.normalMap) { var nb = downscaleTextureToBytes(m.normalMap, 'normalMap', maxDim, quality); if (nb) entry.normalMap = nb; }
+        if (entry.map || entry.normalMap) out[m.name || ''] = entry;
+      });
+    });
+    return out;
+  }
+
+  /* Vòng lặp tối ưu trên root đã cho (KHÔNG sửa root gốc — clone +
+     decimate + ghi thử từng mức). textureProvider(maxDim, quality,
+     dropNormal) -> textureBytes map; mặc định dùng canvas (trình
+     duyệt). Trả {bytes, filename, size, trisBefore, trisAfter,
+     texMaxDim, texQ, attempt, under1MB, report} hoặc null. */
+  SaveManager.optimizeRootUnder1MB = function (root, modelName, textureProvider) {
+    var best = null;
+    var trisBefore = countTris(root);
+    for (var a = 0; a < OPT_ATTEMPTS.length; a++) {
+      var att = OPT_ATTEMPTS[a];
+      var texBytes = null;
+      try { texBytes = textureProvider ? textureProvider(att.tex, att.q, att.dropNormal) : null; } catch (e) { texBytes = null; }
+      var clone = cloneModelForExport(root);
+      var dec = decimateCloneToBudget(clone, att.tris, att.err);
+      var res = null;
+      try {
+        res = PixiStudio.FBXBinary.write(clone, {
+          version: 7300, upAxis: 'Y', autoScale: true,
+          prepareMixamo: true, keepSkeleton: true,
+          embedTextures: true, textureBytes: texBytes
+        });
+      } catch (e) { res = null; }
+      if (!res || !res.bytes || !res.bytes.length) continue;
+      var size = res.bytes.length;
+      var entry = { bytes: res.bytes, size: size, trisAfter: dec.trisAfter, texMaxDim: att.tex, texQ: att.q, attempt: a + 1, report: res.report };
+      if (!best || size < best.size) best = entry;
+      if (size < OPT_1MB) break;
+    }
+    if (!best) return null;
+    return {
+      bytes: best.bytes, filename: buildFileName(modelName, 'opt1mb', '.fbx'),
+      size: best.size, trisBefore: trisBefore, trisAfter: best.trisAfter,
+      texMaxDim: best.texMaxDim, texQ: best.texQ, attempt: best.attempt,
+      under1MB: best.size < OPT_1MB, report: best.report
+    };
+  };
+
+  /* Nút "Tối ưu FBX <1MB": tối ưu model đang ở trong scene rồi tải về. */
+  SaveManager.optimizeFBXUnder1MB = function () {
+    var target = PixiStudio.State.get('selection') || PixiStudio.Viewport.getMainModel();
+    if (!target) {
+      bus.emit('notify', { type: 'warning', title: 'Tối ưu FBX', message: 'Chưa có model nào trong scene để tối ưu.' });
+      return Promise.resolve(null);
+    }
+    var modelName = target.name || 'model';
+    var t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    PixiStudio.Notifications.showLoading('Đang tối ưu FBX < 1MB…', 5);
+    var MSE = PixiStudio.MixamoSafeExport;
+    var readyP = (MSE && MSE.waitMeshoptReady) ? MSE.waitMeshoptReady(5000) : Promise.resolve(false);
+    return Promise.all([waitForTextures(target, 8000), readyP]).then(function () {
+      return new Promise(function (resolve) {
+        setTimeout(function () {
+          try {
+            var res = SaveManager.optimizeRootUnder1MB(target, modelName, function (maxDim, q, dropNormal) {
+              return collectDownscaledTextures(target, maxDim, q, dropNormal);
+            });
+            PixiStudio.Notifications.hideLoading();
+            if (!res) {
+              bus.emit('notify', { type: 'error', title: 'Tối ưu FBX lỗi', message: 'Không ghi được file FBX.' });
+              resolve(null); return;
+            }
+            var blob = new Blob([res.bytes], { type: 'application/octet-stream' });
+            U.downloadBlob(blob, res.filename);
+            var elapsed = Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - t0);
+            SaveManager.logSave({ name: res.filename, format: 'fbx-opt1mb', sizeBytes: res.size });
+            bus.emit('notify', {
+              type: res.under1MB ? 'success' : 'warning',
+              title: res.under1MB ? 'Đã tối ưu FBX < 1MB' : 'Đã tối ưu FBX (vẫn trên 1MB)',
+              message: (res.size / 1048576).toFixed(2) + ' MB · ' + res.trisBefore + ' → ' + res.trisAfter + ' tam giác · texture ' + res.texMaxDim + 'px JPEG q' + Math.round(res.texQ * 100) + ' · rig + skin giữ nguyên · ' + (elapsed >= 1000 ? (elapsed / 1000).toFixed(1) + 's' : elapsed + 'ms') +
+                (res.under1MB ? '' : ' — đã thử 5 mức, model này khó xuống dưới 1MB (thử bỏ normalMap / giảm tris tay).'),
+              duration: 12000
+            });
+            resolve(res);
+          } catch (err) {
+            PixiStudio.Notifications.hideLoading();
+            bus.emit('notify', { type: 'error', title: 'Tối ưu FBX lỗi', message: String(err && err.message || err) });
+            resolve(null);
+          }
+        }, 40);
+      });
+    });
+  };
+
+  /* Expose để test harness kiểm chứng (không dùng trong UI). */
+  SaveManager._optimizeFBX = {
+    OPT_1MB: OPT_1MB, OPT_ATTEMPTS: OPT_ATTEMPTS,
+    cloneModelForExport: cloneModelForExport,
+    compactGeometry: compactGeometry,
+    weldGeometry: weldGeometry,
+    decimateCloneToBudget: decimateCloneToBudget,
+    downscaleTextureToBytes: downscaleTextureToBytes,
+    collectDownscaledTextures: collectDownscaledTextures
+  };
+
+  /* ============================================================
      FBX 2013 + MIXAMO RIG — "giống X Bot.fbx"
      ------------------------------------------------------------
      Phân tích X Bot.fbx (file Mixamo/Maya 2020) cho thấy nó gồm:

@@ -368,6 +368,15 @@
         else bus.emit('notify', { type: 'error', title: 'GLB → FBX Mixamo', message: 'SaveManager chưa sẵn sàng.' });
       });
     }
+    /* Topbar "Tối ưu FBX <1MB" → tối ưu model đang ở trong scene
+       (giảm tris giữ rig + thu nhỏ texture) đến khi file < 1MB rồi tải về. */
+    const topOpt = document.getElementById('btn-optimize-fbx');
+    if (topOpt) {
+      topOpt.addEventListener('click', function () {
+        if (PixiStudio.SaveManager && PixiStudio.SaveManager.optimizeFBXUnder1MB) PixiStudio.SaveManager.optimizeFBXUnder1MB();
+        else bus.emit('notify', { type: 'error', title: 'Tối ưu FBX', message: 'SaveManager chưa sẵn sàng.' });
+      });
+    }
     /* Topbar "Auto Rig Pro Blend" → đo landmark + dựng skeleton Mixamo
        41 xương + skin tự động trên model CHƯA rig, xuất FBX rigged +
        script Blender (.py) để lưu thành .blend. Model đã rig thì báo
