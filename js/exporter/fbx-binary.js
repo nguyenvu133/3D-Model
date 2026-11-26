@@ -308,6 +308,24 @@
     /* version ghi vào header + node FBXVersion. 7300 = FBX 2013 (Mixamo yêu cầu
        "2013 or earlier"); 7400 = FBX 2014 (mặc định cũ, Mixamo từ chối). */
     const ver = (opts.version ? (opts.version | 0) : VERSION);
+    /* TÊN OBJECT theo format file: ASCII dùng 'Class::Name' (SDK/TextParser lột
+     * prefix '::'); còn BINARY phải dùng 'Name\x00\x01Class' như file Blender
+     * thật — BinaryParser cắt chuỗi tại byte 0x00 nên 'Model::Hips' thành
+     * attrName 'Model::Hips' rồi sanitizeNodeName gộp thành 'ModelHips'
+     * (xương sai tên, clip animation không bind được; phát hiện 2026-11-26
+     * khi round-trip bonechar-RS: 28 xương ra 'ModelHips'...). */
+    const isAscii = !!opts.ascii;
+    const oname = function (name, cls) {
+      /* Tên object theo format file: ASCII dùng 'Class::Name'; BINARY dùng
+       * 'Name\x00\x01Class' (BinaryParser cắt tại 0x00 — tên 'Model::Hips'
+       * thành 'ModelHips', clip không bind được; sửa 2026-11-26).
+       * NGOẠI LỆ — file mesh-only cho Mixamo (opts.mixamoNames): dùng
+       * 'Class::Name' NGAY CẢ trong file binary, giống hệt 2 file mẫu
+       * Thiếu Lâm/Thần Điêu đã auto-rig thành công trên Mixamo (coco
+       * dùng tên binary thì Mixamo vẫn báo lỗi dù SDK đọc được). File
+       * mesh-only không có xương/clip nên tên không ảnh hưởng binding. */
+      return (isAscii || opts.mixamoNames) ? (cls + '::' + name) : (name + '\u0000\u0001' + cls);
+    };
     let noSkeleton = !!opts.noSkeleton;   /* mesh-only → Mixamo tự auto-rig */
     if (opts.prepareMixamo && !opts.keepSkeleton) noSkeleton = true;   /* Mixamo tự auto-rig: bỏ skin/cluster */
     if (!window.THREE) throw new Error('THREE chưa sẵn sàng');
@@ -632,14 +650,14 @@
       layerEls.push(node('LayerElement', [], [node('Type', [pS('LayerElementMaterial')]), node('TypedIndex', [pI(0)])]));
       gChildren.push(node('Layer', [pI(0)], [node('Version', [pI(100)])].concat(layerEls)));
 
-      objects.push(node('Geometry', [pL(gid), pS('Geometry::' + (mesh.name || ('mesh_' + mi))), pS('Mesh')], gChildren));
+      objects.push(node('Geometry', [pL(gid), pS(oname(mesh.name || ('mesh_' + mi), 'Geometry')), pS('Mesh')], gChildren));
 
       /* mesh model node — geometry đã bake world nên Lcl = identity;
          mesh gắn dưới xương thì geometry đã bake vào không gian xương
          nên Lcl vẫn identity nhưng Model nối vào xương đó (kiếm theo tay). */
       const meshModelId = id();
       models.push({ id: meshModelId, name: mesh.name || ('mesh_' + mi), matrixWorld: world });
-      objects.push(node('Model', [pL(meshModelId), pS('Model::' + (mesh.name || ('mesh_' + mi))), pS('Mesh')], [
+      objects.push(node('Model', [pL(meshModelId), pS(oname(mesh.name || ('mesh_' + mi), 'Model')), pS('Mesh')], [
         node('Version', [pI(232)]),
         modelProps([0, 0, 0], [0, 0, 0], [1, 1, 1]),
         node('MultiLayer', [pI(0)]),
@@ -697,10 +715,10 @@
         const pArr = lx.p, eArr = lx.e, sArr = lx.s;
 
         const attrId = id();
-        objects.push(node('NodeAttribute', [pL(attrId), pS('NodeAttribute::' + b.name), pS('LimbNode')], [
+        objects.push(node('NodeAttribute', [pL(attrId), pS(oname(b.name, 'NodeAttribute')), pS('LimbNode')], [
           node('TypeFlags', [pS('Skeleton')])
         ]));
-        objects.push(node('Model', [pL(bid), pS('Model::' + b.name), pS('LimbNode')], [
+        objects.push(node('Model', [pL(bid), pS(oname(b.name, 'Model')), pS('LimbNode')], [
           node('Version', [pI(232)]),
           modelProps(pArr, eArr, sArr)
         ]));
@@ -720,7 +738,7 @@
 
     /* --- armature (bỏ khi noSkeleton) --- */
     if (!noSkeleton) {
-      objects.push(node('Model', [pL(armatureId), pS('Model::Armature'), pS('Null')], [
+      objects.push(node('Model', [pL(armatureId), pS(oname('Armature', 'Model')), pS('Null')], [
         node('Version', [pI(232)]),
         modelProps([0, 0, 0], [0, 0, 0], [1, 1, 1])
       ]));
@@ -729,7 +747,7 @@
 
     /* --- skin deformer (bỏ khi noSkeleton) --- */
     if (!noSkeleton && clusters.length) {
-      objects.push(node('Deformer', [pL(skinId), pS('Deformer::Skin'), pS('Skin')], [
+      objects.push(node('Deformer', [pL(skinId), pS(oname('Skin', 'Deformer')), pS('Skin')], [
         node('Version', [pI(101)]),
         node('Link_DeformAcuracy', [pD(50)])
       ]));
@@ -745,7 +763,7 @@
       }
 
       clusters.forEach(function (c, ci) {
-        objects.push(node('Deformer', [pL(c.id), pS('SubDeformer::Cluster_' + ci), pS('Cluster')], [
+        objects.push(node('Deformer', [pL(c.id), pS(oname('Cluster_' + ci, 'SubDeformer')), pS('Cluster')], [
           node('Version', [pI(100)]),
           node('UserData', [pS(''), pS('')]),
           node('Indexes', [arrI(c.indexes)]),
@@ -765,7 +783,7 @@
           node('Matrix', [arrD(mat4ToArray(boneWorldX[b.uuid]))])   /* bind world ĐÃ qua xform */
         ]);
       });
-      objects.push(node('Pose', [pL(poseId), pS('Pose::BIND_POSES'), pS('BindPose')], [
+      objects.push(node('Pose', [pL(poseId), pS(oname('BIND_POSES', 'Pose')), pS('BindPose')], [
         node('Type', [pS('BindPose')]),
         node('Version', [pI(100)]),
         node('NbPoseNodes', [pI(poseNodes.length)])
@@ -794,7 +812,7 @@
         props.push(node('P', [pS('Opacity'), pS('Number'), pS(''), pS('A'), pD(mt.opacity)]));
       }
       if (mt.map) props.push(node('P', [pS('DiffuseFactor'), pS('Number'), pS(''), pS('A'), pD(1)]));
-      objects.push(node('Material', [pL(m.id), pS('Material::' + m.name), pS('')], [
+      objects.push(node('Material', [pL(m.id), pS(oname(m.name, 'Material')), pS('')], [
         node('Version', [pI(102)]),
         node('ShadingModel', [pS('Phong')]),
         node('MultiLayer', [pI(0)]),
@@ -845,7 +863,7 @@
         const ext = t.mime === 'image/png' ? '.png' : '.jpg';
         const vname = (t.matName || 'tex') + '_' + t.slot + '_' + i;
         const file = 'model.fbm/' + vname + ext;
-        objects.push(node('Video', [pL(vid), pS('Video::' + vname), pS('Clip')], [
+        objects.push(node('Video', [pL(vid), pS(oname(vname, 'Video')), pS('Clip')], [
           node('Type', [pS('Clip')]),
           /* Path BẮT BUỘC: FBX SDK (FbxVideo::GetFileName) đọc đường dẫn ảnh từ
              property Path này, KHÔNG phải từ node Filename — thiếu nó thì SDK
@@ -860,11 +878,11 @@
           node('RelativeFilename', [pS(file)]),
           node('Content', [pR(t.bytes)])
         ]));
-        objects.push(node('Texture', [pL(tid), pS('Texture::' + vname), pS('')], [
+        objects.push(node('Texture', [pL(tid), pS(oname(vname, 'Texture')), pS('')], [
           node('Type', [pS('TextureVideoClip')]),
           node('Version', [pI(202)]),
-          node('TextureName', [pS('Texture::' + vname)]),
-          node('Media', [pS('Video::' + vname)]),
+          node('TextureName', [pS(oname(vname, 'Texture'))]),
+          node('Media', [pS(oname(vname, 'Video'))]),
           node('FileName', [pS(file)]),
           node('RelativeFilename', [pS(file)]),
           node('Properties70', [], [])

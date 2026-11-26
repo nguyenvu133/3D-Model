@@ -274,6 +274,35 @@
   }
   MixamoSafeExport.weldPositions = weldPositions;
 
+  /* Bỏ các tam giác suy biến (diện tích ≈ 0) do decimate trung bình vị trí
+     tạo ra: nguồn Tripo sạch (0 suy biến) nhưng sau decimate coco có
+     3.230/40.989 (7,9%) — tam giác 0 diện tích làm Mixamo auto-rig đo sai
+     normal/diện tích khi phân đoạn tay/chân. File Thiếu Lâm đã auto-rig
+     được chỉ có 3,3%. Ngưỡng |cross|² < 1e-14 (như harness đo). Bỏ tam
+     giác suy biến không tạo lỗ (nó đã có diện tích 0). */
+  function removeDegenerate(geometry) {
+    var pos = geometry.attributes.position;
+    var idx = geometry.index;
+    if (!pos || !idx) return { removed: 0, trisBefore: 0, trisAfter: 0 };
+    var n = Math.floor(idx.count / 3);
+    var keep = [];
+    for (var t = 0; t < n; t++) {
+      var i0 = idx.getX(t * 3), i1 = idx.getX(t * 3 + 1), i2 = idx.getX(t * 3 + 2);
+      var ax = pos.getX(i0), ay = pos.getY(i0), az = pos.getZ(i0);
+      var bx = pos.getX(i1), by = pos.getY(i1), bz = pos.getZ(i1);
+      var cx = pos.getX(i2), cy = pos.getY(i2), cz = pos.getZ(i2);
+      var ux = bx - ax, uy = by - ay, uz = bz - az;
+      var vx = cx - ax, vy = cy - ay, vz = cz - az;
+      var wx = uy * vz - uz * vy, wy = uz * vx - ux * vz, wz = ux * vy - uy * vx;
+      if (wx * wx + wy * wy + wz * wz < 1e-14) continue;
+      keep.push(i0, i1, i2);
+    }
+    var removed = n - keep.length / 3;
+    if (removed > 0) geometry.setIndex(keep);
+    return { removed: removed, trisBefore: n, trisAfter: keep.length / 3 };
+  }
+  MixamoSafeExport.removeDegenerate = removeDegenerate;
+
   /* ---------------- xương có/không skin ---------------- */
   /* Đếm xương trong rig nguồn và xương nào thật sự có skin weights
      (> 0 ở ít nhất 1 vertex). File Thiếu Lâm: 65 xương, chỉ 24 có
@@ -478,6 +507,11 @@
     }
 
     var trisAfter = 0;
+    /* Bỏ tam giác suy biến do decimate tạo ra (xem removeDegenerate) —
+       đếm trisAfter SAU khi bỏ để báo cáo đúng số tam giác thật trong file. */
+    var degenRemoved = 0;
+    finalGeos.forEach(function (g) { degenRemoved += removeDegenerate(g).removed; });
+    if (degenRemoved > 0) report.warnings.push('Đã bỏ ' + degenRemoved.toLocaleString('en-US') + ' tam giác suy biến (diện tích ≈ 0) do decimate tạo ra để Mixamo auto-rig không đo sai');
     finalGeos.forEach(function (g) { trisAfter += triCountOf(g); });
     report.trisAfter = trisAfter;
     if (trisAfter >= MAX_TRIS) {

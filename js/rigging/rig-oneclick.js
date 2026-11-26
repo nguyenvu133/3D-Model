@@ -507,6 +507,7 @@
           keepSkeleton: false,        /* mesh-only — Mixamo tự auto-rig */
           noSkeleton: true,
           prepareMixamo: true,
+          mixamoNames: true,          /* tên 'Class::Name' như 2 file mẫu đã auto-rig được */
           upAxis: 'Y',
           autoScale: true,
           embedTextures: tex         /* chỉ nhúng khi model có texture */

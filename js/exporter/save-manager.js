@@ -685,6 +685,7 @@ tỉ lệ.
             const res = PixiStudio.FBXBinary.write(prepared.group, {
               noSkeleton: true,
               prepareMixamo: true,
+              mixamoNames: true,   /* tên 'Class::Name' như 2 file mẫu đã auto-rig được */
               version: 7300,
               upAxis: 'Y',
               autoScale: true,
@@ -854,6 +855,7 @@ tỉ lệ.
               const res = PixiStudio.FBXBinary.write(prepared.group, {
                 version: 7300,                    /* FBX 2013 — Mixamo chỉ nhận ≤ 2013 */
                 prepareMixamo: true,
+                mixamoNames: true,                /* tên 'Class::Name' như 2 file mẫu đã auto-rig được */
                 keepSkeleton: false,              /* mesh-only — Mixamo tự auto-rig */
                 noSkeleton: true,
                 upAxis: 'Y',
