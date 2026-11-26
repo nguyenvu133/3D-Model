@@ -358,6 +358,16 @@
       });
     }
 
+    /* Topbar "GLB → FBX Mixamo" → chuyển file .glb trên máy thẳng
+       thành FBX Mixamo-safe, KHÔNG cần load model vào scene (nút
+       Save Mixamo chỉ xuất model đang ở trong scene). */
+    const topConvert = document.getElementById('btn-convert-glb-fbx');
+    if (topConvert) {
+      topConvert.addEventListener('click', function () {
+        if (PixiStudio.SaveManager && PixiStudio.SaveManager.convertGLBToMixamoFBX) PixiStudio.SaveManager.convertGLBToMixamoFBX();
+        else bus.emit('notify', { type: 'error', title: 'GLB → FBX Mixamo', message: 'SaveManager chưa sẵn sàng.' });
+      });
+    }
     /* Topbar "Save Mixamo" → xuất FBX Mixamo-safe (mesh-only < 50k
        tris + texture nhúng, tự decimate giữ UV khi cần) ngay,
        không mở Save Center. Ctrl+Shift+M cũng chạy. */

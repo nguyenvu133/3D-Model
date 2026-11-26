@@ -717,6 +717,61 @@ tỉ lệ.
   }
 
   /* ============================================================
+     GLB → FBX MIXAMO — nút chuyển file trực tiếp (11-2026)
+     ------------------------------------------------------------
+     Vấn đề: nút Save Mixamo chỉ xuất MODEL ĐANG Ở TRONG SCENE
+     (State.selection || Viewport.getMainModel). Nếu model muốn
+     chuyển chưa được load vào scene, hoặc scene đang giữ model
+     khác, nút đó xuất sai model / không ra file — và người dùng
+     tưởng là lỗi Mixamo. Nút này bỏ qua scene hoàn toàn: chọn
+     file .glb trên máy → parse bằng GLTFLoader → chạy ĐÚNG
+     pipeline Save Mixamo (prepareMixamoSafe + preflight +
+     FBXBinary.write noSkeleton/version 7300) → tải .fbx về.
+     Dùng chung code nên file ra giống hệt nút Save Mixamo
+     (đã kiểm chứng bằng fbx2gltf: v7300, 0 xương, 0 skin).
+     ============================================================ */
+  SaveManager.convertGLBBufferToMixamoFBX = function (arrayBuffer, baseName) {
+    if (!THREE.GLTFLoader) return Promise.reject(new Error('GLTFLoader chưa sẵn sàng (CDN lỗi?) — tải lại trang rồi thử lại.'));
+    PixiStudio.Notifications.showLoading('Đang đọc file GLB…', 5);
+    return new Promise(function (resolve, reject) {
+      new THREE.GLTFLoader().parse(arrayBuffer, '', resolve, reject);
+    }).then(function (gltf) {
+      var model = (gltf && gltf.scene) || (gltf && gltf.scenes && gltf.scenes[0]);
+      if (!model) throw new Error('File GLB không chứa scene nào.');
+      var name = String(baseName || 'model').replace(/\.[^.]+$/, '');
+      var out = null;
+      return saveFBXMixamo(model, name, function (blob, report, filename) {
+        U.downloadBlob(blob, filename);
+        PixiStudio.Notifications.hideLoading();
+        SaveManager.logSave({ name: filename, format: 'fbx-mixamo', sizeBytes: blob.size });
+        bus.emit('notify', {
+          type: 'success', title: 'Đã chuyển ' + filename,
+          message: (blob.size / 1048576).toFixed(2) + ' MB · mesh-only (Mixamo tự auto-rig) — mở https://www.mixamo.com → Characters → Upload Character.',
+          duration: 12000
+        });
+        out = { blob: blob, filename: filename };
+      }, { id: 'fbx-mixamo', ext: '.fbx' }).then(function () { return out; });
+    });
+  };
+
+  SaveManager.convertGLBToMixamoFBX = function () {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.glb,.gltf';
+    input.onchange = function () {
+      var file = input.files && input.files[0];
+      if (!file) return;
+      U.readFileAsArrayBuffer(file).then(function (buf) {
+        return SaveManager.convertGLBBufferToMixamoFBX(buf, file.name);
+      }).catch(function (err) {
+        PixiStudio.Notifications.hideLoading();
+        bus.emit('notify', { type: 'error', title: 'Chuyển GLB → FBX lỗi', message: String(err && err.message || err) });
+      });
+    };
+    input.click();
+  };
+
+  /* ============================================================
      FBX 2013 + MIXAMO RIG — "giống X Bot.fbx"
      ------------------------------------------------------------
      Phân tích X Bot.fbx (file Mixamo/Maya 2020) cho thấy nó gồm:
@@ -2456,6 +2511,16 @@ tỉ lệ.
       }));
     });
     body.appendChild(grid);
+    /* Chuyển file GLB → FBX Mixamo trực tiếp, không cần load model
+       vào scene (nút Save Mixamo chỉ xuất model đang ở trong scene). */
+    body.appendChild(U.el('button', {
+      class: 'btn primary lg block', style: 'margin-top:12px;',
+      text: '📁 Chuyển GLB → FBX Mixamo (chọn file .glb trên máy)',
+      onclick: function () {
+        PixiStudio.Modals.close();
+        SaveManager.convertGLBToMixamoFBX();
+      }
+    }));
     if (preset) {
       body.appendChild(U.el('button', {
         class: 'btn primary lg block', style: 'margin-top:12px;',
