@@ -566,10 +566,11 @@
 <script src="js/rig/arp-qr3-history.js"></script>
 <script src="js/rig/arp-qr3-liveretarget.js"></script>
 <script src="js/rig/arp-boneshape.js"></script>
-<!-- Auto Fix (C): section "Chỉnh sửa auto" cho ARP — đăng ký plugin
-     'auto-fix' vào ArpPlugins (tab riêng plugin:auto-fix) + section
-     trong tab Quick Rig. Load SAU arp-plugins.js (registry) và SAU
-     arp-quickrig.js (registerSection) — cuối khối ARP. -->
+<!-- Auto Fix (C): "Chỉnh sửa auto" cho ARP — đăng ký plugin
+     'auto-fix' vào ArpPlugins (tab riêng plugin:auto-fix). Section
+     Quick Rig + tab 'autofix' chỉ là fallback khi không có registry
+     (xem arp-autofix.js — đăng ký thêm sẽ trùng 2 tab). Load SAU
+     arp-plugins.js (registry) và SAU arp-quickrig.js — cuối khối ARP. -->
 <script src="js/rig/arp-autofix.js"></script>
 <!-- Mixamo Rig plugin: control rig kiểu Blender addon (tdw46) — đăng ký
      plugin 'mixamo-rig' vào ArpPlugins (tab riêng). Load SAU

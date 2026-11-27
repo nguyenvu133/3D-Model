@@ -40,16 +40,17 @@
  *     trong cửa sổ ARP + dòng quản lý trong tab Plugins. ctx của
  *     registry (ctx.getModel()/getSkeleton()/notify()) được dùng
  *     để lấy model khi render từ tab plugin.
- *   - Dự phòng: ArpQuickRig.registerSection('autofix', render) —
- *     section hiện trong tab Quick Rig (mẫu QR3) khi panel cũ
- *     không có registry; ArpPanel.registerTab('autofix', ...) để
- *     mở trực tiếp bằng showTab('autofix').
- *   - LƯU Ý panel: TAB_ORDER trong js/ui/arp-panel.js là danh
- *     sách cố định (smart/remap/export/quickrig/boneshape/plugins)
- *     nhưng renderTabBar đã render thêm tab plugin động
- *     ('plugin:<id>') nên tab Auto Fix HIỆN được trên thanh tab.
- *     Riêng registerTab('autofix') không có trong TAB_ORDER nên
- *     nút tab đó không hiện — chỉ mở được bằng showTab.
+ *   - Dự phòng (CHỈ khi không có registry — panel cũ):
+ *     ArpQuickRig.registerSection('autofix', render) — section
+ *     hiện trong tab Quick Rig (mẫu QR3); ArpPanel.registerTab(
+ *     'autofix', ...) — tab trực tiếp mở bằng showTab('autofix').
+ *     Khi registry đã có thì KHÔNG đăng ký 2 đường này.
+ *   - LƯU Ý panel (sửa 2026-11-27 — bug trùng tab): renderTabBar
+ *     trong js/ui/arp-panel.js vẽ MỌI tab đã đăng ký ngoài
+ *     TAB_ORDER (không chỉ 'plugin:*'), nên registerTab('autofix')
+ *     tạo thêm 1 nút tab "Chỉnh sửa auto" trùng với tab plugin
+ *     "Chỉnh sửa auto (Auto Fix)". Ghi chú cũ ("nút tab đó không
+ *     hiện — chỉ mở được bằng showTab") là SAI và đã gây trùng.
  *
  * GIỚI HẠN (ghi rõ để khỏi hiểu lầm):
  *   - Ground clip chỉ sửa Y của root (Hips), không sửa xoay bàn
@@ -1327,8 +1328,9 @@
     window.PixiStudio.ArpAutoFix = AutoFix;
     /* 1) Plugin registry js/rig/arp-plugins.js — đường đăng ký CHÍNH:
        tab riêng 'plugin:auto-fix' + dòng quản lý trong tab Plugins.
-       Trùng id THROW (registry thiết kế vậy) nên bọc try/catch để
-       load 2 lần không vỡ trang; section Quick Rig vẫn chạy. */
+       Trùng id THROW (registry thiết kế vậy) nên bọc try/catch;
+       nếu plugin đã có (load 2 lần) thì coi như đã đăng ký. */
+    var pluginRegistered = false;
     try {
       if (window.PixiStudio.ArpPlugins && typeof window.PixiStudio.ArpPlugins.register === 'function') {
         window.PixiStudio.ArpPlugins.register('auto-fix', {
@@ -1341,24 +1343,37 @@
           onEnable: AutoFix.onEnable,
           onDisable: AutoFix.onDisable
         });
+        pluginRegistered = true;
       }
-    } catch (e) { /* registry lỗi/trùng id: section Quick Rig vẫn chạy */ }
-    /* 2) Section trong tab Quick Rig (dự phòng khi panel cũ không có
-       registry; mẫu QR3). */
-    try {
-      if (window.PixiStudio.ArpQuickRig && typeof window.PixiStudio.ArpQuickRig.registerSection === 'function') {
-        window.PixiStudio.ArpQuickRig.registerSection('autofix', renderSection);
-      }
-    } catch (e) {}
-    /* 3) Tab riêng 'autofix' (mở được bằng showTab('autofix'); nút tab
-       chỉ hiện khi arp-panel.js thêm 'autofix' vào TAB_ORDER — hiện
-       panel chỉ render động tab plugin 'plugin:*' nên đây chỉ là
-       đường mở trực tiếp dự phòng). */
-    try {
-      if (window.PixiStudio.ArpPanel && typeof window.PixiStudio.ArpPanel.registerTab === 'function') {
-        window.PixiStudio.ArpPanel.registerTab('autofix', 'Chỉnh sửa auto', renderSection);
-      }
-    } catch (e) {}
+    } catch (e) {
+      /* register THROW khi trùng id (load 2 lần): plugin đã có trong
+         registry từ lần load trước → không cần fallback. */
+      try {
+        var _AP = window.PixiStudio.ArpPlugins;
+        if (_AP && typeof _AP.get === 'function' && _AP.get('auto-fix')) pluginRegistered = true;
+      } catch (e2) {}
+    }
+    /* 2) + 3) CHỈ khi KHÔNG có registry (panel cũ): section trong tab
+       Quick Rig + tab trực tiếp 'autofix'. Khi registry đã có, tab
+       plugin 'plugin:auto-fix' là nơi DUY NHẤT hiện Auto Fix.
+       LÝ DO (bug đã gặp 2026-11-27): renderTabBar trong
+       arp-panel.js vẽ MỌI tab đã đăng ký ngoài TAB_ORDER (không chỉ
+       'plugin:*') nên registerTab('autofix') tạo thêm 1 nút tab
+       "Chỉnh sửa auto" trùng với tab plugin "Chỉnh sửa auto
+       (Auto Fix)" — cùng nội dung, 2 tab. Ghi chú cũ ở đây ("nút
+       tab không hiện") là SAI. */
+    if (!pluginRegistered) {
+      try {
+        if (window.PixiStudio.ArpQuickRig && typeof window.PixiStudio.ArpQuickRig.registerSection === 'function') {
+          window.PixiStudio.ArpQuickRig.registerSection('autofix', renderSection);
+        }
+      } catch (e) {}
+      try {
+        if (window.PixiStudio.ArpPanel && typeof window.PixiStudio.ArpPanel.registerTab === 'function') {
+          window.PixiStudio.ArpPanel.registerTab('autofix', 'Chỉnh sửa auto', renderSection);
+        }
+      } catch (e) {}
+    }
   }
   /* Node / harness: module.exports để test trực tiếp (không ảnh hưởng browser). */
   if (typeof module !== 'undefined' && module.exports) module.exports = AutoFix;
