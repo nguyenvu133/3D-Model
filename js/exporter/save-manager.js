@@ -989,7 +989,23 @@ tỉ lệ.
      (bind matrix không đổi vì xương clone cùng transform local). */
   function cloneModelForExport(root) {
     var THREE = window.THREE;
-    var clone = root.clone(true);
+    /* r128: SkeletonHelper.clone() crash (new SkeletonHelper() không có root →
+       getBoneList(undefined)). Model rig bằng AutoRigPro có helper nằm trong
+       cây (auto-rig-pro.js add helper vào target) nên clone(true) trực tiếp
+       sẽ crash — nút "Tối ưu FBX" sẽ lỗi trên đúng model vừa rig. Tạm gỡ
+       helper khỏi cây trước khi clone rồi gắn lại đúng chỗ. */
+    var detachedHelpers = [];
+    try {
+      root.traverse(function (o) {
+        if (o.isSkeletonHelper && o.parent) detachedHelpers.push({ obj: o, parent: o.parent });
+      });
+      detachedHelpers.forEach(function (d) { try { d.parent.remove(d.obj); } catch (e) {} });
+    } catch (e) {}
+    var clone;
+    try { clone = root.clone(true); }
+    finally {
+      detachedHelpers.forEach(function (d) { try { d.parent.add(d.obj); } catch (e) {} });
+    }
     var origBones = [], cloneBones = [];
     root.traverse(function (o) { if (o.isBone) origBones.push(o); });
     clone.traverse(function (o) { if (o.isBone) cloneBones.push(o); });

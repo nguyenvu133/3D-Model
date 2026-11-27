@@ -634,6 +634,11 @@
           new window.THREE.MeshBasicMaterial({ color: color || 0x33ccff, transparent: true, opacity: 0.85, depthTest: false }));
         mesh.name = '__arp_ctrl_mesh_' + dst;
         mesh.userData.isControlVisual = true;
+        /* Quy ước repo: mesh trang trí PHẢI có isBoneVisual để FBXBinary.write /
+           GLBWriter bỏ qua — nếu không file FBX export sau Auto Gen sẽ chứa
+           thêm 18 mesh cầu control + 4 mesh pole (đã đo: report.meshes 23
+           thay vì 1). Xem test-arp-vp-export-clean.js. */
+        mesh.userData.isBoneVisual = true;
         o.add(mesh);
       } catch (e) {}
       o.userData.dstBone = dst;
@@ -668,6 +673,7 @@
           new window.THREE.MeshBasicMaterial({ color: 0xff5599, transparent: true, opacity: 0.85, depthTest: false }));
         pm.name = '__arp_pole_mesh_' + limbKey;
         pm.userData.isControlVisual = true;
+        pm.userData.isBoneVisual = true; /* xem ghi chú ở control mesh trên */
         o.add(pm);
       } catch (e) {}
       o.userData.isArpPole = true;
@@ -759,6 +765,7 @@
       (map.unmapped.length ? ' · không khớp: ' + map.unmapped.slice(0, 5).join(', ') + (map.unmapped.length > 5 ? '…' : '') : '') +
       (registered ? '' : ' · (chỉ lưu trong ArpQuickRig.current: ' + regNote + ')'), 12000);
     try { bus.emit('arpquickrig:converted', { ok: true, mapped: map.mappedCount, coverage: map.coverage, controls: result.controls, poles: result.poles, skinnedMeshes: skinnedBefore, clipsKept: clipsBefore }); } catch (e) {}
+    try { bus.emit('arp:rig-complete', { source: 'quickrig-convert', target: target, rootBone: bonesByDst.Hips || null, boneCount: map.mappedCount, helper: helper || null }); } catch (e) {} /* PHẦN 1 Viewport: tự hiện skeleton sau khi rig */
     return result;
   }
   QuickRig.convertToControlRig = convertToControlRig;
@@ -1372,6 +1379,7 @@
         state.elapsedMs + 'ms · IK chân + FK tay' +
         (warnings.length ? ' — LƯU Ý: ' + warnings.join('; ') : ''), 12000);
       try { bus.emit('arpquickrig:autogen-done', result); } catch (e) {}
+      try { bus.emit('arp:rig-complete', { source: 'quickrig-autogen', target: target, boneCount: map.mappedCount }); } catch (e) {} /* PHẦN 1 Viewport: tự hiện skeleton sau khi rig */
       return result;
     })();
   }
@@ -1810,6 +1818,7 @@
         (clips.length ? ' · ' + clips.length + ' clip đã gắn' : ' · không có clip') +
         (warnings.length ? ' — LƯU Ý: ' + warnings.join(' ') : ''), 12000);
       try { bus.emit('arpquickrig:mixamo-done', result); } catch (e) {}
+      try { bus.emit('arp:rig-complete', { source: 'quickrig-mixamo', target: target, boneCount: map.mappedCount }); } catch (e) {} /* PHẦN 1 Viewport: tự hiện skeleton sau khi rig */
       return result;
     })();
   }

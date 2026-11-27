@@ -41,6 +41,11 @@
         if (PixiStudio.IKSolver) PixiStudio.IKSolver.update(dt);
         if (PixiStudio.AnimBlender) PixiStudio.AnimBlender.update(dt);
         if (PixiStudio.CharacterController) PixiStudio.CharacterController.update(dt);
+        /* ARP Viewport: nhãn bám khớp, chain IK, trails/onion (mỗi module tự
+           guard khi chưa có rig / đang ẩn nên gọi vô điều kiện được). */
+        if (PixiStudio.ArpVpLabels) PixiStudio.ArpVpLabels.update(dt);
+        if (PixiStudio.ArpVpIk) PixiStudio.ArpVpIk.update(dt);
+        if (PixiStudio.ArpVpTrails) PixiStudio.ArpVpTrails.update(dt);
         PixiStudio.Physics.step(dt);
         PixiStudio.GridEnv.pulse(now / 1000);
 
@@ -163,6 +168,10 @@
 
     getBoot().bootProgress(38, 'Building 3D viewport…');
     PixiStudio.Viewport.init(canvasWrap);
+
+    /* ARP Viewport: bấm chọn xương trong viewport (idempotent, defensive —
+       tự bỏ qua nếu viewport chưa sẵn sàng). */
+    if (PixiStudio.ArpVpSelect) { try { PixiStudio.ArpVpSelect.init(); } catch (e) {} }
 
     /* Áp settings ban đầu */
     PixiStudio.GridEnv.setVisible(true);

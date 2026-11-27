@@ -1,0 +1,692 @@
+/* ============================================================
+ * rig/arp-vp-skeleton.js — PHẦN 1: Hiển thị Skeleton/Bones
+ * trong viewport, MẶC ĐỊNH BẬT sau khi rig
+ * (vòng mở rộng Viewport của Auto Rig Pro Blend)
+ *
+ * VẤN ĐỀ GỐC (đo được, không đoán):
+ *  • AutoRigPro.buildSkeleton() CÓ tạo THREE.SkeletonHelper và
+ *    add vào target — nhưng đó chỉ là LineSegments 1px, màu
+ *    xanh lá/xanh dương theo vertexColors, depthTest=false.
+ *    Helper KHÔNG tự cập nhật theo pose: nó chỉ đổi đỉnh khi
+ *    updateMatrixWorld() của chính nó chạy, và viewport KHÔNG
+ *    gọi helper.update() mỗi frame — khi phát clip, đường xương
+ *    đứng yên ở T-pose trong lúc nhân vật đã cử động.
+ *  • Quick Rig tạo SkeletonHelper nhưng KHÔNG add vào scene:
+ *    helper chỉ nằm trong RigAutoGen.current.helper
+ *    (js/rig/arp-quickrig.js ~dòng 724) → user không thấy gì.
+ *  • THREE.LineBasicMaterial.linewidth bị WebGL bỏ qua (luôn
+ *    1px) nên không thể "làm xương dày" bằng linewidth.
+ *
+ * CÁCH MODULE NÀY HIỂN THỊ (đã chọn, ghi rõ giới hạn):
+ *  • Xương = CYLINDER MỎNG (Mesh, MeshBasicMaterial,
+ *    depthTest:false, renderOrder cao) nối từng cặp xương
+ *    cha → con. Cylinder là CON của xương cha, đặt theo
+ *    offset local (không đổi) của xương con nên TỰ ĐI THEO
+ *    pose/animation mà KHÔNG cần update mỗi frame.
+ *  • Khớp = HÌNH CẦU NHỎ (SphereGeometry) đặt tại gốc mỗi
+ *    xương, cũng là con của xương đó nên tự đi theo pose.
+ *  • SkeletonHelper có sẵn (nếu có) sẽ bị ẨN khi layer này
+ *    BẬT — tránh đường 1px đứng yên ở T-pose gây rối — và
+ *    được KHÔI PHỤC đúng trạng thái cũ khi layer TẮT.
+ *  • Giới hạn: cylinder là hình trụ thẳng giữa 2 khớp, không
+ *    cong theo xương (xương người vốn thẳng từng đoạn nên
+ *    chấp nhận được); độ dày là bán kính tuyệt đối theo mét,
+ *    không scale theo độ dài xương; với skeleton cực lớn/nhỏ
+ *    thì chỉnh jointSize/thickness cho hợp mắt.
+ *
+ * HÀNH VI MẶC ĐỊNH (yêu cầu bắt buộc):
+ *  • Sau khi rig xong (Smart Rig now / Quick Rig convert /
+ *    Auto Gen / Auto Gen Mixamo), skeleton TỰ HIỆN — module
+ *    lắng nghe event thống nhất 'arp:rig-complete' (được emit
+ *    thêm 1 dòng tại 4 điểm rig xong) + 4 event cũ
+ *    ('autorigpro:done', 'arpquickrig:converted',
+ *    'arpquickrig:autogen-done', 'arpquickrig:mixamo-done')
+ *    để tương thích file cũ. Không cần user bật tay.
+ *
+ * TÙY CHỌN: độ dày xương (thin/medium/thick), màu theo nhóm
+ * (cột sống / trái / phải), kích thước khớp cầu, bật/tắt nhanh
+ * bằng 1 nút (viewport toolbar + hàng trạng thái trong panel
+ * ARP) và phím tắt 'B'. Phím 'B' còn trống: kiểm tra trong
+ * js/ui/shortcuts.js + js/viewport/interaction.js — 'K' đã
+ * dùng (add keyframe), 'W/E/R/Q' gizmo, 'F' focus, 'G' grid,
+ * 'X' wireframe, 'O' ortho, 'C' follow, 'S' chỉ dùng ở trang
+ * mesh2motion (m2m-ui.js), không dùng ở studio chính.
+ * Khi chưa có rig: show() trả {ok:false, reason:'no-skeleton'}
+ * + notify + statusText() = "chưa có skeleton — hãy rig trước".
+ *
+ * DEFENSIVE: bus / Viewport / ArpViewport (registry, PHẦN 5)
+ * đều resolve LAZY tại thời điểm gọi; thiếu cái nào thì bỏ qua
+ * êm, không throw. Registry chưa có lúc load thì chỉ expose
+ * API PixiStudio.ArpVpSkeleton.show()/hide()/isVisible() để
+ * toolbar/preset gọi; khi registry xuất hiện thì tự đăng ký
+ * layer 'skeleton' ở lần gọi sau. Module KHÔNG tự sửa
+ * index.html — coordinator gộp script tag sau.
+ *
+ * API: PixiStudio.ArpVpSkeleton
+ *   show(target?) / hide() / toggle() / isVisible()
+ *   refresh() / clear() / getStatus() / statusText()
+ *   renderStatus(el) / syncPanelRow() / syncToolbarButton()
+ *   setThickness(v) / setJointSize(v) / setColor(group, hex)
+ *   setAutoShow(b) / getSettings() / getBoneCount() / init()
+ * ============================================================ */
+(function () {
+  'use strict';
+
+  var STORAGE_KEY = 'pixistudio.arp-vp-skeleton';
+  var NO_SKELETON_MSG = 'chưa có skeleton — hãy rig trước';
+  var SHORTCUT_KEY = 'b'; /* 'B' — đã kiểm tra còn trống ở studio chính */
+
+  var THICKNESS_RADIUS = { thin: 0.003, medium: 0.0055, thick: 0.009 };
+  var DEFAULT_COLORS = { spine: 0xffb020, left: 0x2fa8ff, right: 0xff4d6d };
+  var SPINE_NAMES = {
+    Hips: 1, Spine: 1, Spine1: 1, Spine2: 1, Chest: 1,
+    Neck: 1, Neck1: 1, Head: 1, HeadTopEnd: 1
+  };
+
+  var _settings = {
+    visible: true,      /* mặc định BẬT sau khi rig */
+    autoShow: true,     /* tự hiện khi nhận event rig-complete */
+    thickness: 'medium',
+    jointSize: 0.012,   /* bán kính khớp cầu, mét */
+    colors: { spine: DEFAULT_COLORS.spine, left: DEFAULT_COLORS.left, right: DEFAULT_COLORS.right }
+  };
+
+  var _state = {
+    target: null,       /* model group đang hiển thị skeleton */
+    rootBone: null,
+    bones: [],          /* Bone[] */
+    parts: [],          /* Mesh (cylinder + sphere) đã tạo */
+    helpers: [],        /* { helper, wasVisible } — SkeletonHelper có sẵn, bị ẩn tạm */
+    boneCount: 0,
+    visible: false,
+    height: 1.8
+  };
+
+  var _busBound = false;
+  var _keyBound = false;
+  var _registered = false;
+  var _toolbarBtn = null;
+  var _panelRow = null;
+
+  /* ---------- helpers ---------- */
+  function _PS() {
+    try {
+      if (typeof window !== 'undefined' && window.PixiStudio) return window.PixiStudio;
+      if (typeof PixiStudio !== 'undefined') return PixiStudio;
+    } catch (e) {}
+    return null;
+  }
+  function _bus() {
+    var PS = _PS();
+    return (PS && PS.bus) || null;
+  }
+  function _THREE() {
+    try {
+      if (typeof window !== 'undefined' && window.THREE) return window.THREE;
+      if (typeof THREE !== 'undefined') return THREE;
+    } catch (e) {}
+    return null;
+  }
+  function _ls() {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) return window.localStorage;
+      if (typeof localStorage !== 'undefined') return localStorage;
+    } catch (e) {}
+    return null;
+  }
+  function _notify(type, title, message) {
+    try {
+      var bus = _bus();
+      if (bus && bus.emit) bus.emit('notify', { type: type, title: title, message: message });
+    } catch (e) {}
+  }
+  function _loadSettings() {
+    var ls = _ls();
+    if (!ls) return;
+    try {
+      var raw = ls.getItem(STORAGE_KEY);
+      if (!raw) return;
+      var s = JSON.parse(raw);
+      if (!s || typeof s !== 'object') return;
+      if (typeof s.visible === 'boolean') _settings.visible = s.visible;
+      if (typeof s.autoShow === 'boolean') _settings.autoShow = s.autoShow;
+      if (THICKNESS_RADIUS[s.thickness] !== undefined) _settings.thickness = s.thickness;
+      if (typeof s.jointSize === 'number' && s.jointSize > 0.001 && s.jointSize < 0.1) _settings.jointSize = s.jointSize;
+      if (s.colors && typeof s.colors === 'object') {
+        ['spine', 'left', 'right'].forEach(function (g) {
+          if (typeof s.colors[g] === 'number') _settings.colors[g] = s.colors[g];
+        });
+      }
+    } catch (e) {}
+  }
+  function _saveSettings() {
+    var ls = _ls();
+    if (!ls) return;
+    try {
+      ls.setItem(STORAGE_KEY, JSON.stringify({
+        visible: _settings.visible, autoShow: _settings.autoShow,
+        thickness: _settings.thickness, jointSize: _settings.jointSize,
+        colors: _settings.colors
+      }));
+    } catch (e) {}
+  }
+  _loadSettings();
+
+  /* Bóc prefix tên xương: 'mixamorig:LeftArm', 'Model:mixamorig:Hips',
+   * 'mixamorigHips' (FBXLoader làm mất ':'), '__proxy' (xương giả Mixamo). */
+  function _stripName(name) {
+    var n = String(name || '');
+    n = n.replace(/^.*:/, '');                 /* bóc mọi prefix 'X:' */
+    n = n.replace(/^mixamorig/i, '');          /* 'mixamorigHips' */
+    n = n.replace(/__proxy.*$/i, '');
+    return n;
+  }
+  /* Nhóm màu của 1 xương: 'spine' | 'left' | 'right'. */
+  function _classifyBone(bone) {
+    var n = _stripName(bone && bone.name);
+    if (SPINE_NAMES[n]) return 'spine';
+    if (/^left/i.test(n) || /left/i.test(n)) return 'left';
+    if (/^right/i.test(n) || /right/i.test(n)) return 'right';
+    return 'spine'; /* xương giữa không tên trái/phải → màu cột sống */
+  }
+  function _colorOf(group) {
+    var c = _settings.colors[group];
+    return (typeof c === 'number') ? c : DEFAULT_COLORS[group] || 0xffffff;
+  }
+
+  /* ---------- tìm skeleton trong target ---------- */
+  function _collectBones(target) {
+    var bones = [];
+    if (!target || !target.traverse) return bones;
+    target.traverse(function (o) { if (o && o.isBone) bones.push(o); });
+    return bones;
+  }
+  function _findSkeleton(target) {
+    if (!target) return null;
+    var THREE = _THREE();
+    if (!THREE) return null;
+    /* Ưu tiên SkinnedMesh.skeleton (rig thật đã bind skin). */
+    var skel = null;
+    target.traverse(function (o) {
+      if (!skel && o && o.isSkinnedMesh && o.skeleton && o.skeleton.bones && o.skeleton.bones.length) {
+        skel = o.skeleton;
+      }
+    });
+    var bones = (skel && skel.bones) ? skel.bones.filter(function (b) { return b && b.isBone; }) : _collectBones(target);
+    if (!bones.length) return null;
+    /* Root = xương có tên Hips, nếu không thì xương không có cha là Bone. */
+    var root = null;
+    for (var i = 0; i < bones.length; i++) {
+      if (_stripName(bones[i].name) === 'Hips') { root = bones[i]; break; }
+    }
+    if (!root) {
+      for (var j = 0; j < bones.length; j++) {
+        if (!bones[j].parent || !bones[j].parent.isBone) { root = bones[j]; break; }
+      }
+    }
+    if (!root) root = bones[0];
+    return { rootBone: root, bones: bones, skeleton: skel };
+  }
+  /* Đo chiều cao model (cho stub xương lá) — Box3, fallback 1.8m. */
+  function _measureHeight(target) {
+    var THREE = _THREE();
+    if (!THREE || !target) return 1.8;
+    try {
+      var box = new THREE.Box3().setFromObject(target);
+      var h = box.max.y - box.min.y;
+      if (isFinite(h) && h > 0.05 && h < 50) return h;
+    } catch (e) {}
+    return 1.8;
+  }
+  /* Resolve target hiển thị: đối số → target đã lưu → Viewport
+   * main model → State selection → RigAutoGen/QuickRig current. */
+  function _resolveTarget(arg) {
+    if (arg && arg.traverse) return arg;
+    if (arg && arg.isBone) return arg; /* truyền thẳng rootBone cũng được */
+    if (_state.target && _state.target.traverse) return _state.target;
+    var PS = _PS();
+    if (PS) {
+      try {
+        if (PS.Viewport && PS.Viewport.getMainModel) {
+          var m = PS.Viewport.getMainModel();
+          if (m && m.traverse) return m;
+        }
+      } catch (e) {}
+      try {
+        if (PS.State && PS.State.get) {
+          var sel = PS.State.get('selection');
+          if (sel && sel.traverse) return sel;
+        }
+      } catch (e) {}
+      try {
+        if (PS.RigAutoGen && PS.RigAutoGen.current && PS.RigAutoGen.current.target) return PS.RigAutoGen.current.target;
+      } catch (e) {}
+      try {
+        if (PS.ArpQuickRig && PS.ArpQuickRig.current && PS.ArpQuickRig.current.target) return PS.ArpQuickRig.current.target;
+      } catch (e) {}
+      try {
+        if (PS.AutoRigPro && PS.AutoRigPro.lastResult && PS.AutoRigPro.lastResult.rig &&
+            PS.AutoRigPro.lastResult.rig.rootBone) return PS.AutoRigPro.lastResult.rig.rootBone;
+      } catch (e) {}
+    }
+    return null;
+  }
+
+  /* ---------- dựng / dọn display ---------- */
+  function _clearParts() {
+    _state.parts.forEach(function (p) {
+      try { if (p.parent) p.parent.remove(p); } catch (e) {}
+      try { if (p.geometry) p.geometry.dispose(); } catch (e) {}
+      try { if (p.material) p.material.dispose(); } catch (e) {}
+    });
+    _state.parts = [];
+    /* Khôi phục SkeletonHelper có sẵn về trạng thái cũ. */
+    _restoreHelpers();
+    _state.helpers = [];
+  }
+  /* Ẩn SkeletonHelper có sẵn trong target (đường 1px đứng yên ở
+   * T-pose khi phát clip) — ghi lại trạng thái để khôi phục. */
+  function _hideExistingHelpers(target) {
+    if (!target || !target.traverse) return;
+    target.traverse(function (o) {
+      if (o && o.isSkeletonHelper) {
+        _state.helpers.push({ helper: o, wasVisible: !!o.visible });
+        try { o.visible = false; } catch (e) {}
+      }
+    });
+  }
+  /* Ẩn lại các helper đã ghi (khi show() dùng lại part cũ, không dựng lại). */
+  function _hideRecordedHelpers() {
+    _state.helpers.forEach(function (h) {
+      try { h.helper.visible = false; } catch (e) {}
+    });
+  }
+  /* Khôi phục helper về trạng thái trước khi layer bật (khi hide()/clear()). */
+  function _restoreHelpers() {
+    _state.helpers.forEach(function (h) {
+      try { h.helper.visible = h.wasVisible; } catch (e) {}
+    });
+  }
+  function _buildDisplay(target, found) {
+    var THREE = _THREE();
+    if (!THREE) return { ok: false, reason: 'no-three' };
+    _clearParts();
+    _state.target = target;
+    _state.rootBone = found.rootBone;
+    _state.bones = found.bones;
+    _state.boneCount = found.bones.length;
+    _state.height = _measureHeight(target);
+    _hideExistingHelpers(target);
+
+    var radius = THICKNESS_RADIUS[_settings.thickness] || THICKNESS_RADIUS.medium;
+    var jointR = _settings.jointSize;
+    var stubLen = Math.max(0.03, _state.height * 0.03);
+    var up = new THREE.Vector3(0, 1, 0);
+    var cylCount = 0, jointCount = 0;
+
+    var boneSet = {};
+    found.bones.forEach(function (b) { boneSet[b.uuid] = b; });
+
+    found.bones.forEach(function (bone) {
+      var group = _classifyBone(bone);
+      var color = _colorOf(group);
+      /* --- khớp cầu tại gốc xương --- */
+      try {
+        var jm = new THREE.Mesh(
+          new THREE.SphereGeometry(jointR, 12, 10),
+          new THREE.MeshBasicMaterial({ color: color, depthTest: false, transparent: true, opacity: 0.95, toneMapped: false })
+        );
+        jm.name = '__arp_vp_joint_' + _stripName(bone.name);
+        jm.userData.isArpVpSkeleton = true;
+        /* Quy ước repo: mesh trang trí của xương PHẢI có isBoneVisual để
+           FBXBinary.write / GLBWriter / MixamoSafeExport bỏ qua — nếu không
+           file FBX export sẽ chứa 94 mesh cầu/trụ thừa (đã đo: report.meshes
+           95 thay vì 1). Xem test-arp-vp-export-clean.js. */
+        jm.userData.isBoneVisual = true;
+        jm.frustumCulled = false;
+        jm.renderOrder = 999;
+        bone.add(jm);
+        _state.parts.push(jm);
+        jointCount++;
+      } catch (e) {}
+      /* --- cylinder tới từng xương con (hoặc stub nếu là lá) --- */
+      var kids = (bone.children || []).filter(function (c) { return c && c.isBone; });
+      var segs = [];
+      kids.forEach(function (kid) {
+        segs.push({ dir: kid.position.clone(), len: kid.position.length() });
+      });
+      if (!segs.length) segs.push({ dir: new THREE.Vector3(0, -1, 0), len: stubLen });
+      segs.forEach(function (seg) {
+        if (!seg.len || seg.len < 1e-6) return;
+        try {
+          var dirN = seg.dir.clone().normalize();
+          var cm = new THREE.Mesh(
+            new THREE.CylinderGeometry(radius, radius, seg.len, 8, 1),
+            new THREE.MeshBasicMaterial({ color: color, depthTest: false, transparent: true, opacity: 0.9, toneMapped: false })
+          );
+          cm.name = '__arp_vp_bone_' + _stripName(bone.name);
+          cm.userData.isArpVpSkeleton = true;
+          cm.userData.isBoneVisual = true; /* xem ghi chú ở khớp cầu trên */
+          cm.frustumCulled = false;
+          cm.renderOrder = 998;
+          cm.position.copy(seg.dir).multiplyScalar(0.5);
+          cm.quaternion.setFromUnitVectors(up, dirN);
+          bone.add(cm);
+          _state.parts.push(cm);
+          cylCount++;
+        } catch (e) {}
+      });
+    });
+    return { ok: true, boneCount: found.bones.length, cylinders: cylCount, joints: jointCount };
+  }
+
+  /* ---------- registry chung (PHẦN 5) — defensive, lazy ---------- */
+  function _tryRegister() {
+    if (_registered) return true;
+    try {
+      var PS = _PS();
+      var reg = PS && PS.ArpViewport;
+      if (reg && typeof reg.registerLayer === 'function') {
+        reg.registerLayer('skeleton', {
+          show: function () { return ArpVpSkeleton.show(); },
+          hide: function () { return ArpVpSkeleton.hide(); },
+          isVisible: function () { return ArpVpSkeleton.isVisible(); },
+          label: 'Skeleton'
+        });
+        _registered = true;
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  /* ---------- UI: nút toolbar + hàng trạng thái panel ARP ---------- */
+  function _syncToolbarButton() {
+    try {
+      if (typeof document === 'undefined') return;
+      var bar = document.getElementById('viewport-tools');
+      if (!bar) return;
+      if (!_toolbarBtn) {
+        var b = document.createElement('button');
+        b.id = 'vp-skeleton-btn';
+        b.className = 'vtool';
+        b.type = 'button';
+        b.textContent = 'Xương';
+        b.title = 'Hiện/ẩn skeleton (phím B)';
+        b.addEventListener('click', function () { ArpVpSkeleton.toggle(); });
+        bar.appendChild(b);
+        _toolbarBtn = b;
+      }
+      var on = _state.visible && _state.boneCount > 0;
+      _toolbarBtn.classList.toggle('active', on);
+      _toolbarBtn.title = on ? 'Ẩn skeleton (phím B)' : 'Hiện skeleton (phím B) — ' + (_state.boneCount > 0 ? _state.boneCount + ' xương' : NO_SKELETON_MSG);
+    } catch (e) {}
+  }
+  function _syncPanelRow() {
+    try {
+      if (typeof document === 'undefined') return;
+      var body = document.getElementById('arp-tab-body');
+      if (!body) return;
+      if (!_panelRow || !_panelRow.parentNode) {
+        var row = document.createElement('div');
+        row.id = 'arp-vp-skeleton-row';
+        row.className = 'arp-vp-skeleton-row';
+        var span = document.createElement('span');
+        span.id = 'arp-vp-skeleton-status';
+        var btn = document.createElement('button');
+        btn.id = 'arp-vp-skeleton-toggle';
+        btn.type = 'button';
+        btn.textContent = 'Hiện/ẩn xương (B)';
+        btn.addEventListener('click', function () { ArpVpSkeleton.toggle(); });
+        row.appendChild(span);
+        row.appendChild(btn);
+        body.insertBefore(row, body.firstChild);
+        _panelRow = row;
+      }
+      var st = document.getElementById('arp-vp-skeleton-status');
+      if (st) st.textContent = ArpVpSkeleton.statusText();
+      var tb = document.getElementById('arp-vp-skeleton-toggle');
+      if (tb) tb.disabled = _state.boneCount === 0 && !_state.rootBone;
+    } catch (e) {}
+  }
+  function _syncUI() {
+    _syncToolbarButton();
+    _syncPanelRow();
+  }
+
+  /* ---------- bus: tự hiện khi rig xong ---------- */
+  function _onRigComplete(data) {
+    try {
+      data = data || {};
+      var target = data.target || null;
+      if (!target && data.rootBone) target = data.rootBone;
+      if (!target && data.rig && data.rig.rootBone) target = data.rig.rootBone;
+      var resolved = _resolveTarget(target);
+      if (!resolved) return;
+      if (_settings.autoShow && _settings.visible !== false) {
+        ArpVpSkeleton.show(resolved);
+      } else {
+        /* autoShow tắt: chỉ dựng display ở trạng thái ẩn để toggle sau có sẵn. */
+        var found = _findSkeleton(resolved);
+        if (found) { _buildDisplay(resolved, found); _setPartsVisible(false); _state.visible = false; _syncUI(); }
+      }
+      _tryRegister();
+    } catch (e) {}
+  }
+  function _bindBus() {
+    if (_busBound) return true;
+    var bus = _bus();
+    if (!bus || typeof bus.on !== 'function') return false;
+    try {
+      bus.on('arp:rig-complete', _onRigComplete);
+      bus.on('autorigpro:done', _onRigComplete);
+      bus.on('arpquickrig:converted', _onRigComplete);
+      bus.on('arpquickrig:autogen-done', _onRigComplete);
+      bus.on('arpquickrig:mixamo-done', _onRigComplete);
+      _busBound = true;
+      return true;
+    } catch (e) { return false; }
+  }
+  function _bindKeys() {
+    if (_keyBound) return;
+    try {
+      if (typeof document === 'undefined') return;
+      document.addEventListener('keydown', function (e) {
+        try {
+          if (!e || e.ctrlKey || e.metaKey || e.altKey) return;
+          var t = e.target;
+          var typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+          if (typing) return;
+          if (e.key === SHORTCUT_KEY || e.key === SHORTCUT_KEY.toUpperCase()) {
+            ArpVpSkeleton.toggle();
+          }
+        } catch (err) {}
+      });
+      _keyBound = true;
+    } catch (e) {}
+  }
+  function _setPartsVisible(v) {
+    _state.parts.forEach(function (p) { try { p.visible = !!v; } catch (e) {} });
+  }
+
+  /* ---------- API ---------- */
+  var ArpVpSkeleton = {};
+
+  ArpVpSkeleton.init = function () {
+    _bindBus();
+    _bindKeys();
+    _tryRegister();
+    _syncUI();
+    return { ok: true, busBound: _busBound, registered: _registered };
+  };
+
+  ArpVpSkeleton.show = function (target) {
+    _bindBus();
+    _tryRegister();
+    var THREE = _THREE();
+    if (!THREE) return { ok: false, reason: 'no-three' };
+    var resolved = _resolveTarget(target);
+    if (!resolved) {
+      _syncUI();
+      return { ok: false, reason: 'no-target', message: NO_SKELETON_MSG };
+    }
+    var found = _findSkeleton(resolved);
+    if (!found || !found.bones.length) {
+      _notify('warning', 'Skeleton', NO_SKELETON_MSG + ' — model hiện tại chưa có xương.');
+      _syncUI();
+      return { ok: false, reason: 'no-skeleton', message: NO_SKELETON_MSG };
+    }
+    /* Dựng lại nếu đổi model/root, hoặc lần đầu. */
+    if (_state.rootBone !== found.rootBone || !_state.parts.length) {
+      var built = _buildDisplay(resolved, found);
+      if (!built.ok) return built;
+    } else {
+      /* Cùng skeleton: chỉ bật lại các part (tránh dựng trùng). */
+      _state.target = resolved;
+      _hideRecordedHelpers(); /* helper cũ đã khôi phục ở hide() trước đó → ẩn lại */
+    }
+    _settings.visible = true;
+    _state.visible = true;
+    _setPartsVisible(true);
+    _saveSettings();
+    _syncUI();
+    return { ok: true, boneCount: _state.boneCount, target: resolved, rootBone: _state.rootBone };
+  };
+
+  ArpVpSkeleton.hide = function () {
+    _settings.visible = false;
+    _state.visible = false;
+    _setPartsVisible(false);
+    _restoreHelpers(); /* trả lại SkeletonHelper có sẵn cho user */
+    _saveSettings();
+    _syncUI();
+    return { ok: true, visible: false };
+  };
+
+  ArpVpSkeleton.toggle = function (target) {
+    if (ArpVpSkeleton.isVisible()) return ArpVpSkeleton.hide();
+    return ArpVpSkeleton.show(target);
+  };
+
+  ArpVpSkeleton.isVisible = function () {
+    return !!(_state.visible && _state.parts.length);
+  };
+
+  /* Dựng lại display cho skeleton hiện tại (sau khi đổi màu/dày/khớp). */
+  ArpVpSkeleton.refresh = function () {
+    if (!_state.rootBone) return { ok: false, reason: 'no-skeleton', message: NO_SKELETON_MSG };
+    var wasVisible = _state.visible;
+    var built = _buildDisplay(_state.target, { rootBone: _state.rootBone, bones: _state.bones });
+    if (!built.ok) return built;
+    _setPartsVisible(wasVisible);
+    _syncUI();
+    return { ok: true, boneCount: _state.boneCount, visible: wasVisible };
+  };
+
+  ArpVpSkeleton.clear = function () {
+    _clearParts();
+    _state.target = null;
+    _state.rootBone = null;
+    _state.bones = [];
+    _state.boneCount = 0;
+    _state.visible = false;
+    _syncUI();
+    return { ok: true };
+  };
+
+  ArpVpSkeleton.getStatus = function () {
+    return {
+      hasSkeleton: _state.boneCount > 0,
+      boneCount: _state.boneCount,
+      visible: ArpVpSkeleton.isVisible(),
+      autoShow: !!_settings.autoShow,
+      thickness: _settings.thickness,
+      jointSize: _settings.jointSize,
+      colors: { spine: _settings.colors.spine, left: _settings.colors.left, right: _settings.colors.right },
+      registered: _registered,
+      busBound: _busBound,
+      target: _state.target ? (_state.target.name || '(model)') : null,
+      message: _state.boneCount > 0
+        ? ('Skeleton: ' + _state.boneCount + ' xương · ' + (ArpVpSkeleton.isVisible() ? 'ĐANG HIỆN' : 'đang ẩn') + ' (phím B để bật/tắt)')
+        : NO_SKELETON_MSG
+    };
+  };
+
+  ArpVpSkeleton.statusText = function () {
+    return ArpVpSkeleton.getStatus().message;
+  };
+
+  ArpVpSkeleton.renderStatus = function (el) {
+    if (!el) return ArpVpSkeleton.statusText();
+    try { el.textContent = ArpVpSkeleton.statusText(); } catch (e) {}
+    return ArpVpSkeleton.statusText();
+  };
+
+  ArpVpSkeleton.syncPanelRow = function () { _syncPanelRow(); return ArpVpSkeleton.statusText(); };
+  ArpVpSkeleton.syncToolbarButton = function () { _syncToolbarButton(); return ArpVpSkeleton.isVisible(); };
+
+  ArpVpSkeleton.setThickness = function (v) {
+    if (THICKNESS_RADIUS[v] === undefined) return { ok: false, reason: 'bad-thickness', allowed: Object.keys(THICKNESS_RADIUS) };
+    _settings.thickness = v;
+    _saveSettings();
+    if (_state.rootBone) return ArpVpSkeleton.refresh();
+    return { ok: true, thickness: v };
+  };
+
+  ArpVpSkeleton.setJointSize = function (v) {
+    v = Number(v);
+    if (!isFinite(v) || v <= 0.001 || v >= 0.1) return { ok: false, reason: 'bad-joint-size' };
+    _settings.jointSize = v;
+    _saveSettings();
+    if (_state.rootBone) return ArpVpSkeleton.refresh();
+    return { ok: true, jointSize: v };
+  };
+
+  ArpVpSkeleton.setColor = function (group, hex) {
+    if (['spine', 'left', 'right'].indexOf(group) === -1) return { ok: false, reason: 'bad-group' };
+    var n = (typeof hex === 'string') ? parseInt(hex.replace(/^#/, ''), 16) : Number(hex);
+    if (!isFinite(n) || n < 0 || n > 0xffffff) return { ok: false, reason: 'bad-color' };
+    _settings.colors[group] = n;
+    _saveSettings();
+    if (_state.rootBone) return ArpVpSkeleton.refresh();
+    return { ok: true, group: group, color: n };
+  };
+
+  ArpVpSkeleton.setAutoShow = function (b) {
+    _settings.autoShow = !!b;
+    _saveSettings();
+    return { ok: true, autoShow: _settings.autoShow };
+  };
+
+  ArpVpSkeleton.getSettings = function () {
+    return {
+      visible: _settings.visible, autoShow: _settings.autoShow,
+      thickness: _settings.thickness, jointSize: _settings.jointSize,
+      colors: { spine: _settings.colors.spine, left: _settings.colors.left, right: _settings.colors.right }
+    };
+  };
+
+  ArpVpSkeleton.getBoneCount = function () { return _state.boneCount; };
+
+  /* Test hooks */
+  ArpVpSkeleton._test = {
+    classifyBone: _classifyBone,
+    stripName: _stripName,
+    findSkeleton: _findSkeleton,
+    buildDisplay: _buildDisplay,
+    onRigComplete: _onRigComplete,
+    state: _state,
+    settings: _settings,
+    THICKNESS_RADIUS: THICKNESS_RADIUS,
+    NO_SKELETON_MSG: NO_SKELETON_MSG,
+    bindBus: _bindBus,
+    tryRegister: _tryRegister
+  };
+
+  window.PixiStudio = window.PixiStudio || {};
+  window.PixiStudio.ArpVpSkeleton = ArpVpSkeleton;
+
+  /* Tự init khi load được (defensive: thiếu document/bus thì init()
+   * lần sau qua show()/toggle() sẽ bind lại). */
+  try { ArpVpSkeleton.init(); } catch (e) {}
+})();

@@ -106,6 +106,10 @@
         new window.THREE.MeshBasicMaterial({ color: 0x66ff99, transparent: true, opacity: 0.55, depthTest: false }));
       mesh.name = '__arp_boneshape_' + stripName(bone.name);
       mesh.userData.isBoneShapeVisual = true;
+      /* Quy ước repo: mesh trang trí của xương PHẢI có isBoneVisual để
+         FBXBinary.write / GLBWriter bỏ qua — nếu không file FBX export sẽ
+         chứa thêm 41 mesh xương (cùng lỗi đã sửa ở các module arp-vp-*). */
+      mesh.userData.isBoneVisual = true;
       mesh.userData.boneName = bone.name;
       mesh.position.copy(group.worldToLocal(midW.clone()));
       mesh.quaternion.setFromUnitVectors(up, dir);

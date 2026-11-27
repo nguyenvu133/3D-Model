@@ -975,6 +975,7 @@
         'landmark đo từ mesh (' + Object.keys(lm.measured).join(', ') + ')' +
         (result.warnings.length ? ' — LƯU Ý: ' + result.warnings.join('; ') : ''), 12000);
       bus.emit('autorigpro:done', { ok: true, boneCount: rig.boneList.length, skinnedMeshes: bound });
+      try { bus.emit('arp:rig-complete', { source: 'autorigpro', target: target, rootBone: rig.rootBone, boneCount: rig.boneList.length, helper: rig.helper || null }); } catch (e) {} /* PHẦN 1 Viewport: tự hiện skeleton sau khi rig */
       /* 5. Xuất FBX rigged + .py (trừ khi opts.export === false) */
       if (opts.export !== false) {
         var exp = exportBlend(target, opts.modelName);

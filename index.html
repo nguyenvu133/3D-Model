@@ -549,6 +549,10 @@
 <script src="js/rigging/rig-oneclick.js"></script>
 <script src="js/rig/auto-rig-pro.js"></script>
 <script src="js/ui/arp-panel.js"></script>
+<!-- ARP Plugins: registry PHẢI load sau arp-panel.js và TRƯỚC các module
+     tab ARP (arp-smart.js, ...) để sẵn sàng khi các tab/plugin đăng ký. -->
+<script src="js/rig/arp-plugins.js"></script>
+<script src="js/rig/arp-plugin-modelstats.js"></script>
 <script src="js/rig/arp-smart.js"></script>
 <script src="js/rig/arp-remap.js"></script>
 <script src="js/rig/arp-export.js"></script>
@@ -562,6 +566,11 @@
 <script src="js/rig/arp-qr3-history.js"></script>
 <script src="js/rig/arp-qr3-liveretarget.js"></script>
 <script src="js/rig/arp-boneshape.js"></script>
+<!-- Auto Fix (C): section "Chỉnh sửa auto" cho ARP — đăng ký plugin
+     'auto-fix' vào ArpPlugins (tab riêng plugin:auto-fix) + section
+     trong tab Quick Rig. Load SAU arp-plugins.js (registry) và SAU
+     arp-quickrig.js (registerSection) — cuối khối ARP. -->
+<script src="js/rig/arp-autofix.js"></script>
 <script src="js/rigging/meshy-rigging.js"></script>
 <script src="js/rigging/character-controller.js"></script>
 <script src="js/animation/presets.js"></script>
@@ -570,6 +579,19 @@
 <script src="js/animation/m2m-motion.js"></script>
 <script src="js/animation/mesh2motion-studio.js"></script>
 <script src="js/animation/animation-manager.js"></script>
+<!-- ============ ARP VIEWPORT (vòng Viewport): registry PHẢI load trước mọi
+     module arp-vp-* khác; toolbar load cuối (sau Smart/QuickRig) để trạng
+     thái ban đầu đúng. Core -> skeleton/labels/ik/select/trails/measure/
+     presets -> toolbar. -->
+<script src="js/rig/arp-vp-core.js"></script>
+<script src="js/rig/arp-vp-skeleton.js"></script>
+<script src="js/rig/arp-vp-labels.js"></script>
+<script src="js/rig/arp-vp-ik.js"></script>
+<script src="js/rig/arp-vp-select.js"></script>
+<script src="js/rig/arp-vp-trails.js"></script>
+<script src="js/rig/arp-vp-measure.js"></script>
+<script src="js/rig/arp-vp-presets.js"></script>
+<script src="js/ui/arp-vp-toolbar.js"></script>
 <script src="js/animation/anim-auto-gen.js"></script>
 <script src="js/animation/ik-solver.js"></script>
 <script src="js/animation/anim-blender.js"></script>

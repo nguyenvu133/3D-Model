@@ -27,6 +27,12 @@
  *   setWindowPos(x, y) / setWindowSize(w, h)
  *   getWindowState() → {x, y, w, h, maximized, minimized, mode}
  *     mode: 'normal' | 'maximized' | 'minimized' | 'mobile'
+ * API mới (Plugins — js/rig/arp-plugins.js):
+ *   ArpPanel.unregisterTab(id) — gỡ 1 tab (plugin bị tắt/gỡ);
+ *   nếu tab đang mở thì về tab Smart.
+ *   Tab 'plugins' (quản lý plugin) nằm trong TAB_ORDER; các tab
+ *   của plugin (id 'plugin:<id>') do ArpPlugins đăng ký, render
+ *   sau các tab cố định trong renderTabBar.
  *
  * Tab Smart do js/rig/arp-smart.js render (PixiStudio.ArpSmart).
  * 4 tab còn lại do agent khác đăng ký qua registerTab — panel này
@@ -47,13 +53,14 @@
 
   var bus = PixiStudio.bus;
 
-  var TAB_ORDER = ['smart', 'remap', 'export', 'quickrig', 'boneshape'];
+  var TAB_ORDER = ['smart', 'remap', 'export', 'quickrig', 'boneshape', 'plugins'];
   var TAB_TITLES = {
     smart: 'Smart',
     remap: 'Remap',
     export: 'Export',
     quickrig: 'Quick Rig',
-    boneshape: 'Bone Shape'
+    boneshape: 'Bone Shape',
+    plugins: 'Plugins'
   };
 
   /* --- Cửa sổ nổi (PHẦN 9) --- */
@@ -349,6 +356,19 @@
       b.addEventListener('click', function () { ArpPanel.showTab(id); });
       ArpPanel._bar.appendChild(b);
     });
+    /* Tab của plugin (id 'plugin:<id>', đăng ký qua ArpPlugins):
+       nằm sau các tab cố định, theo thứ tự đăng ký. Plugin bị tắt
+       thì ArpPlugins gọi unregisterTab nên không còn ở đây. */
+    Object.keys(ArpPanel._tabs).forEach(function (id) {
+      if (TAB_ORDER.indexOf(id) >= 0) return;
+      var tab = ArpPanel._tabs[id];
+      var b = document.createElement('button');
+      b.className = 'arp-tab' + (ArpPanel._current === id ? ' active' : '');
+      b.setAttribute('data-tab', id);
+      b.textContent = (tab && tab.title) || id;
+      b.addEventListener('click', function () { ArpPanel.showTab(id); });
+      ArpPanel._bar.appendChild(b);
+    });
   }
 
   ArpPanel._build = function () {
@@ -406,6 +426,11 @@
     window.addEventListener('resize', function () {
       if (ArpPanel._open) applyWindowState();
     });
+    /* Plugin đăng ký TRƯỚC khi panel load: registry giữ lại, panel
+       nhận tab Plugins + tab plugin khi build (xem arp-plugins.js). */
+    if (window.PixiStudio && PixiStudio.ArpPlugins && typeof PixiStudio.ArpPlugins.syncPanelTabs === 'function') {
+      try { PixiStudio.ArpPlugins.syncPanelTabs(); } catch (e) {}
+    }
     ArpPanel._built = true;
   };
 
@@ -419,6 +444,19 @@
       renderTabBar();
       if (ArpPanel._open && ArpPanel._current === id) ArpPanel.showTab(id);
     }
+    return true;
+  };
+
+  /* Gỡ 1 tab (ArpPlugins gọi khi plugin bị tắt/gỡ). Nếu tab đang
+     mở thì chuyển về tab Smart. Trả false khi tab không tồn tại. */
+  ArpPanel.unregisterTab = function (id) {
+    if (!id || !ArpPanel._tabs[id]) return false;
+    delete ArpPanel._tabs[id];
+    if (ArpPanel._current === id) {
+      ArpPanel._current = 'smart';
+      if (ArpPanel._open) { ArpPanel.showTab('smart'); return true; }
+    }
+    if (ArpPanel._built) renderTabBar();
     return true;
   };
 
