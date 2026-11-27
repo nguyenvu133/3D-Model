@@ -47,13 +47,126 @@
     { id: 'uvunwrap', name: 'UVUnwrap', icon: 'uv', action: 'uvunwrap' }
   ];
 
+  /* ---------- Asset Library mở rộng (nhóm C) ---------- */
+  const FILE_TYPES = ['All', 'FBX', 'GLB', 'OBJ', 'STL', 'Sample', 'Image'];
+  const SORTS = [
+    { id: 'default', label: 'Mặc định (★ ghim đầu)' },
+    { id: 'name', label: 'Tên A–Z' },
+    { id: 'newest', label: 'Mới nhất' },
+    { id: 'size', label: 'Dung lượng ↓' },
+    { id: 'tris', label: 'Tris nhiều nhất' }
+  ];
+
   const Library = {
     assets: SAMPLE_ASSETS.slice(),
     category: 'All',
     search: '',
     selectedAssetId: 'char-1',
-    _thumbs: {}
+    _thumbs: {},
+    /* --- trạng thái mở rộng --- */
+    fileType: 'All',
+    sort: 'default',
+    tagFilter: null,
+    collectionFilter: 'All',
+    collections: [],          /* [{ id, name }] */
+    viewMode: 'grid',         /* 'grid' | 'list' */
+    multiSelect: false,
+    selectedIds: {},          /* id -> true */
+    _recent: []               /* tối đa 5 id, mới nhất đầu */
   };
+
+  /* Chuẩn hoá metadata — asset cũ/thiếu field vẫn chạy, hiện "—" khi thiếu số liệu */
+  Library._normalizeAsset = function (a) {
+    if (!a) return a;
+    if (!Array.isArray(a.tags)) a.tags = [];
+    if (typeof a.favorite !== 'boolean') a.favorite = false;
+    if (a.collectionId === undefined) a.collectionId = null;
+    if (!a.addedAt) a.addedAt = new Date().toISOString();
+    if (a.fileSize === undefined || a.fileSize === null) a.fileSize = 0;
+    if (!a.fileExt) a.fileExt = Library._deriveExt(a);
+    if (!a.stats) a.stats = null;
+    return a;
+  };
+
+  Library._deriveExt = function (a) {
+    if (a.type === 'model') {
+      const entry = a.entry || (PixiStudio.Models && PixiStudio.Models.models && PixiStudio.Models.models[a.modelId]);
+      const name = (entry && entry.name) || a.name || '';
+      const m = /\.([a-z0-9]+)$/i.exec(name);
+      if (m) return m[1].toLowerCase();
+      if (entry && entry.isGLB) return 'glb';
+      return '';
+    }
+    if (a.type === 'character') return 'sample';
+    return '';
+  };
+
+  Library._assetStats = function (a) {
+    if (a.stats) return a.stats;
+    const entry = a.entry || (a.modelId && PixiStudio.Models && PixiStudio.Models.models && PixiStudio.Models.models[a.modelId]);
+    if (entry && entry.stats) { a.stats = entry.stats; return entry.stats; }
+    return null;
+  };
+
+  Library._assetSize = function (a) {
+    if (a.fileSize) return a.fileSize;
+    const entry = a.entry || (a.modelId && PixiStudio.Models && PixiStudio.Models.models && PixiStudio.Models.models[a.modelId]);
+    if (entry && entry.fileSize) { a.fileSize = entry.fileSize; return entry.fileSize; }
+    return 0;
+  };
+
+  Library._assetExt = function (a) {
+    if (a.fileExt) return a.fileExt;
+    a.fileExt = Library._deriveExt(a);
+    return a.fileExt;
+  };
+
+  /* Persist an toàn — nhóm B có thể thêm Library._persist / AssetLibraryStore sau;
+     chưa có thì chỉ bỏ qua, không chặn UI. */
+  Library._persistSafe = function () {
+    try {
+      if (typeof Library._persist === 'function') { Library._persist(); return; }
+      var Store = window.PixiStudio && PixiStudio.AssetLibraryStore;
+      if (Store && typeof Store.saveLibrary === 'function') { Store.saveLibrary(Library); }
+      else if (Store && typeof Store.save === 'function') { Store.save(Library); }
+    } catch (e) { /* store chưa sẵn sàng — bỏ qua */ }
+  };
+
+  /* _persist "thật": ghi meta qua store nhóm B (asset-library-storage.js)
+     nếu đã load. Lưu ý: script store CHƯA có trong index.html (nhóm A sở
+     hữu) nên lúc này thường no-op — khi nhóm A thêm script tag, persist
+     sẽ chạy mà không cần sửa lại code nhóm C. */
+  Library._persist = function () {
+    try {
+      var Store = window.PixiStudio && PixiStudio.AssetLibraryStore;
+      if (Store && typeof Store.saveMeta === 'function') {
+        var meta = (typeof Store.collectMeta === 'function')
+          ? Store.collectMeta()
+          : Library.assets.map(function (a) { return Library._sanitizeAsset(a); });
+        Store.saveMeta(meta);
+      }
+    } catch (e) { /* store chưa sẵn sàng — bỏ qua */ }
+  };
+
+  Library._touchRecent = function (id) {
+    Library._recent = Library._recent.filter(function (x) { return x !== id; });
+    Library._recent.unshift(id);
+    if (Library._recent.length > 5) Library._recent.length = 5;
+  };
+
+  /* Gán metadata mặc định cho 20 sample asset (tags rỗng, addedAt xen kẽ để sort "Mới nhất" có nghĩa) */
+  (function () {
+    var base = Date.parse('2026-11-20T00:00:00Z');
+    SAMPLE_ASSETS.forEach(function (a, i) {
+      a.tags = [];
+      a.favorite = false;
+      a.collectionId = null;
+      a.addedAt = new Date(base + i * 3600000).toISOString();
+      a.fileSize = 0;
+      a.fileExt = a.type === 'character' ? 'sample' : '';
+      a.stats = null;
+    });
+  })();
 
   /* ============================================================
      THUMBNAIL 3D THẬT — render variant chibi vào canvas 128px
@@ -236,57 +349,206 @@
 
   Library.filtered = function () {
     const q = Library.search.trim().toLowerCase();
-    return Library.assets.filter(function (a) {
+    const list = Library.assets.filter(function (a) {
+      Library._normalizeAsset(a);
       const catOk = Library.category === 'All' || a.cat === Library.category;
-      const qOk = !q || a.name.toLowerCase().indexOf(q) !== -1 || a.cat.toLowerCase().indexOf(q) !== -1;
-      return catOk && qOk;
+      /* search: tên + category + TAG */
+      const qOk = !q || a.name.toLowerCase().indexOf(q) !== -1 || a.cat.toLowerCase().indexOf(q) !== -1 ||
+        (a.tags || []).some(function (t) { return String(t).toLowerCase().indexOf(q) !== -1; });
+      /* lọc theo loại file */
+      let ftOk = true;
+      if (Library.fileType !== 'All') {
+        const ext = (Library._assetExt(a) || '').toLowerCase();
+        if (Library.fileType === 'Sample') ftOk = ext === 'sample' || a.type === 'character';
+        else if (Library.fileType === 'Image') ftOk = ext === 'png' || ext === 'jpg' || ext === 'jpeg' || a.type === 'image';
+        else ftOk = ext === Library.fileType.toLowerCase();
+      }
+      /* lọc theo collection */
+      const colOk = Library.collectionFilter === 'All' ||
+        (Library.collectionFilter === '__none__' ? !a.collectionId : a.collectionId === Library.collectionFilter);
+      /* lọc theo tag đã chọn (click tag trên card) */
+      const tagOk = !Library.tagFilter || (a.tags || []).indexOf(Library.tagFilter) !== -1;
+      return catOk && qOk && ftOk && colOk && tagOk;
     });
+    /* sắp xếp */
+    const byName = function (x, y) { return String(x.name).localeCompare(String(y.name)); };
+    const byAdded = function (x, y) { return String(y.addedAt || '').localeCompare(String(x.addedAt || '')); };
+    if (Library.sort === 'name') list.sort(byName);
+    else if (Library.sort === 'newest') list.sort(byAdded);
+    else if (Library.sort === 'size') list.sort(function (x, y) { return Library._assetSize(y) - Library._assetSize(x); });
+    else if (Library.sort === 'tris') list.sort(function (x, y) {
+      const sx = Library._assetStats(x), sy = Library._assetStats(y);
+      return (sy && sy.triangles || 0) - (sx && sx.triangles || 0);
+    });
+    else { /* mặc định: favorite ghim đầu, còn lại giữ thứ tự gốc (sort ổn định) */
+      list.sort(function (x, y) { return (y.favorite ? 1 : 0) - (x.favorite ? 1 : 0); });
+    }
+    return list;
+  };
+
+  /* Thẻ tag nhỏ trên card — click để lọc theo tag đó */
+  Library._tagChipEl = function (asset, tag) {
+    return U.el('span', {
+      class: 'asset-tag',
+      text: '#' + tag,
+      onclick: function (e) {
+        e.stopPropagation();
+        Library.tagFilter = (Library.tagFilter === tag) ? null : tag;
+        Library.renderGrid();
+        bus.emit('notify', {
+          type: 'info', title: 'Lọc theo tag',
+          message: Library.tagFilter ? 'Đang lọc tag “' + tag + '” — click lại tag để bỏ lọc.' : 'Đã bỏ lọc tag.'
+        });
+      }
+    });
+  };
+
+  Library._cardMetaText = function (asset) {
+    const st = Library._assetStats(asset);
+    const size = Library._assetSize(asset);
+    const parts = [];
+    if (st && st.triangles) parts.push(U.formatNumber(st.triangles) + ' tris');
+    if (size) parts.push(U.formatBytes(size));
+    return parts.join(' · ');
+  };
+
+  Library._buildCard = function (asset) {
+    const thumb = Library.generateThumbnail(asset);
+    const card = U.el('div', {
+      class: 'asset-card' + (Library.selectedAssetId === asset.id ? ' selected' : '') + (asset.favorite ? ' fav' : ''),
+      dataset: { id: asset.id },
+      draggable: 'false',
+      onclick: function () {
+        if (Library.multiSelect) { Library.toggleSelect(asset.id); return; }
+        Library.selectAsset(asset.id);
+      },
+      oncontextmenu: function (e) {
+        e.preventDefault();
+        bus.emit('ui:contextmenu', { x: e.clientX, y: e.clientY, zone: 'asset', asset: asset });
+      }
+    });
+    if (Library.multiSelect) {
+      card.appendChild(U.el('input', {
+        type: 'checkbox', class: 'asset-check',
+        onclick: function (e) { e.stopPropagation(); Library.toggleSelect(asset.id); }
+      }));
+      /* đồng bộ trạng thái check sau khi append (U.el set attribute) */
+      var cb = card.querySelector('.asset-check');
+      if (cb) cb.checked = !!Library.selectedIds[asset.id];
+    }
+    /* sao favorite */
+    card.appendChild(U.el('span', {
+      class: 'asset-fav' + (asset.favorite ? ' on' : ''),
+      text: asset.favorite ? '★' : '☆',
+      title: asset.favorite ? 'Bỏ favorite' : 'Đánh dấu favorite',
+      onclick: function (e) { e.stopPropagation(); Library.toggleFavorite(asset.id); }
+    }));
+    /* badge loại file */
+    const ext = Library._assetExt(asset);
+    if (ext) card.appendChild(U.el('span', { class: 'asset-ext', text: ext.toUpperCase() }));
+    if (thumb) {
+      card.appendChild(U.el('img', { src: thumb, alt: asset.name, draggable: 'false' }));
+    } else {
+      const ph = U.el('div', { style: 'height:76%;display:grid;place-items:center;color:var(--text-3);' });
+      ph.innerHTML = U.icon(asset.icon || 'cube', 'ic-lg');
+      card.appendChild(ph);
+    }
+    card.appendChild(U.el('div', { class: 'a-name', text: asset.name }));
+    card.appendChild(U.el('div', { class: 'a-cat', text: asset.cat }));
+    const meta = Library._cardMetaText(asset);
+    if (meta) card.appendChild(U.el('div', { class: 'a-meta', text: meta }));
+    if ((asset.tags || []).length) {
+      const tagRow = U.el('div', { class: 'asset-tags' });
+      asset.tags.slice(0, 3).forEach(function (t) { tagRow.appendChild(Library._tagChipEl(asset, t)); });
+      if (asset.tags.length > 3) tagRow.appendChild(U.el('span', { class: 'asset-tag-more', text: '+' + (asset.tags.length - 3) }));
+      card.appendChild(tagRow);
+    }
+    return card;
+  };
+
+  /* Dòng list view: thumb nhỏ + tên + loại + tris + dung lượng + sao */
+  Library._buildRow = function (asset) {
+    const thumb = Library.generateThumbnail(asset);
+    const st = Library._assetStats(asset);
+    const row = U.el('div', {
+      class: 'asset-row' + (Library.selectedAssetId === asset.id ? ' selected' : ''),
+      dataset: { id: asset.id },
+      onclick: function () {
+        if (Library.multiSelect) { Library.toggleSelect(asset.id); return; }
+        Library.selectAsset(asset.id);
+      },
+      oncontextmenu: function (e) {
+        e.preventDefault();
+        bus.emit('ui:contextmenu', { x: e.clientX, y: e.clientY, zone: 'asset', asset: asset });
+      }
+    });
+    if (Library.multiSelect) {
+      row.appendChild(U.el('input', {
+        type: 'checkbox', class: 'asset-check',
+        onclick: function (e) { e.stopPropagation(); Library.toggleSelect(asset.id); }
+      }));
+      var cb = row.querySelector('.asset-check');
+      if (cb) cb.checked = !!Library.selectedIds[asset.id];
+    }
+    const th = U.el('div', { class: 'ar-thumb' });
+    if (thumb) th.appendChild(U.el('img', { src: thumb, alt: asset.name }));
+    else th.innerHTML = U.icon(asset.icon || 'cube', 'ic-lg');
+    row.appendChild(th);
+    row.appendChild(U.el('div', { class: 'ar-info' }, [
+      U.el('b', { text: asset.name }),
+      U.el('span', { text: asset.cat + ' · ' + (Library._assetExt(asset) || '—').toUpperCase() })
+    ]));
+    row.appendChild(U.el('div', { class: 'ar-stat', text: st && st.triangles ? U.formatNumber(st.triangles) + ' tris' : '—' }));
+    row.appendChild(U.el('div', { class: 'ar-stat', text: Library._assetSize(asset) ? U.formatBytes(Library._assetSize(asset)) : '—' }));
+    row.appendChild(U.el('span', {
+      class: 'asset-fav' + (asset.favorite ? ' on' : ''),
+      text: asset.favorite ? '★' : '☆',
+      onclick: function (e) { e.stopPropagation(); Library.toggleFavorite(asset.id); }
+    }));
+    return row;
   };
 
   Library.renderGrid = function () {
     const grid = U.$('#asset-grid');
     if (!grid) return;
     grid.innerHTML = '';
+    grid.classList.toggle('list-view', Library.viewMode === 'list');
     const items = Library.filtered();
 
     if (!items.length) {
-      grid.appendChild(U.el('div', { class: 'empty-state', style: 'grid-column:1/-1;' }, [
+      const empty = U.el('div', { class: 'empty-state', style: 'grid-column:1/-1;' }, [
         U.el('div', { class: 'es-icon', text: '🔍' }),
         U.el('b', { text: 'Không tìm thấy asset' }),
         U.el('span', { text: 'Thử từ khoá khác hoặc import file mới.' })
-      ]));
-      return;
-    }
-
-    items.forEach(function (asset) {
-      const thumb = Library.generateThumbnail(asset);
-      const card = U.el('div', {
-        class: 'asset-card' + (Library.selectedAssetId === asset.id ? ' selected' : ''),
-        dataset: { id: asset.id },
-        draggable: 'false',
-        onclick: function () { Library.selectAsset(asset.id); },
-        oncontextmenu: function (e) {
-          e.preventDefault();
-          bus.emit('ui:contextmenu', { x: e.clientX, y: e.clientY, zone: 'asset', asset: asset });
-        }
-      });
-      if (thumb) {
-        card.appendChild(U.el('img', { src: thumb, alt: asset.name, draggable: 'false' }));
-      } else {
-        const ph = U.el('div', { style: 'height:76%;display:grid;place-items:center;color:var(--text-3);' });
-        ph.innerHTML = U.icon(asset.icon || 'cube', 'ic-lg');
-        card.appendChild(ph);
+      ]);
+      if (Library.tagFilter || Library.fileType !== 'All' || Library.collectionFilter !== 'All') {
+        empty.appendChild(U.el('button', {
+          class: 'btn sm', text: '✕ Xoá bộ lọc',
+          onclick: function () {
+            Library.tagFilter = null; Library.fileType = 'All'; Library.collectionFilter = 'All';
+            Library.renderCollectionOptions(); Library.renderGrid();
+          }
+        }));
       }
-      card.appendChild(U.el('div', { class: 'a-name', text: asset.name }));
-      card.appendChild(U.el('div', { class: 'a-cat', text: asset.cat }));
-      grid.appendChild(card);
-    });
+      grid.appendChild(empty);
+    } else {
+      items.forEach(function (asset) {
+        grid.appendChild(Library.viewMode === 'list' ? Library._buildRow(asset) : Library._buildCard(asset));
+      });
+    }
+    Library.renderFooter();
+    Library.renderRecent();
   };
 
   Library.selectAsset = function (id) {
     Library.selectedAssetId = id;
     const asset = Library.assets.find(function (a) { return a.id === id; });
     if (!asset) return;
+
+    /* Gần đây: ghi dấu load + ghim vào top 5 */
+    asset.lastLoadedAt = new Date().toISOString();
+    Library._touchRecent(asset.id);
+    Library._persistSafe();
 
     /* Model người dùng import → chỉ chọn + focus (model đã ở trong scene) */
     if (asset.type === 'model') {
@@ -476,27 +738,40 @@
       if (existing) {
         existing.name = entry.name || existing.name;
         existing.entry = entry;
+        if (entry.stats) existing.stats = entry.stats;
+        if (entry.fileSize) existing.fileSize = entry.fileSize;
+        if (!existing.fileExt) existing.fileExt = Library._deriveExt(existing);
         return;
       }
-      Library.assets.push({
+      Library.assets.push(Library._normalizeAsset({
         id: assetId,
         modelId: id,
         name: entry.name || 'Imported',
         cat: 'Imported',
         type: 'model',
         entry: entry,
-        icon: 'model'
-      });
+        icon: 'model',
+        tags: [],
+        favorite: false,
+        collectionId: null,
+        addedAt: new Date().toISOString(),
+        fileSize: entry.fileSize || 0,
+        fileExt: (function () { const m = /\.([a-z0-9]+)$/i.exec(entry.name || ''); return m ? m[1].toLowerCase() : (entry.isGLB ? 'glb' : ''); })(),
+        stats: entry.stats || null
+      }));
       added++;
     });
-    /* bỏ entry của model đã bị xoá khỏi scene */
+    /* bỏ entry của model đã bị xoá khỏi scene — TRỪ placeholder thiếu file
+       (nhóm B: placeholder phải ở lại grid để user bấm "Load lại"). */
     Library.assets = Library.assets.filter(function (a) {
       if (a.type !== 'model') return true;
+      if (a.missingFile) return true;
       return !!(a.entry && a.entry.object3D && a.entry.object3D.parent);
     });
     if (added) {
       Library.renderChips();
       Library.renderGrid();
+      Library._persistSafe(); /* nhóm B+C: auto save meta sau khi thêm asset mới */
       if (!silent) {
         bus.emit('notify', {
           type: 'success', title: 'Asset Library đã cập nhật',
@@ -505,6 +780,622 @@
       }
     }
     return added;
+  };
+
+  /* ============================================================
+     MỞ RỘNG (nhóm C) — thao tác asset, collection, bulk,
+     xuất/nhập JSON, gần đây, footer, chế độ xem
+     ============================================================ */
+  Library._findAsset = function (id) {
+    return Library.assets.find(function (a) { return a.id === id; }) || null;
+  };
+
+  Library._refresh = function () {
+    Library.renderGrid();
+    Library.renderFooter();
+    Library.renderRecent();
+    Library.renderCollectionOptions();
+  };
+
+  Library._afterChange = function () {
+    Library._persistSafe();
+    Library._refresh();
+  };
+
+  /* ---------- Đổi tên ---------- */
+  Library.renameAsset = function (id) {
+    const a = Library._findAsset(id);
+    if (!a || !PixiStudio.Modals) return;
+    PixiStudio.Modals.prompt({
+      title: 'Đổi tên asset', label: 'Tên mới:', value: a.name,
+      onOk: function (v) {
+        const name = (v || '').trim();
+        if (!name || name === a.name) return;
+        a.name = name;
+        if (a.entry) a.entry.name = name;   /* đồng bộ tên model trong scene */
+        Library._afterChange();
+        /* Undo/Redo toàn diện (v2): tên asset nằm trong snapshot assets */
+        if (PixiStudio.History) PixiStudio.History.push('Rename asset ' + name);
+        bus.emit('notify', { type: 'success', title: 'Đã đổi tên', message: '“' + name + '”' });
+      }
+    });
+  };
+
+  /* ---------- Xoá ---------- */
+  Library.deleteAsset = function (id) {
+    const a = Library._findAsset(id);
+    if (!a || !PixiStudio.Modals) return;
+    PixiStudio.Modals.confirm({
+      title: 'Xoá asset', danger: true, okLabel: 'Xoá',
+      message: 'Xoá “' + a.name + '” khỏi Asset Library?' + (a.type === 'model' ? ' Model cũng sẽ bị gỡ khỏi scene.' : ' (Sample — có thể tạo lại bằng cách load lại trang.)'),
+      onOk: function () {
+        Library.assets = Library.assets.filter(function (x) { return x.id !== id; });
+        Library._recent = Library._recent.filter(function (x) { return x !== id; });
+        delete Library.selectedIds[id];
+        if (Library.selectedAssetId === id) Library.selectedAssetId = null;
+        if (a.type === 'model' && a.entry && a.entry.object3D) {
+          try {
+            if (PixiStudio.Scene && typeof PixiStudio.Scene.deleteObject === 'function') PixiStudio.Scene.deleteObject(a.entry.object3D);
+            else if (a.entry.object3D.parent) a.entry.object3D.parent.remove(a.entry.object3D);
+          } catch (e) { /* gỡ scene thất bại — asset đã khỏi library */ }
+          /* Xoá file thật trong store (nhóm B) nếu có — guard kỹ vì store làm song song.
+             Dùng removeMeta (xoá cả meta + file) với id bền của store (_storeId || id);
+             nếu chưa có removeMeta thì fallback deleteFile. */
+          try {
+            var Store = window.PixiStudio && PixiStudio.AssetLibraryStore;
+            var storeId = a._storeId || a.id;
+            if (Store && typeof Store.removeMeta === 'function') Store.removeMeta(storeId);
+            else if (Store && typeof Store.deleteFile === 'function') Store.deleteFile(storeId);
+          } catch (e) { /* store chưa sẵn sàng — file gốc có thể còn, báo trong notify dưới */ }
+        }
+        Library._afterChange();
+        /* Undo/Redo toàn diện (v2): push SAU khi asset đã khỏi library
+           để redo về đúng state cuối (model đã push 1 bước giữa trong
+           deleteObject — undo cần 2 bước: asset → model, panel hiện rõ). */
+        if (PixiStudio.History) PixiStudio.History.push('Delete asset ' + a.name);
+        bus.emit('notify', { type: 'success', title: 'Đã xoá asset', message: '“' + a.name + '”' });
+      }
+    });
+  };
+
+  /* ---------- Nhân bản ----------
+     Sample/prop: thêm entry mới cùng variant (không tốn thêm bộ nhớ model).
+     Model: thêm entry mới TRỎ CÙNG file/entry — KHÔNG copy file nhị phân
+     (copy file cần đọc lại ArrayBuffer từ store + ghi lại, tốn RAM/dung lượng
+     IndexedDB; bản sao chỉ là shortcut). Hạn chế: xoá file gốc sẽ ảnh hưởng bản sao. */
+  Library.duplicateAsset = function (id) {
+    const a = Library._findAsset(id);
+    if (!a) return;
+    const copy = {};
+    Object.keys(a).forEach(function (k) { if (k !== 'entry') copy[k] = a[k]; });
+    copy.id = U.uid('asset');
+    copy.name = a.name + ' (copy)';
+    copy.tags = (a.tags || []).slice();
+    copy.favorite = false;
+    copy.addedAt = new Date().toISOString();
+    copy.lastLoadedAt = undefined;
+    if (a.variant) copy.variant = Object.assign({}, a.variant);
+    if (a.entry) copy.entry = a.entry;   /* cùng file — xem ghi chú trên */
+    Library.assets.push(Library._normalizeAsset(copy));
+    Library._afterChange();
+    /* Undo/Redo toàn diện (v2) */
+    if (PixiStudio.History) PixiStudio.History.push('Duplicate asset ' + copy.name);
+    bus.emit('notify', {
+      type: 'success', title: 'Đã nhân bản',
+      message: '“' + copy.name + '”' + (a.type === 'model' ? ' (trỏ cùng file gốc — xoá file gốc sẽ ảnh hưởng bản sao).' : '')
+    });
+    return copy.id;
+  };
+
+  /* ---------- Favorite / Tag ---------- */
+  Library.toggleFavorite = function (id) {
+    const a = Library._findAsset(id);
+    if (!a) return;
+    a.favorite = !a.favorite;
+    Library._afterChange();
+    /* Undo/Redo toàn diện (v2) */
+    if (PixiStudio.History) PixiStudio.History.push((a.favorite ? 'Favorite ' : 'Unfavorite ') + a.name);
+    bus.emit('notify', {
+      type: 'info', title: a.favorite ? '★ Favorite' : 'Bỏ favorite',
+      message: '“' + a.name + '”' + (a.favorite ? ' đã ghim lên đầu grid.' : '')
+    });
+  };
+
+  Library.addTag = function (id) {
+    const a = Library._findAsset(id);
+    if (!a || !PixiStudio.Modals) return;
+    PixiStudio.Modals.prompt({
+      title: 'Thêm tag', label: 'Tag mới (phân tách bằng dấu phẩy nếu nhiều):', value: '',
+      placeholder: 'vd: wuxia, kiếm',
+      onOk: function (v) {
+        const added = [];
+        String(v || '').split(',').forEach(function (raw) {
+          const t = raw.trim();
+          if (t && a.tags.indexOf(t) === -1) { a.tags.push(t); added.push(t); }
+        });
+        if (!added.length) return;
+        Library._afterChange();
+        /* Undo/Redo toàn diện (v2) */
+        if (PixiStudio.History) PixiStudio.History.push('Tag ' + a.name + ': ' + added.join(', '));
+        bus.emit('notify', { type: 'success', title: 'Đã thêm tag', message: added.map(function (t) { return '#' + t; }).join(', ') + ' → “' + a.name + '”' });
+      }
+    });
+  };
+
+  Library.removeTag = function (id, tag) {
+    const a = Library._findAsset(id);
+    if (!a) return;
+    a.tags = (a.tags || []).filter(function (t) { return t !== tag; });
+    if (Library.tagFilter === tag) Library.tagFilter = null;
+    Library._afterChange();
+    /* Undo/Redo toàn diện (v2) */
+    if (PixiStudio.History) PixiStudio.History.push('Remove tag ' + tag + ' (' + a.name + ')');
+  };
+
+  /* ---------- Collection ---------- */
+  Library.createCollection = function () {
+    if (!PixiStudio.Modals) return;
+    PixiStudio.Modals.prompt({
+      title: 'Collection mới', label: 'Tên collection:', value: '',
+      placeholder: 'vd: Võ Lâm, Boss, Demo',
+      onOk: function (v) {
+        const name = (v || '').trim();
+        if (!name) return;
+        if (Library.collections.some(function (c) { return c.name === name; })) {
+          bus.emit('notify', { type: 'warning', title: 'Collection đã có', message: '“' + name + '” đã tồn tại.' });
+          return;
+        }
+        Library.collections.push({ id: U.uid('col'), name: name });
+        Library._afterChange();
+        bus.emit('notify', { type: 'success', title: 'Đã tạo collection', message: '“' + name + '”' });
+      }
+    });
+  };
+
+  Library.setCollection = function (id, collectionId) {
+    const a = Library._findAsset(id);
+    if (!a) return;
+    a.collectionId = collectionId || null;
+    Library._afterChange();
+  };
+
+  Library._collectionName = function (collectionId) {
+    if (!collectionId) return 'Chưa phân loại';
+    const c = Library.collections.find(function (x) { return x.id === collectionId; });
+    return c ? c.name : 'Chưa phân loại';
+  };
+
+  /* ---------- Chi tiết asset ---------- */
+  Library.showDetails = function (id) {
+    const a = Library._findAsset(id);
+    if (!a || !PixiStudio.Modals) return;
+    const st = Library._assetStats(a);
+    const clips = (a.entry && a.entry.clips) || [];
+    const row = function (k, v) {
+      return U.el('div', { class: 'info-row' }, [
+        U.el('span', { class: 'i-label', text: k }),
+        U.el('span', { class: 'i-value', text: v })
+      ]);
+    };
+    const body = U.el('div', {}, [
+      row('Tên', a.name),
+      row('Loại', (a.type || '—') + (Library._assetExt(a) ? ' · ' + Library._assetExt(a).toUpperCase() : '')),
+      row('Category', a.cat || '—'),
+      row('Collection', Library._collectionName(a.collectionId)),
+      row('Tris / Verts', st ? U.formatNumber(st.triangles) + ' / ' + U.formatNumber(st.vertices) : '—'),
+      row('Bones', st && st.bones !== undefined ? String(st.bones) : '—'),
+      row('Clips', clips.length ? clips.map(function (c) { return c.name || c; }).join(', ') : (st && st.animations ? String(st.animations) : '—')),
+      row('Textures', st && st.textures !== undefined ? String(st.textures) : '—'),
+      row('Dung lượng', Library._assetSize(a) ? U.formatBytes(Library._assetSize(a)) : '—'),
+      row('Ngày thêm', a.addedAt ? new Date(a.addedAt).toLocaleString() : '—'),
+      row('Load gần nhất', a.lastLoadedAt ? new Date(a.lastLoadedAt).toLocaleString() : '—')
+    ]);
+    /* tags: xem + xoá từng tag + thêm */
+    const tagWrap = U.el('div', { class: 'form-row', style: 'margin-top:10px;' }, [
+      U.el('label', { text: 'Tags (click ✕ để xoá):' })
+    ]);
+    const tagRow = U.el('div', { class: 'asset-tags', style: 'flex-wrap:wrap;' });
+    const rebuildTags = function () {
+      tagRow.innerHTML = '';
+      (a.tags || []).forEach(function (t) {
+        tagRow.appendChild(U.el('span', {
+          class: 'asset-tag', text: '#' + t + ' ✕',
+          onclick: function () { Library.removeTag(a.id, t); Library.showDetails(a.id); }
+        }));
+      });
+      if (!(a.tags || []).length) tagRow.appendChild(U.el('span', { class: 'dim small', text: 'Chưa có tag.' }));
+    };
+    rebuildTags();
+    tagWrap.appendChild(tagRow);
+    tagWrap.appendChild(U.el('button', {
+      class: 'btn sm', text: '+ Thêm tag', style: 'margin-top:6px;',
+      onclick: function () { Library.addTag(a.id); setTimeout(function () { Library.showDetails(a.id); }, 50); }
+    }));
+    body.appendChild(tagWrap);
+    /* đổi collection */
+    const colWrap = U.el('div', { class: 'form-row' }, [U.el('label', { text: 'Collection:' })]);
+    const colSel = U.el('select', { class: 'input' });
+    colSel.appendChild(U.el('option', { value: '', text: 'Chưa phân loại' }));
+    Library.collections.forEach(function (c) { colSel.appendChild(U.el('option', { value: c.id, text: c.name })); });
+    colSel.value = a.collectionId || '';
+    colSel.addEventListener('change', function () { Library.setCollection(a.id, colSel.value || null); });
+    colWrap.appendChild(colSel);
+    body.appendChild(colWrap);
+
+    PixiStudio.Modals.open({
+      title: 'Chi tiết asset',
+      body: body,
+      buttons: [
+        { label: 'Load', class: 'btn primary', onClick: function () { Library.selectAsset(a.id); } },
+        { label: 'Rename…', class: 'btn', onClick: function () { Library.renameAsset(a.id); } },
+        { label: 'Delete', class: 'btn danger', onClick: function () { Library.deleteAsset(a.id); } },
+        { label: 'Close', class: 'btn' }
+      ]
+    });
+  };
+
+  /* ---------- Chọn nhiều (bulk) ---------- */
+  Library.toggleMultiSelect = function () {
+    Library.multiSelect = !Library.multiSelect;
+    if (!Library.multiSelect) Library.selectedIds = {};
+    Library.renderGrid();
+    Library.renderFooter();
+  };
+
+  Library.toggleSelect = function (id) {
+    if (Library.selectedIds[id]) delete Library.selectedIds[id];
+    else Library.selectedIds[id] = true;
+    Library.renderGrid();
+    Library.renderFooter();
+  };
+
+  Library._selectedAssets = function () {
+    return Library.assets.filter(function (a) { return !!Library.selectedIds[a.id]; });
+  };
+
+  Library.selectAllFiltered = function () {
+    Library.filtered().forEach(function (a) { Library.selectedIds[a.id] = true; });
+    Library.renderGrid();
+    Library.renderFooter();
+  };
+
+  Library.clearSelection = function () {
+    Library.selectedIds = {};
+    Library.renderGrid();
+    Library.renderFooter();
+  };
+
+  Library.deleteSelected = function () {
+    const sel = Library._selectedAssets();
+    if (!sel.length || !PixiStudio.Modals) return;
+    PixiStudio.Modals.confirm({
+      title: 'Xoá ' + sel.length + ' asset đã chọn', danger: true, okLabel: 'Xoá tất cả',
+      message: 'Xoá ' + sel.length + ' asset khỏi library? ' + sel.slice(0, 5).map(function (a) { return '“' + a.name + '”'; }).join(', ') + (sel.length > 5 ? '…' : ''),
+      onOk: function () {
+        const ids = sel.map(function (a) { return a.id; });
+        ids.forEach(function (id) {
+          const a = Library._findAsset(id);
+          if (!a) return;
+          if (a.type === 'model' && a.entry && a.entry.object3D) {
+            try {
+              if (PixiStudio.Scene && typeof PixiStudio.Scene.deleteObject === 'function') PixiStudio.Scene.deleteObject(a.entry.object3D);
+              else if (a.entry.object3D.parent) a.entry.object3D.parent.remove(a.entry.object3D);
+            } catch (e) { /* bỏ qua */ }
+            try {
+              var Store = window.PixiStudio && PixiStudio.AssetLibraryStore;
+              var storeId = a._storeId || a.id;
+              if (Store && typeof Store.removeMeta === 'function') Store.removeMeta(storeId);
+              else if (Store && typeof Store.deleteFile === 'function') Store.deleteFile(storeId);
+            } catch (e) { /* store chưa sẵn sàng */ }
+          }
+        });
+        Library.assets = Library.assets.filter(function (a) { return ids.indexOf(a.id) === -1; });
+        Library._recent = Library._recent.filter(function (x) { return ids.indexOf(x) === -1; });
+        Library.selectedIds = {};
+        if (Library.selectedAssetId && ids.indexOf(Library.selectedAssetId) !== -1) Library.selectedAssetId = null;
+        Library._afterChange();
+        /* Undo/Redo toàn diện (v2): bước cuối của batch (model đã push
+           từng bước trong deleteObject ở trên). */
+        if (PixiStudio.History) PixiStudio.History.push('Delete ' + ids.length + ' assets');
+        bus.emit('notify', { type: 'success', title: 'Đã xoá', message: ids.length + ' asset đã xoá.' });
+      }
+    });
+  };
+
+  Library.tagSelected = function () {
+    const sel = Library._selectedAssets();
+    if (!sel.length || !PixiStudio.Modals) return;
+    PixiStudio.Modals.prompt({
+      title: 'Gắn tag hàng loạt', label: 'Tag (phân tách bằng dấu phẩy):', value: '',
+      placeholder: 'vd: wuxia',
+      onOk: function (v) {
+        const tags = String(v || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+        if (!tags.length) return;
+        sel.forEach(function (a) {
+          Library._normalizeAsset(a);
+          tags.forEach(function (t) { if (a.tags.indexOf(t) === -1) a.tags.push(t); });
+        });
+        Library._afterChange();
+        bus.emit('notify', { type: 'success', title: 'Đã gắn tag', message: tags.map(function (t) { return '#' + t; }).join(', ') + ' → ' + sel.length + ' asset.' });
+      }
+    });
+  };
+
+  /* ---------- Xuất / nhập library JSON ----------
+     CHỈ metadata (tên, loại, cat, tags, favorite, collection, addedAt,
+     fileSize, fileExt, stats, variant sample, modelId). KHÔNG kèm file
+     nhị phân — file JSON này chỉ khôi phục được metadata + sample;
+     model import cần file gốc (FBX/GLB/OBJ/STL) để import lại. */
+  Library._sanitizeAsset = function (a) {
+    const out = {
+      id: a.id, name: a.name, cat: a.cat, type: a.type, icon: a.icon || undefined,
+      tags: (a.tags || []).slice(), favorite: !!a.favorite,
+      collectionId: a.collectionId || null,
+      addedAt: a.addedAt || null, lastLoadedAt: a.lastLoadedAt || null,
+      fileSize: Library._assetSize(a), fileExt: Library._assetExt(a),
+      stats: Library._assetStats(a) || null
+    };
+    if (a.variant) out.variant = a.variant;
+    if (a.modelId) out.modelId = a.modelId;
+    return out;
+  };
+
+  Library.exportLibraryJSON = function () {
+    const data = {
+      app: 'PixiStudio Asset Library', version: 1, exportedAt: new Date().toISOString(),
+      note: 'Metadata-only export — model import cần file gốc, file JSON không chứa file nhị phân.',
+      collections: Library.collections.slice(),
+      assets: Library.assets.map(function (a) { return Library._sanitizeAsset(a); })
+    };
+    U.downloadText(JSON.stringify(data, null, 2), 'asset-library-' + new Date().toISOString().slice(0, 10) + '.json', 'application/json');
+    bus.emit('notify', { type: 'success', title: 'Đã xuất library', message: data.assets.length + ' asset (metadata) → file JSON.' });
+  };
+
+  Library.exportSelectedJSON = function () {
+    const sel = Library._selectedAssets();
+    if (!sel.length) return;
+    const data = {
+      app: 'PixiStudio Asset Library', version: 1, exportedAt: new Date().toISOString(),
+      note: 'Metadata-only export — model import cần file gốc.',
+      collections: Library.collections.slice(),
+      assets: sel.map(function (a) { return Library._sanitizeAsset(a); })
+    };
+    U.downloadText(JSON.stringify(data, null, 2), 'asset-selected-' + sel.length + '.json', 'application/json');
+    bus.emit('notify', { type: 'success', title: 'Đã xuất', message: sel.length + ' asset đã chọn → file JSON.' });
+  };
+
+  Library.importLibraryJSON = function (file) {
+    if (!file) return;
+    U.readFileAsText(file).then(function (text) {
+      let data;
+      try { data = JSON.parse(text); } catch (e) { throw new Error('File JSON không hợp lệ.'); }
+      const incoming = Array.isArray(data) ? data : (data.assets || []);
+      if (!Array.isArray(incoming)) throw new Error('File JSON không chứa danh sách asset.');
+      let imported = 0, skipped = 0;
+      incoming.forEach(function (raw) {
+        if (!raw || !raw.id || !raw.name) { skipped++; return; }
+        if (Library._findAsset(raw.id)) { skipped++; return; }   /* bỏ qua trùng id */
+        const a = Library._normalizeAsset(Object.assign({}, raw));
+        /* model import từ JSON không có entry/file thật → giữ metadata, load lại khi có file */
+        if (a.type === 'model' && !a.entry) a.entry = null;
+        Library.assets.push(a);
+        imported++;
+      });
+      if (Array.isArray(data.collections)) {
+        data.collections.forEach(function (c) {
+          if (c && c.id && !Library.collections.some(function (x) { return x.id === c.id; })) Library.collections.push({ id: c.id, name: c.name || c.id });
+        });
+      }
+      Library._afterChange();
+      bus.emit('notify', {
+        type: 'success', title: 'Đã nhập library',
+        message: 'Đã nhập ' + imported + ' asset mới' + (skipped ? ' (bỏ qua ' + skipped + ' trùng/không hợp lệ)' : '') + '. Model import cần file gốc để load lại.'
+      });
+    }).catch(function (err) {
+      bus.emit('notify', { type: 'error', title: 'Nhập library lỗi', message: err && err.message ? err.message : 'Không đọc được file.' });
+    });
+  };
+
+  /* ---------- Footer: đếm asset + tổng dung lượng ---------- */
+  Library.renderFooter = function () {
+    const foot = U.$('#asset-lib-footer');
+    if (!foot) return;
+    const countEl = U.$('#asset-lib-count', foot);
+    if (countEl) {
+      const total = Library.assets.reduce(function (s, a) { return s + (Library._assetSize(a) || 0); }, 0);
+      const selCount = Object.keys(Library.selectedIds).length;
+      countEl.textContent = Library.assets.length + ' asset · ' + U.formatBytes(total) +
+        (Library.multiSelect && selCount ? ' · đã chọn ' + selCount : '');
+    }
+    const tagNote = U.$('#asset-tag-filter-note');
+    if (tagNote) {
+      if (Library.tagFilter) {
+        tagNote.style.display = '';
+        tagNote.textContent = 'Lọc tag: #' + Library.tagFilter + ' ✕';
+      } else tagNote.style.display = 'none';
+    }
+    const bulk = U.$('#asset-bulk-bar');
+    if (bulk) {
+      bulk.style.display = Library.multiSelect ? '' : 'none';
+      const n = U.$('#asset-bulk-count', bulk);
+      if (n) n.textContent = 'Đã chọn ' + Object.keys(Library.selectedIds).length + ' asset';
+    }
+    const multiBtn = U.$('#asset-multi-toggle');
+    if (multiBtn) multiBtn.classList.toggle('active', Library.multiSelect);
+    const viewBtn = U.$('#asset-view-toggle');
+    if (viewBtn) viewBtn.textContent = Library.viewMode === 'list' ? '⊞ Lưới' : '☰ Danh sách';
+  };
+
+  /* ---------- Gần đây: 5 asset load gần nhất ---------- */
+  Library.renderRecent = function () {
+    const box = U.$('#asset-recent');
+    if (!box) return;
+    const filtersActive = Library.search.trim() || Library.tagFilter ||
+      Library.fileType !== 'All' || Library.collectionFilter !== 'All' || Library.category !== 'All';
+    box.innerHTML = '';
+    if (Library.sort !== 'default' || filtersActive || !Library._recent.length) {
+      box.style.display = 'none';
+      return;
+    }
+    box.style.display = '';
+    box.appendChild(U.el('div', { class: 'ar-title', text: '🕘 Gần đây' }));
+    const row = U.el('div', { class: 'ar-row' });
+    Library._recent.forEach(function (id) {
+      const a = Library._findAsset(id);
+      if (!a) return;
+      const thumb = Library.generateThumbnail(a);
+      const chip = U.el('div', {
+        class: 'ar-chip',
+        title: a.name,
+        onclick: function () { Library.selectAsset(a.id); }
+      });
+      if (thumb) chip.appendChild(U.el('img', { src: thumb, alt: a.name }));
+      else chip.innerHTML = U.icon(a.icon || 'cube', 'ic-lg');
+      chip.appendChild(U.el('span', { text: a.name }));
+      row.appendChild(chip);
+    });
+    box.appendChild(row);
+  };
+
+  /* ---------- Collection select (toolbar) ---------- */
+  Library.renderCollectionOptions = function () {
+    const sel = U.$('#asset-collection');
+    if (!sel) return;
+    const cur = Library.collectionFilter;
+    sel.innerHTML = '';
+    sel.appendChild(U.el('option', { value: 'All', text: 'Tất cả collection' }));
+    sel.appendChild(U.el('option', { value: '__none__', text: 'Chưa phân loại' }));
+    Library.collections.forEach(function (c) { sel.appendChild(U.el('option', { value: c.id, text: c.name })); });
+    sel.value = Library.collections.some(function (c) { return c.id === cur; }) || cur === 'All' || cur === '__none__' ? cur : 'All';
+    if (sel.value !== cur) Library.collectionFilter = sel.value;
+  };
+
+  Library.setViewMode = function (mode) {
+    Library.viewMode = mode === 'list' ? 'list' : 'grid';
+    Library._persistSafe();
+    Library.renderGrid();
+  };
+
+  /* ---------- Toolbar + footer + recent: tạo động (không sửa index.html) ---------- */
+  Library._buildExtraUI = function () {
+    if (Library._extraBuilt) return;
+    Library._extraBuilt = true;
+    const grid = U.$('#asset-grid');
+    const chips = U.$('#asset-filter-chips');
+    if (!grid || !chips) return;
+
+    /* Toolbar: loại file / sắp xếp / collection / view / chọn nhiều / +collection */
+    const bar = U.el('div', { id: 'asset-lib-extra' });
+    const mkSelect = function (id, options, cur, onChange) {
+      const sel = U.el('select', { id: id, class: 'input al-select' });
+      options.forEach(function (o) { sel.appendChild(U.el('option', { value: o.id || o.value, text: o.label || o.text })); });
+      sel.value = cur;
+      sel.addEventListener('change', function () { onChange(sel.value); });
+      return sel;
+    };
+    bar.appendChild(mkSelect('asset-filetype', FILE_TYPES.map(function (f) { return { value: f, text: f === 'All' ? 'Tất cả loại file' : f }; }), Library.fileType, function (v) {
+      Library.fileType = v; Library.renderGrid();
+    }));
+    bar.appendChild(mkSelect('asset-sort', SORTS, Library.sort, function (v) {
+      Library.sort = v; Library.renderGrid();
+    }));
+    bar.appendChild(mkSelect('asset-collection', [{ value: 'All', text: 'Tất cả collection' }], Library.collectionFilter, function (v) {
+      Library.collectionFilter = v; Library.renderGrid();
+    }));
+    bar.appendChild(U.el('button', {
+      id: 'asset-view-toggle', class: 'btn sm', text: '☰ Danh sách',
+      onclick: function () { Library.setViewMode(Library.viewMode === 'list' ? 'grid' : 'list'); }
+    }));
+    bar.appendChild(U.el('button', {
+      id: 'asset-multi-toggle', class: 'btn sm', text: '☑ Chọn nhiều',
+      onclick: function () { Library.toggleMultiSelect(); }
+    }));
+    bar.appendChild(U.el('button', {
+      id: 'asset-new-collection', class: 'btn sm', text: '+ Collection',
+      onclick: function () { Library.createCollection(); }
+    }));
+    const tagNote = U.el('span', {
+      id: 'asset-tag-filter-note', class: 'asset-tag-filter-note', style: 'display:none;',
+      onclick: function () { Library.tagFilter = null; Library.renderGrid(); }
+    });
+    bar.appendChild(tagNote);
+    grid.parentNode.insertBefore(bar, grid);
+
+    /* Bulk bar (chỉ hiện khi chọn nhiều) */
+    const bulk = U.el('div', { id: 'asset-bulk-bar', style: 'display:none;' }, [
+      U.el('span', { id: 'asset-bulk-count', class: 'dim small', text: 'Đã chọn 0 asset' }),
+      U.el('button', { class: 'btn sm', text: 'Chọn tất cả', onclick: function () { Library.selectAllFiltered(); } }),
+      U.el('button', { class: 'btn sm', text: 'Bỏ chọn', onclick: function () { Library.clearSelection(); } }),
+      U.el('button', { class: 'btn sm', text: 'Gắn tag…', onclick: function () { Library.tagSelected(); } }),
+      U.el('button', { class: 'btn sm', text: 'Xuất JSON đã chọn', onclick: function () { Library.exportSelectedJSON(); } }),
+      U.el('button', { class: 'btn sm danger', text: 'Xoá đã chọn', onclick: function () { Library.deleteSelected(); } })
+    ]);
+    grid.parentNode.insertBefore(bulk, grid);
+
+    /* Gần đây */
+    const recent = U.el('div', { id: 'asset-recent', style: 'display:none;' });
+    grid.parentNode.insertBefore(recent, grid);
+
+    /* Footer: đếm + tổng dung lượng + xuất/nhập JSON */
+    const foot = U.el('div', { id: 'asset-lib-footer' });
+    foot.appendChild(U.el('span', { id: 'asset-lib-count', class: 'dim small', text: '' }));
+    const footBtns = U.el('div', { class: 'al-foot-btns' });
+    footBtns.appendChild(U.el('button', { class: 'btn sm', text: '⬇ Xuất JSON', onclick: function () { Library.exportLibraryJSON(); } }));
+    footBtns.appendChild(U.el('button', {
+      class: 'btn sm', text: '⬆ Nhập JSON',
+      onclick: function () { const inp = U.$('#asset-import-json'); if (inp) inp.click(); }
+    }));
+    foot.appendChild(footBtns);
+    const importZone = U.$('#import-btn-zone');
+    /* FIX tích hợp (coordinator, sau nhóm A dời zone lên đầu #page-assets):
+       insertBefore chỉ hợp lệ khi importZone cùng parent với grid; zone giờ
+       nằm ngoài .panel-body nên phải appendChild thay vì insertBefore,
+       nếu không sẽ ném NotFoundError và chết AssetLibrary.init() giữa chừng. */
+    if (importZone && importZone.parentNode === grid.parentNode) grid.parentNode.insertBefore(foot, importZone);
+    else grid.parentNode.appendChild(foot);
+
+    /* input file ẩn cho nhập JSON */
+    const inp = U.el('input', { type: 'file', id: 'asset-import-json', accept: '.json,application/json', style: 'display:none;' });
+    inp.addEventListener('change', function () {
+      if (inp.files && inp.files[0]) Library.importLibraryJSON(inp.files[0]);
+      inp.value = '';
+    });
+    document.body.appendChild(inp);
+  };
+
+  /* Block dung lượng + xóa dữ liệu ở cuối panel Asset Library (nhóm B).
+     Library._persist() đã có sẵn do nhóm C định nghĩa (dòng ~139) — dùng
+     chung, không định nghĩa lại ở đây. */
+  Library.renderStorageBlock = function () {
+    var host = U.$('#page-assets .panel-body');
+    if (!host || U.$('#asset-storage-block')) return;
+    var block = U.el('div', { class: 'section-block', id: 'asset-storage-block', style: 'margin:10px 12px 14px;' }, [
+      U.el('div', { class: 'section-head' }, [
+        U.el('i', { 'data-ic': 'save', class: 'ic' }),
+        document.createTextNode(' Lưu trữ Library')
+      ]),
+      U.el('div', { class: 'section-content' }, [
+        U.el('div', { id: 'asset-storage-usage', class: 'dim small', text: 'Đang tính…' }),
+        U.el('button', {
+          class: 'btn danger block', style: 'margin-top:8px;',
+          html: U.icon('trash') + '<span>Xóa toàn bộ dữ liệu library</span>',
+          onclick: function () {
+            if (PixiStudio.Modals && PixiStudio.Modals.confirm) {
+              PixiStudio.Modals.confirm({
+                title: 'Xóa dữ liệu library?',
+                message: 'Sẽ xóa metadata + toàn bộ file model đã lưu (localStorage + IndexedDB). Model đang mở vẫn còn trong scene, nhưng tắt trang sẽ không tự tải lại nữa.',
+                danger: true, okLabel: 'Xóa hết',
+                onOk: function () { if (PixiStudio.AssetLibraryStore) PixiStudio.AssetLibraryStore.clearAll(); }
+              });
+            } else if (PixiStudio.AssetLibraryStore) {
+              PixiStudio.AssetLibraryStore.clearAll();
+            }
+          }
+        })
+      ])
+    ]);
+    host.appendChild(block);
+    if (PixiStudio.AssetLibraryStore) PixiStudio.AssetLibraryStore.updateUsageUI();
   };
 
   /* Xoá thumbnail cache để vẽ lại (model đổi rig/mesh) */
@@ -538,7 +1429,17 @@
     Library.syncImportedModels(true);
     Library.renderChips();
     Library.renderModelTools();
+    Library._buildExtraUI();
+    Library.renderCollectionOptions();
     Library.renderGrid();
+    Library.renderStorageBlock(); /* nhóm B: block dung lượng + xóa dữ liệu */
+
+    /* AUTO LOAD (nhóm B): khôi phục library đã lưu — chạy async song song
+       với loadDefault ở app.js, store tự guard chống chạy 2 lần. */
+    if (PixiStudio.AssetLibraryStore) {
+      PixiStudio.AssetLibraryStore.init();
+      PixiStudio.AssetLibraryStore.restore();
+    }
 
     /* Search */
     const search = U.$('#asset-search');

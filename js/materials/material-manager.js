@@ -68,6 +68,9 @@
     });
 
     bus.emit('material:updated', { id: typeId, params: MaterialManager.params, target: scope.name });
+    /* Undo/Redo toàn diện (v2): snapshot giữ ref material cũ nên undo
+       khôi phục đúng material gốc, không chỉ params. */
+    if (PixiStudio.History) PixiStudio.History.push('Material: ' + (type.name || typeId));
   };
 
   MaterialManager.applyParams = function (mat, p) {
@@ -175,6 +178,8 @@
           MaterialManager.updateParam('color', '#' + p[1].toString(16).padStart(6, '0'));
           MaterialManager.updateParam('metalness', p[2]);
           MaterialManager.updateParam('roughness', p[3]);
+          /* Undo/Redo toàn diện (v2): preset = 1 bước (không phải 3) */
+          if (PixiStudio.History) PixiStudio.History.push('Material preset: ' + p[0]);
           bus.emit('notify', { type: 'info', title: 'Preset ' + p[0], message: 'Đã áp live (auto-update scope).' });
         }
       }));
@@ -194,6 +199,8 @@
       (function () {
         const c = U.el('input', { type: 'color', class: 'slider', value: params.color, style: 'height:26px;border:none;background:transparent;cursor:pointer;' });
         c.addEventListener('input', function () { MaterialManager.updateParam('color', c.value); });
+        /* Undo/Redo toàn diện (v2): 'change' = thả chuột sau khi chọn màu */
+        c.addEventListener('change', function () { if (PixiStudio.History) PixiStudio.History.push('Material: Base Color'); });
         return c;
       })(),
       U.el('span', { class: 's-val mono', text: params.color })
@@ -217,6 +224,8 @@
         val.textContent = s.value;
         MaterialManager.updateParam(sdef[0], parseFloat(s.value));
       });
+      /* Undo/Redo toàn diện (v2): 'change' = thả slider, 1 lần kéo = 1 bước */
+      s.addEventListener('change', function () { if (PixiStudio.History) PixiStudio.History.push('Material: ' + sdef[1]); });
       row.appendChild(s); row.appendChild(val);
       sc.appendChild(row);
     });
@@ -231,6 +240,8 @@
         params[key] = !params[key];
         t.classList.toggle('on', params[key]);
         MaterialManager.updateParam(key, params[key]);
+        /* Undo/Redo toàn diện (v2) */
+        if (PixiStudio.History) PixiStudio.History.push('Material: ' + key);
       });
       row.appendChild(t);
       sc.appendChild(row);

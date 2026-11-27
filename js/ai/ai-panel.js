@@ -21,7 +21,99 @@
   AIPanel._genState = AIPanel._genState || {
     prompt: '', negative: '', style: 'person', quality: 'standard',
     polygon: 30000, tex: '2k', seed: '', batch: 1, imageView: 'single',
-    model: 'v3.1-20260211'   /* Tripo v3 — H3.1 mặc định */
+    model: 'v3.1-20260211',   /* Tripo v3 — H3.1 mặc định */
+    localComplexity: 2, localColor: ''   /* Local Auto Gen */
+  };
+
+  /* ---------- Gen mode: 'cloud' (Tripo, cần API key) / 'local' (procedural, không cần key) ---------- */
+  AIPanel.GEN_MODE_KEY = 'pixiStudio.aiGenMode';
+  AIPanel.getGenMode = function () {
+    try {
+      const m = localStorage.getItem(AIPanel.GEN_MODE_KEY);
+      return m === 'local' ? 'local' : 'cloud';
+    } catch (e) { return 'cloud'; }
+  };
+  AIPanel.setGenMode = function (mode) {
+    mode = mode === 'local' ? 'local' : 'cloud';
+    try { localStorage.setItem(AIPanel.GEN_MODE_KEY, mode); } catch (e) { }
+    AIPanel.renderChecklist();
+    return mode;
+  };
+  /* Local Auto Gen module — do agent khác xây, có thể chưa load: guard mọi chỗ gọi */
+  AIPanel._localGen = function () {
+    return (PixiStudio.AI || {}).LocalAutoGen || null;
+  };
+  /* chạy Local Auto Gen (prompt trống → ngẫu nhiên); trả null nếu module chưa load */
+  AIPanel.runLocalGenerate = function (opts) {
+    const LAG = AIPanel._localGen();
+    if (!LAG || typeof LAG.generate !== 'function') {
+      bus.emit('notify', { type: 'warning', title: 'Local Auto Gen chưa sẵn sàng', message: 'Module Local Auto Gen chưa load — hard-refresh lại trang.' });
+      return null;
+    }
+    const prompt = (opts.prompt || '').trim();
+    if (!prompt) {
+      bus.emit('notify', { type: 'info', title: 'Prompt trống — tạo model ngẫu nhiên', message: 'Local Auto Gen sẽ chọn ngẫu nhiên 1 trong 12 loại model.' });
+    }
+    const seed = (opts.seed !== undefined && opts.seed !== null && opts.seed !== '') ? parseInt(opts.seed, 10) : undefined;
+    const batch = opts.batch || 1;
+    let result = null;
+    try {
+      const args = {
+        prompt: prompt,
+        seed: seed,
+        batch: batch,
+        complexity: opts.complexity || 2,
+        color: opts.color || undefined
+      };
+      /* batch > 1: generate() của core bỏ qua batch → dùng generateBatch khi có */
+      result = (batch > 1 && typeof LAG.generateBatch === 'function')
+        ? LAG.generateBatch(args, batch)
+        : LAG.generate(args);
+    } catch (e) {
+      bus.emit('notify', { type: 'error', title: 'Local Auto Gen lỗi', message: (e && e.message) || String(e) });
+      return null;
+    }
+    const done = function (r) {
+      if (!r) return;
+      if (Array.isArray(r)) {
+        const first = r[0] || {};
+        bus.emit('notify', {
+          type: 'success', title: '💻 Local Auto Gen xong',
+          message: 'Đã tạo ' + r.length + ' model · ' + (first.type || '') + ' · seed ' + (first.seed !== undefined && first.seed !== null ? first.seed : '?'),
+          duration: 6000
+        });
+        return;
+      }
+      bus.emit('notify', {
+        type: 'success', title: '💻 Local Auto Gen xong',
+        message: (r.name || 'Model') + ' · ' + (r.type || '') + ' · seed ' + (r.seed !== undefined && r.seed !== null ? r.seed : '?') + (r.triCount ? ' · ' + r.triCount + ' tris' : ''),
+        duration: 6000
+      });
+    };
+    if (result && typeof result.then === 'function') result.then(done, function (e) { bus.emit('notify', { type: 'error', title: 'Local Auto Gen lỗi', message: (e && e.message) || String(e) }); });
+    else done(result);
+    return result;
+  };
+  /* hàng radio chọn chế độ gen — dùng chung cho Generation Studio + 2 modal */
+  AIPanel._genModeRadios = function (onChange) {
+    const seq = (AIPanel._genModeRadioSeq = (AIPanel._genModeRadioSeq || 0) + 1);
+    const name = 'ai-gen-mode-' + seq;
+    const mode = AIPanel.getGenMode();
+    const row = U.el('div', { style: 'display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap;' });
+    [['cloud', '☁️ Tripo Cloud (cần API key)'], ['local', '💻 Local Auto Gen (không cần key, tạo procedural trên máy)']].forEach(function (o) {
+      const lab = U.el('label', { style: 'display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;' });
+      const radio = U.el('input', { type: 'radio', name: name, value: o[0] });
+      if (o[0] === mode) radio.checked = true;
+      radio.addEventListener('change', function () {
+        if (!radio.checked) return;
+        AIPanel.setGenMode(o[0]);
+        if (typeof onChange === 'function') onChange(o[0]);
+      });
+      lab.appendChild(radio);
+      lab.appendChild(U.el('span', { text: o[1] }));
+      row.appendChild(lab);
+    });
+    return row;
   };
 
   AIPanel._renderGenerationStudio = function (body, tripo) {
@@ -37,11 +129,49 @@
     ]);
     const sc = U.el('div', { class: 'section-content' });
 
+    /* chế độ gen: Cloud (Tripo) / Local Auto Gen — đổi mode re-render lại Studio */
+    sc.appendChild(AIPanel._genModeRadios(function () { AIPanel.renderPage(); }));
+    const isLocal = AIPanel.getGenMode() === 'local';
+
     /* prompt + negative */
     const prompt = U.el('textarea', { class: 'input', rows: '3', placeholder: 'Prompt: chibi wuxia warrior, teal robe, game-ready, A-pose…', style: 'margin-bottom:6px;' });
     prompt.value = S.prompt;
     prompt.addEventListener('input', function () { S.prompt = prompt.value; });
     sc.appendChild(prompt);
+
+    /* tùy chọn Local Auto Gen — chỉ hiện ở mode local */
+    if (isLocal) {
+      const localRow = U.el('div', { style: 'display:flex;gap:6px;align-items:center;margin-bottom:6px;flex-wrap:wrap;' });
+      localRow.appendChild(U.el('span', { class: 's-label', text: 'Độ chi tiết' }));
+      const cxSlider = U.el('input', { type: 'range', class: 'slider', min: '1', max: '3', step: '1', value: String(S.localComplexity || 2), style: 'flex:1;min-width:80px;' });
+      const cxVal = U.el('span', { class: 's-val', text: String(S.localComplexity || 2) });
+      cxSlider.addEventListener('input', function () { S.localComplexity = parseInt(cxSlider.value, 10); cxVal.textContent = cxSlider.value; });
+      localRow.appendChild(cxSlider); localRow.appendChild(cxVal);
+      localRow.appendChild(U.el('span', { class: 's-label', text: 'Màu chủ đạo' }));
+      const colorIn = U.el('input', { type: 'color', value: S.localColor || '#7fb069', style: 'width:34px;height:26px;padding:0;border:1px solid var(--border);border-radius:6px;background:transparent;cursor:pointer;' });
+      colorIn.addEventListener('input', function () { S.localColor = colorIn.value; });
+      localRow.appendChild(colorIn);
+      localRow.appendChild(U.el('button', {
+        class: 'btn sm', text: '🎲 Ngẫu nhiên',
+        'data-tooltip': 'Xoá prompt, seed ngẫu nhiên rồi tạo model local ngay',
+        onclick: function () {
+          S.prompt = ''; prompt.value = '';
+          S.seed = String(Math.floor(Math.random() * 1e6)); seedIn.value = S.seed;
+          AIPanel.runLocalGenerate({ prompt: '', seed: S.seed, batch: S.batch, complexity: S.localComplexity, color: S.localColor || undefined });
+          AIPanel.renderPage();
+        }
+      }));
+      localRow.appendChild(U.el('button', {
+        class: 'btn sm', text: '↻ Tạo lại',
+        'data-tooltip': 'Giữ nguyên prompt, đổi seed mới rồi tạo lại model local',
+        onclick: function () {
+          S.seed = String(Math.floor(Math.random() * 1e6)); seedIn.value = S.seed;
+          AIPanel.runLocalGenerate({ prompt: S.prompt, seed: S.seed, batch: S.batch, complexity: S.localComplexity, color: S.localColor || undefined });
+          AIPanel.renderPage();
+        }
+      }));
+      sc.appendChild(localRow);
+    }
 
     const neg = U.el('input', { class: 'input', placeholder: 'Negative prompt: blurry, extra limbs, watermark…', style: 'margin-bottom:6px;' });
     neg.value = S.negative;
@@ -103,11 +233,13 @@
     seedIn.value = S.seed;
     seedIn.addEventListener('input', function () { S.seed = seedIn.value; });
     const batchSel = U.el('select', { class: 'select', style: 'width:92px;height:28px;font-size:11px;' });
-    [1, 2, 4].forEach(function (n) {
+    /* Local: batch 1/3/5 · Cloud: batch 1/2/4 */
+    (isLocal ? [1, 3, 5] : [1, 2, 4]).forEach(function (n) {
       const opt = U.el('option', { value: String(n), text: 'batch ' + n });
       if (n === S.batch) opt.selected = true;
       batchSel.appendChild(opt);
     });
+    if ((isLocal ? [1, 3, 5] : [1, 2, 4]).indexOf(S.batch) === -1) { S.batch = 1; batchSel.value = '1'; }
     batchSel.addEventListener('change', function () { S.batch = parseInt(batchSel.value, 10); });
     row3.appendChild(seedIn); row3.appendChild(batchSel);
     sc.appendChild(row3);
@@ -119,6 +251,13 @@
       html: U.icon('wand') + '&nbsp; ✨ Generate 3D' + (S.batch > 1 ? ' ×' + S.batch : ''),
       onclick: function () {
         const text = prompt.value.trim();
+        /* ---- Local Auto Gen: không cần key, không chặn, prompt trống → ngẫu nhiên ---- */
+        if (AIPanel.getGenMode() === 'local') {
+          AIPanel.runLocalGenerate({ prompt: text, seed: S.seed, batch: S.batch, complexity: S.localComplexity, color: S.localColor || undefined });
+          AIPanel.renderPage();
+          return;
+        }
+        /* ---- Cloud (Tripo): flow cũ giữ nguyên ---- */
         if (!text) { bus.emit('notify', { type: 'warning', title: 'AI 3D', message: 'Nhập prompt trước.' }); return; }
         if (!tripo.config.connected) {
           bus.emit('notify', {
@@ -235,24 +374,200 @@
       });
     }
 
-    sc.appendChild(U.el('div', { class: 'dim small', style: 'margin-top:6px;line-height:1.5;', text: tripo.config.connected
-      ? 'Generate thật qua Tripo OpenAPI v3: ' + tripo.config.endpoint + ' · batch ' + S.batch + ' task/lần, seed tăng dần. Link model hết hạn sau 5 phút — tải ngay khi xong.'
-      : 'Chưa có API key ⇒ mọi nút generate ở trạng thái blocked (không giả lập). Kết nối ở khối “Tripo3D AI” phía trên.' }));
+    sc.appendChild(U.el('div', { class: 'dim small', style: 'margin-top:6px;line-height:1.5;', text: isLocal
+      ? '💻 Local Auto Gen = tạo procedural trên máy, KHÔNG phải AI thật — model đơn giản/low-poly, dùng khi chưa có API key. Batch ' + S.batch + ' model/lần, độ chi tiết ' + (S.localComplexity || 2) + '/3.'
+      : (tripo.config.connected
+        ? 'Generate thật qua Tripo OpenAPI v3: ' + tripo.config.endpoint + ' · batch ' + S.batch + ' task/lần, seed tăng dần. Link model hết hạn sau 5 phút — tải ngay khi xong.'
+        : 'Chưa có API key ⇒ mọi nút generate ở trạng thái blocked (không giả lập). Kết nối ở khối “Tripo3D AI” phía trên — hoặc chuyển sang 💻 Local Auto Gen để tạo model ngay không cần key.') }));
 
     section.appendChild(sc);
     body.appendChild(section);
+  };
+
+  /* ---------- Local Upscale / Texturing — chạy trên model đang chọn trong viewport ---------- */
+  /* model đích của tool local: selection trong viewport (model local không có modelId Tripo) */
+  AIPanel._selectedModel = function () {
+    try {
+      const sel = PixiStudio.State && PixiStudio.State.get && PixiStudio.State.get('selection');
+      if (sel) return sel;
+    } catch (e) { }
+    return null;
+  };
+  /* chạy hàm nặng sau 30ms để UI kịp vẽ trạng thái busy; fn trả sync hoặc Promise */
+  AIPanel._localToolRun = function (btn, busyText, fn, onDone) {
+    btn.disabled = true;
+    const oldHtml = btn.innerHTML;
+    btn.textContent = busyText;
+    setTimeout(function () {
+      const restore = function () { btn.disabled = false; btn.innerHTML = oldHtml; };
+      let r;
+      try { r = fn(); } catch (e) {
+        restore();
+        bus.emit('notify', { type: 'error', title: 'Local tool lỗi', message: (e && e.message) || String(e) });
+        return;
+      }
+      const finish = function (res) { restore(); if (typeof onDone === 'function') onDone(res); };
+      if (r && typeof r.then === 'function') {
+        r.then(finish, function (e) { restore(); bus.emit('notify', { type: 'error', title: 'Local tool lỗi', message: (e && e.message) || String(e) }); });
+      } else finish(r);
+    }, 30);
+  };
+  /* 10 chất liệu local — chuẩn hoá MATERIALS (mảng string hoặc {id,label}) */
+  AIPanel._localMaterials = function () {
+    const LAG = AIPanel._localGen();
+    const raw = (LAG && LAG.MATERIALS) || ['wood', 'metal', 'stone', 'fabric', 'leather', 'dirt', 'grass', 'ceramic', 'gold', 'skin'];
+    return raw.map(function (m) {
+      if (m && typeof m === 'object') return { id: m.id || m.name || m.value, label: m.label || m.name || m.id || String(m) };
+      return { id: String(m), label: String(m) };
+    });
+  };
+
+  /* modal Texturing local: chất liệu + size + màu + nhám + lặp */
+  AIPanel.openLocalTextureModal = function () {
+    const LAG = AIPanel._localGen();
+    if (!LAG || typeof LAG.textureModel !== 'function') {
+      bus.emit('notify', { type: 'warning', title: 'Local Auto Gen chưa sẵn sàng', message: 'Module Local Auto Gen chưa load — hard-refresh lại trang.' });
+      return;
+    }
+    const target = AIPanel._selectedModel();
+    if (!target) {
+      bus.emit('notify', { type: 'warning', title: 'Chưa chọn model', message: 'Chọn 1 model trong viewport trước.' });
+      return;
+    }
+    const wrap = U.el('div');
+    wrap.appendChild(U.el('div', { class: 'state-badge ok', style: 'margin-bottom:10px;', text: '💻 Texturing local — model: ' + (target.name || 'Object') }));
+    wrap.appendChild(U.el('label', { class: 'label-xs', text: 'Chất liệu' }));
+    const matSel = U.el('select', { class: 'input', style: 'margin:5px 0;' });
+    AIPanel._localMaterials().forEach(function (m) {
+      matSel.appendChild(U.el('option', { value: m.id, text: m.label }));
+    });
+    wrap.appendChild(matSel);
+    const row1 = U.el('div', { style: 'display:flex;gap:6px;margin-bottom:6px;' });
+    row1.appendChild(U.el('span', { class: 's-label', text: 'Kích thước' }));
+    const sizeSel = U.el('select', { class: 'select', style: 'flex:1;height:28px;font-size:11px;' });
+    [256, 512, 1024].forEach(function (n) {
+      const opt = U.el('option', { value: String(n), text: n + '×' + n });
+      if (n === 512) opt.selected = true;
+      sizeSel.appendChild(opt);
+    });
+    row1.appendChild(sizeSel);
+    row1.appendChild(U.el('span', { class: 's-label', text: 'Màu chủ đạo' }));
+    const colorIn = U.el('input', { type: 'color', value: AIPanel._genState.localColor || '#7fb069', style: 'width:34px;height:26px;padding:0;border:1px solid var(--border);border-radius:6px;background:transparent;cursor:pointer;' });
+    row1.appendChild(colorIn);
+    wrap.appendChild(row1);
+    const row2 = U.el('div', { style: 'display:flex;gap:6px;align-items:center;margin-bottom:6px;' });
+    row2.appendChild(U.el('span', { class: 's-label', text: 'Độ nhám' }));
+    const roughSlider = U.el('input', { type: 'range', class: 'slider', min: '0', max: '1', step: '0.05', value: '0.7', style: 'flex:1;' });
+    const roughVal = U.el('span', { class: 's-val', text: '0.70' });
+    roughSlider.addEventListener('input', function () { roughVal.textContent = parseFloat(roughSlider.value).toFixed(2); });
+    row2.appendChild(roughSlider); row2.appendChild(roughVal);
+    row2.appendChild(U.el('span', { class: 's-label', text: 'Độ lặp' }));
+    const repeatIn = U.el('input', { class: 'input', type: 'number', min: '1', max: '8', step: '1', value: '1', style: 'width:56px;' });
+    row2.appendChild(repeatIn);
+    wrap.appendChild(row2);
+    wrap.appendChild(U.el('div', { class: 'dim small', style: 'margin:4px 0 10px;line-height:1.5;', text: 'Texturing local = họa tiết lặp (procedural), không vẽ theo hình dạng model — không tạo chi tiết mới như AI cloud.' }));
+    const applyBtn = U.el('button', { class: 'btn primary lg block', text: '🎨 Áp texture' });
+    applyBtn.addEventListener('click', function () {
+      const t = AIPanel._selectedModel();
+      if (!t) { bus.emit('notify', { type: 'warning', title: 'Chưa chọn model', message: 'Chọn 1 model trong viewport trước.' }); return; }
+      AIPanel._localToolRun(applyBtn, '⏳ Đang tạo texture…', function () {
+        return LAG.textureModel(t, {
+          material: matSel.value,
+          color: colorIn.value,
+          roughness: parseFloat(roughSlider.value),
+          repeat: parseInt(repeatIn.value, 10) || 1,
+          size: parseInt(sizeSel.value, 10),
+          scope: 'all'
+        });
+      }, function (r) {
+        PixiStudio.Modals.close();
+        if (r && r.ok !== false) {
+          bus.emit('notify', {
+            type: 'success', title: '💻 Texturing local xong',
+            message: (r.material || matSel.value) + ' · ' + (r.size || sizeSel.value) + 'px' + (r.maps ? ' · ' + r.maps + ' maps' : '') + (r.message ? ' — ' + r.message : ''),
+            duration: 6000
+          });
+          bus.emit('scene:changed', { action: 'local-texture', name: t.name || 'Object' });
+        } else {
+          bus.emit('notify', { type: 'error', title: 'Texturing local thất bại', message: (r && r.message) || 'Không rõ nguyên nhân.' });
+        }
+        AIPanel.renderPage();
+      });
+    });
+    wrap.appendChild(applyBtn);
+    PixiStudio.Modals.open({ title: '🎨 Texturing Local', body: wrap, buttons: [{ label: 'Huỷ', class: 'btn' }] });
+  };
+
+  /* modal Upscale local: mức 2x/4x + phạm vi mesh/texture/cả hai */
+  AIPanel.openLocalUpscaleModal = function () {
+    const LAG = AIPanel._localGen();
+    if (!LAG || typeof LAG.upscaleModel !== 'function') {
+      bus.emit('notify', { type: 'warning', title: 'Local Auto Gen chưa sẵn sàng', message: 'Module Local Auto Gen chưa load — hard-refresh lại trang.' });
+      return;
+    }
+    const target = AIPanel._selectedModel();
+    if (!target) {
+      bus.emit('notify', { type: 'warning', title: 'Chưa chọn model', message: 'Chọn 1 model trong viewport trước.' });
+      return;
+    }
+    const wrap = U.el('div');
+    wrap.appendChild(U.el('div', { class: 'state-badge ok', style: 'margin-bottom:10px;', text: '💻 Upscale local — model: ' + (target.name || 'Object') }));
+    wrap.appendChild(U.el('label', { class: 'label-xs', text: 'Mức upscale' }));
+    const levelSel = U.el('select', { class: 'input', style: 'margin:5px 0;' });
+    [[2, '2x'], [4, '4x']].forEach(function (o) {
+      const opt = U.el('option', { value: String(o[0]), text: o[1] });
+      if (o[0] === 2) opt.selected = true;
+      levelSel.appendChild(opt);
+    });
+    wrap.appendChild(levelSel);
+    wrap.appendChild(U.el('label', { class: 'label-xs', text: 'Phạm vi' }));
+    const scopeSel = U.el('select', { class: 'input', style: 'margin:5px 0;' });
+    [['both', 'Cả mesh + texture'], ['mesh', 'Chỉ mesh (tăng tris)'], ['texture', 'Chỉ texture (tăng độ phân giải)']].forEach(function (o) {
+      const opt = U.el('option', { value: o[0], text: o[1] });
+      if (o[0] === 'both') opt.selected = true;
+      scopeSel.appendChild(opt);
+    });
+    wrap.appendChild(scopeSel);
+    wrap.appendChild(U.el('div', { class: 'dim small', style: 'margin:4px 0 10px;line-height:1.5;', text: 'Upscale local = nội suy/làm mịn, không tạo chi tiết mới — mesh mịn hơn và texture nét hơn, nhưng không thêm chi tiết như AI cloud.' }));
+    const upBtn = U.el('button', { class: 'btn primary lg block', text: '⬆ Upscale' });
+    upBtn.addEventListener('click', function () {
+      const t = AIPanel._selectedModel();
+      if (!t) { bus.emit('notify', { type: 'warning', title: 'Chưa chọn model', message: 'Chọn 1 model trong viewport trước.' }); return; }
+      AIPanel._localToolRun(upBtn, '⏳ Đang upscale…', function () {
+        return LAG.upscaleModel(t, { level: parseInt(levelSel.value, 10), scope: scopeSel.value });
+      }, function (r) {
+        PixiStudio.Modals.close();
+        if (r && r.ok !== false) {
+          const fmt = function (n) { return (n === undefined || n === null) ? '?' : Number(n).toLocaleString('en-US'); };
+          const b = r.before || {}, a = r.after || {};
+          bus.emit('notify', {
+            type: 'success', title: '💻 Upscale local xong',
+            message: 'Tris: ' + fmt(b.tris) + ' → ' + fmt(a.tris) + ' · Texture: ' + fmt(b.textureSize) + ' → ' + fmt(a.textureSize) + (r.message ? ' — ' + r.message : ''),
+            duration: 8000
+          });
+          bus.emit('scene:changed', { action: 'local-upscale', name: t.name || 'Object' });
+        } else {
+          bus.emit('notify', { type: 'error', title: 'Upscale local thất bại', message: (r && r.message) || 'Không rõ nguyên nhân.' });
+        }
+        AIPanel.renderPage();
+      });
+    });
+    wrap.appendChild(upBtn);
+    PixiStudio.Modals.open({ title: '⬆ Upscale Local', body: wrap, buttons: [{ label: 'Huỷ', class: 'btn' }] });
   };
 
   AIPanel.renderChecklist = function () {
     const list = U.$('#tripo-checklist');
     if (!list) return;
     const connected = PixiStudio.AI.Tripo.config.connected;
+    const local = AIPanel.getGenMode() === 'local';
     const items = [
       ['Image to 3D', true],
       ['Text to 3D', true],
-      ['3D Model Upscale', connected],
-      ['Texturing', connected],
-      ['Auto Rig & Animate', connected]
+      ['3D Model Upscale', connected || local],
+      ['Texturing', connected || local],
+      ['Auto Rig & Animate', connected],
+      ['Local Auto Gen', true]
     ];
     list.innerHTML = '';
     items.forEach(function (it) {
@@ -261,6 +576,7 @@
         U.el('span', { text: it[0] })
       ]));
     });
+    list.appendChild(U.el('div', { class: 'dim small', style: 'margin-top:4px;line-height:1.5;', text: '💻 Local Auto Gen = tạo procedural trên máy, KHÔNG phải AI thật — model đơn giản/low-poly, dùng khi chưa có API key. 💻 Ở chế độ Local: Upscale + Texturing chạy ngay trên máy (nội suy/làm mịn + texture procedural) — không tạo chi tiết mới như AI cloud.' }));
   };
 
   /* ---------- Page AI (page-ai) ---------- */
@@ -318,13 +634,17 @@
 
     /* ===== AI MODEL TOOLS — Texturing / Upscale / Rig / Animate ===== */
     const modelId = tripo.lastCreatedModelId;
+    const isLocalTools = AIPanel.getGenMode() === 'local';
+    const localTarget = isLocalTools ? AIPanel._selectedModel() : null;
     const toolsSection = U.el('div', { class: 'section-block' }, [
       U.el('div', { class: 'section-head' }, [U.el('span', { html: U.icon('wand') }), U.el('span', { text: '🧠 AI Model Tools — chạy trên model đã tạo' })])
     ]);
     const tc = U.el('div', { class: 'section-content' });
     tc.appendChild(U.el('div', { class: 'info-row', style: 'margin-bottom:8px;' }, [
-      U.el('span', { class: 'i-label', text: 'Model AI hiện tại' }),
-      modelId ? U.el('span', { class: 'i-value', text: modelId.slice(0, 16) + '…' }) : U.el('span', { class: 'state-badge off', text: 'chưa có — tạo qua Text/Image-to-3D' })
+      U.el('span', { class: 'i-label', text: isLocalTools ? 'Model đang chọn (viewport)' : 'Model AI hiện tại' }),
+      isLocalTools
+        ? (localTarget ? U.el('span', { class: 'i-value', text: localTarget.name || 'Object' }) : U.el('span', { class: 'state-badge off', text: 'chưa chọn — bấm 1 model trong viewport' }))
+        : (modelId ? U.el('span', { class: 'i-value', text: modelId.slice(0, 16) + '…' }) : U.el('span', { class: 'state-badge off', text: 'chưa có — tạo qua Text/Image-to-3D' }))
     ]));
     if (tripo.isXingchi()) {
       tc.appendChild(U.el('div', { class: 'info-row', style: 'margin-bottom:8px;' }, [
@@ -333,24 +653,35 @@
       ]));
     }
     const toolsGrid = U.el('div', { class: 'mt-grid', style: 'grid-template-columns:repeat(2,1fr);gap:5px;' });
-    [
-      ['🎨 Texturing', 'Tạo lại PBR texture cho model — POST /v3/models/texture', function () { tripo.textureModel(); AIPanel.renderPage(); }],
+    const toolDefs = [
+      ['🎨 Texturing', isLocalTools ? 'Texture procedural trên model đang chọn — chạy ngay trên máy' : 'Tạo lại PBR texture cho model — POST /v3/models/texture', function () {
+        if (isLocalTools) { AIPanel.openLocalTextureModal(); return; }
+        tripo.textureModel(); AIPanel.renderPage();
+      }],
       ['🔄 Convert FBX', 'Đổi định dạng sang FBX (Unity/Unreal) — POST /v3/models/convert', function () { tripo.convertModel('FBX'); AIPanel.renderPage(); }],
       ['🦴 Auto Rig', 'Rig-check rồi sinh skeleton (spec mixamo) — /v3/animations/rig (cần trước Animate)', function () { tripo.rigModel(); AIPanel.renderPage(); }],
       ['🎬 Auto Animate', 'Retarget preset idle/walk/run lên model đã rig — /v3/animations/retarget', function () { tripo.animateModel(['idle', 'walk', 'run']); AIPanel.renderPage(); }],
       ['⬇ Decimate', 'Giảm số poly cho game — POST /v3/mesh/decimate (v2 upscale đã bỏ ở v3)', function () { tripo.decimateModel({ face_limit: S.polygon }); AIPanel.renderPage(); }]
-    ].forEach(function (t) {
+    ];
+    /* Upscale chỉ có ở Local (Tripo v3 bỏ upscale_model) */
+    if (isLocalTools) {
+      toolDefs.splice(1, 0, ['⬆ Upscale', 'Tăng tris + độ phân giải texture ngay trên máy (nội suy/làm mịn, không tạo chi tiết mới)', function () { AIPanel.openLocalUpscaleModal(); }]);
+    }
+    const toolsActive = isLocalTools ? !!localTarget : !!modelId;
+    toolDefs.forEach(function (t) {
       toolsGrid.appendChild(U.el('button', {
-        class: 'mt-btn' + (modelId ? ' primary' : ''),
+        class: 'mt-btn' + (toolsActive ? ' primary' : ''),
         html: '<span style="font-size:14px;">' + t[0].split(' ')[0] + '</span><span>' + t[0].replace(/^\S+\s/, '') + '</span>',
         'data-tooltip': t[1],
         onclick: function () { t[2](); }
       }));
     });
     tc.appendChild(toolsGrid);
-    tc.appendChild(U.el('div', { class: 'dim small', style: 'margin-top:8px;line-height:1.5;', text: modelId
-      ? 'Tools chạy TRỰC TIẾP qua Tripo REST (task create + polling) — kết quả model mới có task id, dùng tiếp cho tool khác.'
-      : 'Chưa có model Tripo: tạo bằng Text-to-3D hoặc Image-to-3D ở trên — sau khi tạo xong các tool này sẽ bật.' }));
+    tc.appendChild(U.el('div', { class: 'dim small', style: 'margin-top:8px;line-height:1.5;', text: isLocalTools
+      ? '💻 Chế độ Local: Texturing + Upscale chạy trên model đang chọn trong viewport — nội suy/làm mịn + texture procedural, không tạo chi tiết mới như AI cloud. Các tool còn lại (Convert/Rig/Animate/Decimate) vẫn chạy qua Tripo khi có model Tripo.'
+      : (modelId
+        ? 'Tools chạy TRỰC TIẾP qua Tripo REST (task create + polling) — kết quả model mới có task id, dùng tiếp cho tool khác. Tripo v3 không có upscale — chuyển sang 💻 Local Auto Gen để upscale trên máy.'
+        : 'Chưa có model Tripo: tạo bằng Text-to-3D hoặc Image-to-3D ở trên — sau khi tạo xong các tool này sẽ bật. Muốn upscale/texture ngay không cần key: chuyển sang 💻 Local Auto Gen và chọn 1 model trong viewport.') }));
     toolsSection.appendChild(tc);
     body.appendChild(toolsSection);
 
@@ -637,7 +968,18 @@
      ============================================================ */
   AIPanel.openQuickGenerate = function () {
     const wrap = U.el('div');
-    wrap.appendChild(U.el('div', { class: 'state-badge ok', style: 'margin-bottom:10px;', text: 'Tripo connected — text-to-3d sẽ chạy thật qua REST' }));
+    const badge = U.el('div', { style: 'margin-bottom:10px;' });
+    const updateBadge = function () {
+      badge.innerHTML = '';
+      if (AIPanel.getGenMode() === 'local') {
+        badge.appendChild(U.el('span', { class: 'state-badge ok', text: '💻 Local Auto Gen — tạo procedural trên máy, không cần key' }));
+      } else {
+        badge.appendChild(U.el('span', { class: 'state-badge ok', text: 'Tripo connected — text-to-3d sẽ chạy thật qua REST' }));
+      }
+    };
+    updateBadge();
+    wrap.appendChild(AIPanel._genModeRadios(function () { updateBadge(); updateGenBtn(); }));
+    wrap.appendChild(badge);
     wrap.appendChild(U.el('label', { class: 'label-xs', text: 'Prompt' }));
     const prompt = U.el('textarea', {
       class: 'input', style: 'min-height:64px;margin:5px 0 10px;',
@@ -648,26 +990,35 @@
     const neg = U.el('input', { class: 'input', style: 'margin:5px 0 12px;', placeholder: 'blurry, low poly…' });
     wrap.appendChild(neg);
 
-    wrap.appendChild(U.el('button', {
-      class: 'btn primary lg block',
-      html: U.icon('wand') + '&nbsp; Generate Model ✨',
-      onclick: function () {
-        const text = prompt.value.trim();
-        if (!text) { bus.emit('notify', { type: 'warning', title: 'Prompt trống' }); return; }
+    const genBtn = U.el('button', { class: 'btn primary lg block' });
+    const updateGenBtn = function () {
+      genBtn.innerHTML = U.icon('wand') + '&nbsp; ' + (AIPanel.getGenMode() === 'local' ? 'Tạo Model Local 💻' : 'Generate Model ✨');
+    };
+    updateGenBtn();
+    genBtn.addEventListener('click', function () {
+      const text = prompt.value.trim();
+      /* Local: prompt trống → ngẫu nhiên, không cần key, đóng modal + notify */
+      if (AIPanel.getGenMode() === 'local') {
         PixiStudio.Modals.close();
-        PixiStudio.Storage.addPrompt(text, 'text');
-        PixiStudio.AI.Tripo.textTo3D({
-          prompt: text, negative_prompt: neg.value, quality: 'standard', format: 'glb'
-        }).then(function (r) {
-          if (r.ok) {
-            bus.emit('notify', {
-              type: 'success', title: 'Task đã gửi tới Tripo',
-              message: 'Đang poll — model sẽ TỰ ĐỘNG import vào viewport khi backend trả kết quả.'
-            });
-          }
-        });
+        AIPanel.runLocalGenerate({ prompt: text, seed: AIPanel._genState.seed, batch: AIPanel._genState.batch, complexity: AIPanel._genState.localComplexity, color: AIPanel._genState.localColor || undefined });
+        return;
       }
-    }));
+      /* Cloud: flow cũ giữ nguyên */
+      if (!text) { bus.emit('notify', { type: 'warning', title: 'Prompt trống' }); return; }
+      PixiStudio.Modals.close();
+      PixiStudio.Storage.addPrompt(text, 'text');
+      PixiStudio.AI.Tripo.textTo3D({
+        prompt: text, negative_prompt: neg.value, quality: 'standard', format: 'glb'
+      }).then(function (r) {
+        if (r.ok) {
+          bus.emit('notify', {
+            type: 'success', title: 'Task đã gửi tới Tripo',
+            message: 'Đang poll — model sẽ TỰ ĐỘNG import vào viewport khi backend trả kết quả.'
+          });
+        }
+      });
+    });
+    wrap.appendChild(genBtn);
     PixiStudio.Modals.open({ title: '✨ Tripo Text-to-3D', body: wrap, buttons: [{ label: 'Huỷ', class: 'btn' }] });
   };
 
@@ -677,6 +1028,12 @@
   AIPanel.openConnectModal = function () {
     const wrap = U.el('div');
     wrap.appendChild(U.el('p', { style: 'color:var(--text-2);font-size:12px;line-height:1.6;margin-bottom:10px;', text: 'Nhập API key để Generate chạy THẬT qua REST (task create + polling). Key lưu localStorage — không giả lập kết quả.' }));
+    const mainBtn = U.el('button', { class: 'btn primary lg block' });
+    const updateMainBtn = function () {
+      mainBtn.textContent = AIPanel.getGenMode() === 'local' ? '💻 Dùng Local Auto Gen' : 'Connect & mở Generate';
+    };
+    wrap.appendChild(AIPanel._genModeRadios(function () { updateMainBtn(); }));
+    updateMainBtn();
     const provs = PixiStudio.AI.Tripo.providers;
     wrap.appendChild(U.el('label', { class: 'label-xs', text: 'Provider' }));
     const provSel = U.el('select', { class: 'input', style: 'margin:5px 0;' });
@@ -691,20 +1048,25 @@
     wrap.appendChild(U.el('label', { class: 'label-xs', text: 'API key' }));
     const key = U.el('input', { class: 'input', type: 'password', style: 'margin:5px 0 12px;', placeholder: 'API key', value: PixiStudio.AI.Tripo.config.apiKey || '' });
     wrap.appendChild(key);
-    wrap.appendChild(U.el('button', {
-      class: 'btn primary lg block',
-      text: 'Connect & mở Generate',
-      onclick: function () {
-        const r = PixiStudio.AI.Tripo.connect(ep.value, key.value, provSel.value);
-        if (!r.ok) {
-          bus.emit('notify', { type: 'warning', title: 'Connect thất bại', message: 'API key không được để trống.' });
-          return;
-        }
+    mainBtn.addEventListener('click', function () {
+      /* Local: không cần key, không gọi Tripo.connect — mở Quick Generate ở chế độ local */
+      if (AIPanel.getGenMode() === 'local') {
+        AIPanel.setGenMode('local');
         PixiStudio.Modals.close();
         AIPanel.openQuickGenerate();
         AIPanel.renderChecklist();
+        return;
       }
-    }));
+      const r = PixiStudio.AI.Tripo.connect(ep.value, key.value, provSel.value);
+      if (!r.ok) {
+        bus.emit('notify', { type: 'warning', title: 'Connect thất bại', message: 'API key không được để trống.' });
+        return;
+      }
+      PixiStudio.Modals.close();
+      AIPanel.openQuickGenerate();
+      AIPanel.renderChecklist();
+    });
+    wrap.appendChild(mainBtn);
     wrap.appendChild(U.el('div', { class: 'dim small', style: 'margin-top:10px;line-height:1.5;', text: 'xingchiapi: https://api.xingchiapi.com/v1 (OpenAI-compatible) · Tripo: platform.tripo3d.ai · Local AI: chạy server.bat + backend tự host tại http://localhost:7860.' }));
     PixiStudio.Modals.open({ title: '🔗 Kết nối Tripo AI', body: wrap, buttons: [{ label: 'Huỷ', class: 'btn' }] });
   };
@@ -796,13 +1158,18 @@
 
   /* ---------- Init wiring ---------- */
   AIPanel.init = function () {
+    /* khôi phục chế độ gen đã lưu (mặc định cloud) */
+    AIPanel.getGenMode();
     AIPanel.renderChecklist();
 
     /* Tripo card buttons — Generate chạy THẬT khi connected / modal connect khi chưa */
     const genBtn = document.getElementById('tripo-generate');
     if (genBtn) {
       genBtn.addEventListener('click', function () {
-        if (PixiStudio.AI.Tripo.config.connected) {
+        /* Local: mở Quick Generate ở chế độ local (không cần key) */
+        if (AIPanel.getGenMode() === 'local') {
+          AIPanel.openQuickGenerate();
+        } else if (PixiStudio.AI.Tripo.config.connected) {
           AIPanel.openQuickGenerate();
         } else {
           AIPanel.openConnectModal();

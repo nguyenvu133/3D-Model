@@ -1,6 +1,11 @@
 /* ============================================================
  * physics/physics-manager.js — Rigidbody props, collider visualize,
- * mini gravity sim THẬT (rơi + nảy restitution). Full engine → v5.1.
+ * mini gravity sim THẬT (rơi + nảy restitution) + cầu nối sang
+ * Physics Engine đầy đủ (js/physics/physics-engine.js: va chạm
+ * vật-vật, joint, sàn + tường, stacking, raycast) và Ragdoll
+ * (js/physics/physics-ragdoll.js). API cũ GIỮ NGUYÊN: khi engine
+ * chưa load, step() vẫn chạy mini-sim như trước; khi engine đã
+ * load, startSim() tạo engine body và engine điều khiển vật.
  * ============================================================ */
 (function () {
   'use strict';
@@ -35,10 +40,77 @@
     const body = Physics.ensure(uuid);
     body.collider = type;
     if (size) body.colliderSize = size;
+    /* Undo/Redo toàn diện (v2): collider nằm trong snapshot physics */
+    if (window.PixiStudio && PixiStudio.History) PixiStudio.History.push('Physics: collider ' + type);
   };
 
   Physics.get = function (uuid) {
     return Physics.ensure(uuid);
+  };
+
+  /* ---------- CẦU NỐI SANG ENGINE ĐẦY ĐỦ (v5.1) ---------- */
+  Physics.engine = function () {
+    return (window.PixiStudio && window.PixiStudio.PhysicsEngine) || null;
+  };
+  Physics.ragdoll = function () {
+    return (window.PixiStudio && window.PixiStudio.PhysicsRagdoll) || null;
+  };
+  /* tạo engine body từ props legacy của 1 object (collider box/sphere/capsule) */
+  Physics.addBody = function (object3D, opts) {
+    var E = Physics.engine();
+    if (!E || !object3D) return null;
+    var legacy = Physics.ensure(object3D.uuid);
+    opts = opts || {};
+    var shape;
+    var type = opts.collider || legacy.collider || 'box';
+    var size = opts.size || legacy.colliderSize || [1, 1, 1];
+    if (type === 'sphere') shape = { type: 'sphere', radius: (size[0] || 1) / 2 };
+    else if (type === 'capsule') shape = { type: 'capsule', radius: (size[0] || 0.4) / 2, halfLen: Math.max((size[1] || 1) / 2 - (size[0] || 0.4) / 2, 0.05), axis: new THREE.Vector3(0, 1, 0) };
+    else shape = { type: 'box', size: size };
+    var body = E.createBody({
+      object3D: object3D,
+      shape: shape,
+      mass: opts.mass != null ? opts.mass : legacy.mass,
+      restitution: opts.restitution != null ? opts.restitution : legacy.bounciness,
+      friction: opts.friction != null ? opts.friction : legacy.friction,
+      velocity: opts.velocity || new THREE.Vector3(0, 0, 0)
+    });
+    legacy._engineBodyId = body.id;
+    legacy._inEngine = true;
+    return body;
+  };
+  Physics.removeBody = function (object3D) {
+    var E = Physics.engine();
+    var legacy = object3D ? Physics.bodies[object3D.uuid] : null;
+    if (E && legacy && legacy._engineBodyId) {
+      var b = E.getBody(legacy._engineBodyId);
+      if (b) E.removeBody(b);
+    }
+    if (legacy) { legacy._engineBodyId = null; legacy._inEngine = false; }
+  };
+  Physics.getEngineBody = function (object3D) {
+    var E = Physics.engine();
+    var legacy = object3D ? Physics.bodies[object3D.uuid] : null;
+    if (!E || !legacy || !legacy._engineBodyId) return null;
+    return E.getBody(legacy._engineBodyId);
+  };
+  Physics.addJoint = function (type, bodyA, bodyB, opts) {
+    var E = Physics.engine();
+    if (!E) return null;
+    return E.addJoint(type, bodyA, bodyB, opts);
+  };
+  Physics.raycastDown = function (origin, maxDist) {
+    var E = Physics.engine();
+    if (!E) return [];
+    return E.raycastDown(origin, maxDist);
+  };
+  Physics.setWorldBounds = function (bounds) {
+    var E = Physics.engine();
+    if (E) E.setBounds(bounds);
+  };
+  Physics.getStats = function () {
+    var E = Physics.engine();
+    return E ? E.stats() : { steps: 0, broadphasePairs: 0, narrowphaseTests: 0, contacts: 0 };
   };
 
   /* ---------- COLLIDER VISUALIZE (thật) ---------- */
@@ -75,6 +147,15 @@
     body._rest = target.position.clone();
     Physics.simulating = true;
     Physics.showCollider(target, true);
+    /* engine đầy đủ: tạo engine body (rơi/nảy/va chạm do engine xử lý) */
+    var E = Physics.engine();
+    if (E) {
+      var eb = Physics.addBody(target, { velocity: new THREE.Vector3(0, 2.5, 0) });
+      if (eb) { eb._restPos = target.position.clone(); eb._restQuat = target.quaternion.clone(); }
+      E.start();
+      bus.emit('notify', { type: 'info', title: 'Physics Sim START', message: 'Engine đầy đủ trên ' + target.name + ' — mass ' + body.mass + ', bounce ' + body.bounciness + ' (va chạm vật-vật, sàn + tường).' });
+      return;
+    }
     bus.emit('notify', { type: 'info', title: 'Physics Sim START', message: 'Mini gravity sim trên ' + target.name + ' — mass ' + body.mass + ', bounce ' + body.bounciness });
   };
 
@@ -89,15 +170,37 @@
       if (restore && body && body._rest) {
         target.position.copy(body._rest);
       }
+      /* gỡ engine body (nếu có) để không chạy ngầm */
+      var E = Physics.engine();
+      if (E && body && body._inEngine) {
+        Physics.removeBody(target);
+        if (!E.bodies.length) E.stop();
+        if (restore && body._rest) target.position.copy(body._rest);
+      }
     }
     bus.emit('notify', { type: 'info', title: 'Physics Sim STOP', message: restore ? 'Đã reset vị trí object.' : 'Simulation dừng.' });
   };
 
   Physics.step = function (dt) {
     if (!Physics.simulating) return;
+    /* engine đầy đủ (nếu đã load và đang chạy): va chạm, joint, sàn/tường, stacking */
+    var E = Physics.engine();
+    if (E && E.simulating) {
+      E.step(dt);
+      /* đồng bộ vận tốc legacy để Inspector/panel đọc được */
+      Object.keys(Physics.bodies).forEach(function (uuid) {
+        var lb = Physics.bodies[uuid];
+        if (!lb._inEngine || !lb._engineBodyId) return;
+        var eb = E.getBody(lb._engineBodyId);
+        if (eb) lb._vel = [eb.velocity.x, eb.velocity.y, eb.velocity.z];
+      });
+      var R = Physics.ragdoll();
+      if (R && R.active) R.update();
+      /* mini-sim cho body legacy chưa vào engine (nếu còn) — chạy tiếp bên dưới */
+    }
     Object.keys(Physics.bodies).forEach(function (uuid) {
       const body = Physics.bodies[uuid];
-      if (!body.sim) return;
+      if (!body.sim || body._inEngine) return; /* body trong engine: engine đã xử lý */
       const reg = PixiStudio.Scene.registry[uuid];
       const obj = (reg && reg.object3D) || null;
       if (!obj || !obj.parent) return;
@@ -148,6 +251,8 @@
     rbToggle.addEventListener('click', function () {
       body.gravity = !body.gravity;
       rbToggle.classList.toggle('on', body.gravity);
+      /* Undo/Redo toàn diện (v2) */
+      if (PixiStudio.History) PixiStudio.History.push('Physics: Rigidbody ' + (body.gravity ? 'on' : 'off'));
     });
     container.appendChild(row('Rigidbody (gravity)', rbToggle));
 
@@ -162,6 +267,8 @@
     cs.addEventListener('change', function () {
       body.collider = cs.value;
       Physics.showCollider(object3D, true);
+      /* Undo/Redo toàn diện (v2) */
+      if (PixiStudio.History) PixiStudio.History.push('Physics: collider ' + cs.value);
     });
     cw.appendChild(cs);
     container.appendChild(row('Collider', cw));
@@ -177,6 +284,10 @@
         body[sdef[0]] = parseFloat(s.value);
         val.textContent = s.value;
       });
+      /* Undo/Redo toàn diện (v2): 'change' = thả slider, 1 lần kéo = 1 bước */
+      s.addEventListener('change', function () {
+        if (PixiStudio.History) PixiStudio.History.push('Physics: ' + sdef[1] + ' ' + s.value);
+      });
       srow.appendChild(s); srow.appendChild(val);
       container.appendChild(srow);
     });
@@ -188,8 +299,20 @@
     ]);
     container.appendChild(btns);
 
+    /* Mở panel Physics đầy đủ (tab Physics trong ARP) */
+    const panelBtn = U.el('button', {
+      class: 'btn sm block', style: 'margin-top:6px;',
+      html: U.icon('physics') + ' Mở Panel Physics (bodies / joints / ragdoll)',
+      onclick: function () {
+        const PP = window.PixiStudio && window.PixiStudio.PhysicsPanel;
+        if (PP && PP.open) PP.open();
+        else bus.emit('notify', { type: 'warning', title: 'Physics', message: 'Chưa load js/physics/physics-panel.js.' });
+      }
+    });
+    container.appendChild(panelBtn);
+
     container.appendChild(U.el('div', { class: 'empty-state', style: 'padding:8px;' }, [
-      U.el('span', { class: 'state-badge pending', text: 'Mini sim (gravity + bounce) — engine đầy đủ (Rapier) ở v5.1' })
+      U.el('span', { class: 'state-badge ok', text: Physics.engine() ? 'Engine đầy đủ: va chạm vật-vật + joint + ragdoll + stacking' : 'Mini sim (gravity + bounce) — engine đầy đủ chưa load' })
     ]));
   };
 

@@ -554,3 +554,16 @@
 }
 .arp-map-unmatched { color: #c00; font-weight: bold; }
 .arp-map-proxy { color: #0a7d4a; }
+
+/* ============ ARP VIDEO → ANIMATION (arp-anim-video.js, 2026-11-27) ============
+   Tab "Video → Anim": video preview + canvas overlay skeleton 2D đè lên,
+   thanh tiến trình trích xuất. Dùng lại .arp-btn/.arp-select/.arp-input/
+   .arp-note có sẵn; chỉ thêm layout riêng của tab này. */
+.avv-wrap { display: flex; flex-direction: column; gap: 8px; }
+.avv-video-wrap { position: relative; width: 100%; background: #000; border-radius: 8px; overflow: hidden; }
+.avv-video { display: block; width: 100%; max-height: 320px; background: #000; }
+.avv-overlay { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
+.avv-progress { height: 8px; background: var(--panel-3, #2C2C3A); border-radius: 4px; overflow: hidden; }
+.avv-progress-bar { height: 100%; width: 0%; background: var(--primary, #7C5CFF); transition: width 0.2s; }
+.avv-status, .avv-stats { word-break: break-word; }
+.avv-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text, #E8E8F0); cursor: pointer; }

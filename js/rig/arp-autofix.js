@@ -1122,6 +1122,10 @@
     return lowPolyExport(model, opts).then(function (lowpoly) {
       steps.lowpoly = lowpoly;
       var ok = !!lowpoly.ok;
+      /* Undo/Redo toàn diện (v2): Auto Fix xong là 1 bước — undo khôi phục
+         transform/pivot/pose trước fix; clip đã ground + geometry đã
+         decimate KHÔNG hoàn lại được (file đã xuất — giới hạn đã ghi). */
+      if (ok) { try { if (window.PixiStudio && PixiStudio.History) PixiStudio.History.push('Auto Fix'); } catch (e) {} }
       return {
         ok: ok, steps: steps, stoppedAt: ok ? null : 'lowpoly',
         message: ok
@@ -1216,6 +1220,9 @@
           rep.textContent = (r && r.ok ? '✅ ' : '⚠️ ') + (r && (r.message || r.reason) || 'Xong.') +
             (r ? '\n' + JSON.stringify(r, function (k, v) { return (k === 'bytes' || k === 'clip') ? undefined : v; }, 1) : '');
           status.textContent = modelStatusLine(resolveModel());
+          /* Undo/Redo toàn diện (v2): mỗi bước fix xong là 1 bước
+             (giới hạn như runAll: clip/geo đã sửa không hoàn lại). */
+          if (r && r.ok) { try { if (window.PixiStudio && PixiStudio.History) PixiStudio.History.push('Auto Fix: ' + title); } catch (e) {} }
           if (r && r.step === 'lowpoly' && r.reason === 'need-rig') smartBtn.style.display = '';
           if (r && r.step === 'lowpoly' && r.ok && r.bytes) {
             var okDl = downloadBytes(r.bytes, r.filename);

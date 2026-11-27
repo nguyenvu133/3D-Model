@@ -8,6 +8,17 @@
  *   • "Animation": IK + trails + onion BẬT; nhãn, markers TẮT.
  *   • "Clean":     chỉ model — TẮT hết overlay đã biết.
  *   • "Full":      BẬT tất cả layer đã biết.
+ *   • VIEW2 (2026-11-27, ưu tiên 4): "XRay" — skeleton + xray BẬT,
+ *     còn lại TẮT (soi xương xuyên mesh); "Motion" — skeleton +
+ *     trails + onion + rootmotion + angles BẬT (xem lại chuyển động
+ *     + góc khớp). 2 preset mới vẽ ở hàng riêng trong UI (hàng chính
+ *     giữ đúng 4 nút builtin cũ). Full/Clean giữ nguyên 11 key cũ
+ *     (không ép xray/angles/rootmotion — giống Rigging/Animation
+ *     không ép grid/helpers/measure/reference): 3 layer mới do
+ *     XRay/Motion + toolbar điều khiển. Lý do: map Full mà có key
+ *     chưa đăng ký thì matchesPreset (coi chưa đăng ký = tắt) không
+ *     bao giờ khớp Full, và XRay sẽ khớp nhầm trạng thái
+ *     "Rigging trừ labels" khi xray chưa đăng ký.
  *
  * Preset riêng của user: đặt tên, lưu map trạng thái layer hiện
  * tại vào localStorage `pixistudio.arp-vp-presets`, áp/xóa được,
@@ -44,7 +55,8 @@
    * qua listLayers() và vẫn lưu được vào preset riêng. */
   var KNOWN_LAYERS = [
     'skeleton', 'labels', 'ik', 'markers', 'ghost', 'grid',
-    'helpers', 'trails', 'onion', 'measure', 'reference'
+    'helpers', 'trails', 'onion', 'measure', 'reference',
+    'xray', 'angles', 'rootmotion' /* VIEW2 */
   ];
 
   /* Mỗi preset là 1 map key layer → on/off. Chỉ những key có trong
@@ -68,9 +80,35 @@
       skeleton: true, labels: true, ik: true, markers: true,
       ghost: true, grid: true, helpers: true, trails: true,
       onion: true, measure: true, reference: true
+    },
+    /* VIEW2 — 2 preset mở rộng (xem ghi chú đầu file). Rigging/
+       Animation KHÔNG đụng tới xray/angles/rootmotion nên áp 2
+       preset này không làm mất trạng thái xray/góc/root motion. */
+    /* VIEW2 — preset mở rộng KHỐNG CHẾ ĐỦ 14 LAYER (kể cả xray/
+       angles/rootmotion): preset chỉ ép 1 phần sẽ để lại layer cũ
+       (vd XRay bật xray, Motion không tắt → trạng thái sau Motion
+       vẫn trùng map XRay, refreshActive báo nhầm XRay khi user tắt
+       tay 1 layer — xem (7e) test-arp-vp-view2.js). */
+    XRay: {
+      skeleton: true, xray: true,
+      labels: false, ik: false, markers: false, ghost: false,
+      grid: false, helpers: false, trails: false, onion: false,
+      measure: false, reference: false, angles: false, rootmotion: false
+    },
+    Motion: {
+      skeleton: true, trails: true, onion: true,
+      rootmotion: true, angles: true,
+      labels: false, ik: false, markers: false, ghost: false,
+      grid: false, helpers: false, measure: false, reference: false,
+      xray: false
     }
   };
   var BUILTIN_NAMES = ['Rigging', 'Animation', 'Clean', 'Full'];
+  /* VIEW2: tên preset mở rộng — renderInto vẽ ở hàng riêng
+     (attribute data-arp-vp-preset-x) để hàng chính giữ đúng 4 nút
+     builtin cũ; refreshActive/listPresets vẫn nhận diện đủ 6. */
+  var EXTENDED_PRESET_NAMES = ['XRay', 'Motion'];
+  var ALL_BUILTIN_NAMES = BUILTIN_NAMES.concat(EXTENDED_PRESET_NAMES);
   var DEFAULT_AFTER_RIG = 'Rigging';
 
   var _active = null;           /* tên preset đang khớp, hoặc 'Custom', hoặc null (chưa biết) */
@@ -214,8 +252,11 @@
   function refreshActive() {
     if (_applying) return _active;
     var i, name;
-    for (i = 0; i < BUILTIN_NAMES.length; i++) {
-      if (matchesPreset(BUILTIN_NAMES[i])) { _setActive(BUILTIN_NAMES[i]); return _active; }
+    /* VIEW2: kiểm tra 4 preset gốc trước, rồi 2 preset mở rộng —
+       thứ tự này giữ 'Rigging' thắng khi trạng thái khớp cả Rigging
+       lẫn 1 preset mở rộng. */
+    for (i = 0; i < ALL_BUILTIN_NAMES.length; i++) {
+      if (matchesPreset(ALL_BUILTIN_NAMES[i])) { _setActive(ALL_BUILTIN_NAMES[i]); return _active; }
     }
     var customs = listCustom();
     for (i = 0; i < customs.length; i++) {
@@ -268,7 +309,7 @@
   }
 
   function listPresets() {
-    return BUILTIN_NAMES.concat(listCustom().map(function (c) { return c.name; }));
+    return BUILTIN_NAMES.concat(EXTENDED_PRESET_NAMES, listCustom().map(function (c) { return c.name; }));
   }
 
   /* Áp preset: gọi ArpViewport.showLayer/hideLayer cho từng layer
@@ -485,6 +526,22 @@
     });
     root.appendChild(btnRow);
 
+    /* VIEW2: hàng preset mở rộng (XRay/Motion) — attribute riêng
+       data-arp-vp-preset-x để không lẫn với 4 nút builtin cũ. */
+    var extRow = document.createElement('div');
+    extRow.className = 'arp-vp-presets-row arp-vp-presets-extended';
+    EXTENDED_PRESET_NAMES.forEach(function (name) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'arp-vp-preset-btn arp-vp-extended-btn';
+      b.setAttribute('data-arp-vp-preset-x', name);
+      b.textContent = name;
+      b.title = name === 'XRay' ? 'Soi xương xuyên mesh (skeleton + X-ray)' : 'Xem lại chuyển động (trails + onion + root motion + góc khớp)';
+      b.addEventListener('click', function () { apply(name); });
+      extRow.appendChild(b);
+    });
+    root.appendChild(extRow);
+
     var saveRow = document.createElement('div');
     saveRow.className = 'arp-vp-presets-save';
     var input = document.createElement('input');
@@ -568,6 +625,8 @@
       KNOWN_LAYERS: KNOWN_LAYERS,
       BUILTINS: BUILTINS,
       BUILTIN_NAMES: BUILTIN_NAMES,
+      EXTENDED_PRESET_NAMES: EXTENDED_PRESET_NAMES,
+      ALL_BUILTIN_NAMES: ALL_BUILTIN_NAMES,
       STORAGE_KEY: STORAGE_KEY,
       reset: function () {
         _active = null;

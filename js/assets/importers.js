@@ -10,7 +10,19 @@
   const U = PixiStudio.Utils;
 
   const Importers = {
-    imported: []       // lịch sử import: {name, type, size, at}
+    imported: [],       // lịch sử import: {name, type, size, at}
+    /* Stash buffer cho AssetLibraryStore (nhóm B, 2026-11-27):
+       map tên file → { buf (bản copy), size, fileName, ext } cho model,
+       hoặc { dataUrl, size, fileName } cho image/audio nhẹ (<2MB).
+       Store đọc stash này khi nhận bus 'asset:imported' rồi lưu file
+       thật vào IndexedDB. Giữ tối đa 20 file gần nhất. */
+    _fileBuffers: {}
+  };
+
+  Importers._stashBuffer = function (fileName, record) {
+    Importers._fileBuffers[fileName] = record;
+    var keys = Object.keys(Importers._fileBuffers);
+    while (keys.length > 20) delete Importers._fileBuffers[keys.shift()];
   };
 
   const TYPE_MAP = {
@@ -75,13 +87,21 @@
     const ext = Importers.extOf(file.name);
     const type = TYPE_MAP[ext] || 'unknown';
     const name = file.name.replace(/\.[^.]+$/, '');
+    /* Undo/Redo toàn diện (v2): chưa có baseline thì chụp state trước
+       khi import — để bước Import đầu tiên undo được về đúng trước đó. */
+    if (PixiStudio.History && PixiStudio.History.captureBaseline) PixiStudio.History.captureBaseline();
 
     if (type === 'model') {
       return U.readFileAsArrayBuffer(file).then(function (buf) {
+        /* Stash bản COPY (buf.slice(0)): loader có thể detach/transfer
+           ArrayBuffer gốc khi parse, bản copy giữ nguyên để Store lưu
+           IndexedDB. Xóa stash sau khi Store đã đọc (trong _onImported). */
+        Importers._stashBuffer(file.name, { buf: buf.slice(0), size: file.size, fileName: file.name, ext: ext, type: 'model' });
         if (ext === 'glb' || ext === 'gltf') {
           return PixiStudio.Models.loadGLBFromBuffer(buf, name, file.size);
         } else if (ext === 'fbx') {
-          return PixiStudio.Models.loadFBXFromBuffer(buf, name, file.size);
+          /* kèm batch: FbxImport tự gán texture ngoài đi kèm cùng lần import */
+          return PixiStudio.Models.loadFBXFromBuffer(buf, name, file.size, { batch: batch });
         } else if (ext === 'obj') {
           /* kèm batch: model-manager tự tra MTL + ảnh đi kèm */
           return PixiStudio.Models.loadOBJFromBuffer(buf, name, batch
@@ -90,13 +110,20 @@
           return PixiStudio.Models.loadSTLFromBuffer(buf, name);
         }
       }).then(function (entry) {
+        /* Thông báo chi tiết khi là FBX: mesh/tris/xương/clip/texture từ fbxReport */
+        var detail = U.formatNumber(entry.stats.triangles) + ' tris · ' + U.formatBytes(file.size) +
+          (entry.clips && entry.clips.length ? ' · ' + entry.clips.length + ' clip' : '');
+        if (entry.fbxReport && PixiStudio.FbxImport) {
+          detail = PixiStudio.FbxImport.summarizeReport(entry.fbxReport);
+        }
         bus.emit('notify', {
           type: 'success', title: 'Import thành công',
-          message: name + ' — ' + U.formatNumber(entry.stats.triangles) + ' tris · ' + U.formatBytes(file.size) +
-            (entry.clips && entry.clips.length ? ' · ' + entry.clips.length + ' clip' : '')
+          message: name + ' — ' + detail
         });
         Importers._log(file, 'model');
         bus.emit('asset:imported', { name: file.name, type: 'model', size: file.size });
+        /* Undo/Redo toàn diện (v2): import là 1 bước — undo gỡ model khỏi scene */
+        if (PixiStudio.History) PixiStudio.History.push('Import ' + file.name);
         return { name: file.name, ok: true, type: 'model' };
       });
     }
@@ -118,21 +145,32 @@
 
     if (type === 'image') {
       return U.readFileAsDataURL(file).then(function (dataUrl) {
+        /* Stash dataURL chỉ khi file nhẹ (<2MB) để Store lưu IndexedDB. */
+        if (file.size < 2 * 1024 * 1024) {
+          Importers._stashBuffer(file.name, { dataUrl: dataUrl, size: file.size, fileName: file.name, ext: ext, type: 'image' });
+        }
         if (PixiStudio.Textures) {
           PixiStudio.Textures.registerTexture(file.name, dataUrl);
         }
         Importers._log(file, 'image');
         bus.emit('asset:imported', { name: file.name, type: 'image', size: file.size, url: dataUrl });
         bus.emit('notify', { type: 'success', title: 'Đã thêm texture', message: file.name });
+        /* Undo/Redo toàn diện (v2): texture vào library là 1 bước */
+        if (PixiStudio.History) PixiStudio.History.push('Import texture ' + file.name);
         return { name: file.name, ok: true, type: 'image' };
       });
     }
 
     if (type === 'audio') {
       return U.readFileAsDataURL(file).then(function (dataUrl) {
+        if (file.size < 2 * 1024 * 1024) {
+          Importers._stashBuffer(file.name, { dataUrl: dataUrl, size: file.size, fileName: file.name, ext: ext, type: 'audio' });
+        }
         Importers._log(file, 'audio');
         bus.emit('asset:imported', { name: file.name, type: 'audio', size: file.size, url: dataUrl });
         bus.emit('notify', { type: 'info', title: 'Đã thêm audio asset', message: file.name + ' — sẵn dùng cho game runtime' });
+        /* Undo/Redo toàn diện (v2): audio vào library là 1 bước */
+        if (PixiStudio.History) PixiStudio.History.push('Import audio ' + file.name);
         return { name: file.name, ok: true, type: 'audio' };
       });
     }

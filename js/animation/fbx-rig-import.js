@@ -25,6 +25,9 @@
     current: null,
     loaded: false,
     fileName: '',
+    takes: [],           // mọi take/clip trong file (1 clip / AnimationStack)
+    sourceTake: null,    // tên take đang làm nguồn sinh Idle/Attack
+    fbxReport: null,     // báo cáo đầy đủ từ FbxImport.parseDetailed
     AMPLITUDE: {            // độ sway Idle theo bone
       Spine: 0.045, Spine1: 0.04, Spine2: 0.035,
       Chest: 0.03, Neck: 0.02, Head: 0.05,
@@ -54,6 +57,18 @@
     return new Promise(function (resolve, reject) {
       if (!window.THREE || !THREE.FBXLoader) { reject(new Error('FBXLoader chưa load (CDN)')); return; }
       U.readFileAsArrayBuffer(file).then(function (ab) {
+        /* Đường dây mới (nhóm 1): detect version + lỗi có mã/gợi ý trước khi parse */
+        var FI = PixiStudio.FbxImport;
+        if (FI && FI.parseDetailed) {
+          FI.parseDetailed(ab, { name: file.name }).then(function (res) {
+            FbxRig.fbxReport = res.report;
+            resolve(FbxRig._process(res.object, res.report));
+          }).catch(function (e) {
+            var fmt = FI.formatError(e);
+            reject(new Error(fmt.message));
+          });
+          return;
+        }
         const loader = new THREE.FBXLoader();
         try {
           const object = loader.parse(ab, '');
@@ -65,9 +80,10 @@
     });
   };
 
-  FbxRig._process = function (object) {
+  FbxRig._process = function (object, report) {
     FbxRig.fbxRoot = object;
     FbxRig.loaded = true;
+    FbxRig.fbxReport = report || null;
 
     /* Skeleton analysis */
     const boneNames = [];
@@ -82,11 +98,21 @@
       const p = hierarchy[n].parent;
       if (p && hierarchy[p]) hierarchy[p].children.push(n);
     });
-    FbxRig.skeleton = { boneNames: boneNames, boneCount: boneNames.length, hierarchy: hierarchy };
+    /* Tên xương chuẩn hóa (canonical mixamorig:) — parseDetailed đã đổi tên
+       bone + track; ở đây chỉ ghi lại để panel hiển thị + map dùng lại. */
+    const FI = PixiStudio.FbxImport;
+    FbxRig.skeleton = {
+      boneNames: boneNames, boneCount: boneNames.length, hierarchy: hierarchy,
+      canonicalNames: FI ? boneNames.map(function (n) { return FI.canonicalBoneName(n); }) : boneNames.slice()
+    };
 
-    /* Extract clips */
+    /* Extract clips — MỌI take (1 clip / AnimationStack), không chỉ clip đầu */
     const clips = object.animations || [];
+    FbxRig.takes = FI ? FI.listTakes(object) : clips.map(function (c) {
+      return { name: c.name || 'Clip', duration: c.duration || 0, tracks: (c.tracks || []).length, frames: 0 };
+    });
     FbxRig.runningClip = clips.length ? clips[0] : null;
+    FbxRig.sourceTake = FbxRig.runningClip ? FbxRig.runningClip.name : null;
 
     /* Skinned mesh nhận shadow */
     object.traverse(function (o) {
@@ -134,11 +160,35 @@
 
     bus.emit('notify', {
       type: 'success', title: '🎞 FBX Rig Import thành công',
-      message: boneNames.length + ' bones Mixamo · clip "' + (FbxRig.runningClip ? FbxRig.runningClip.name : '?') +
-        '" (' + (FbxRig.runningClip ? FbxRig.runningClip.duration.toFixed(1) : 0) + 's) · Idle + Attack đã sinh tự động'
+      message: boneNames.length + ' bones Mixamo · ' + clips.length + ' take' + (clips.length > 1 ? 's' : '') +
+        ' · clip "' + (FbxRig.runningClip ? FbxRig.runningClip.name : '?') +
+        '" (' + (FbxRig.runningClip ? FbxRig.runningClip.duration.toFixed(1) : 0) + 's) · Idle + Attack đã sinh tự động' +
+        (FbxRig.fbxReport && FbxRig.fbxReport.textures ? ' · ' + FbxRig.fbxReport.textures.total + ' texture' : '') +
+        (FbxRig.fbxReport && FbxRig.fbxReport.morphs && FbxRig.fbxReport.morphs.total ? ' · ' + FbxRig.fbxReport.morphs.total + ' morph' : '')
     });
 
-    return { object: object, skeleton: FbxRig.skeleton, clips: FbxRig.generated };
+    return { object: object, skeleton: FbxRig.skeleton, clips: FbxRig.generated, takes: FbxRig.takes, report: FbxRig.fbxReport };
+  };
+
+  /* ============================================================
+     CHỌN TAKE — đổi take nguồn sinh Idle/Attack (khi file có >1 take).
+     Dùng chung cho panel FbxRig + bus 'fbx:take-selected'.
+     ============================================================ */
+  FbxRig.setSourceTake = function (takeName) {
+    var clips = (FbxRig.fbxRoot && FbxRig.fbxRoot.animations) || [];
+    var clip = null;
+    clips.forEach(function (c) { if (c.name === takeName) clip = c; });
+    if (!clip) return false;
+    FbxRig.runningClip = clip;
+    FbxRig.sourceTake = takeName;
+    FbxRig.generated = [
+      { id: 'Running', name: 'Running (FBX gốc)', clip: FbxRig.runningClip, loop: true, source: 'fbx' },
+      { id: 'Idle', name: 'Idle (auto từ Running)', clip: FbxRig.generateIdle(FbxRig.runningClip), loop: true, source: 'generated' },
+      { id: 'Attack', name: 'Attack (auto từ Running)', clip: FbxRig.generateAttack(FbxRig.runningClip), loop: false, source: 'generated' }
+    ];
+    FbxRig.play('Running');
+    bus.emit('fbx:take-selected', { take: takeName });
+    return true;
   };
 
   /* ============================================================
@@ -478,6 +528,42 @@
       U.el('span', { class: 'i-label', text: 'Running clip' }),
       U.el('span', { class: 'i-value', text: FbxRig.runningClip ? FbxRig.runningClip.duration.toFixed(1) + 's' : '—' })
     ]));
+
+    /* FBX report: version/format + morph/texture (khi có parseDetailed) */
+    if (FbxRig.fbxReport) {
+      var fr = FbxRig.fbxReport;
+      sc.appendChild(U.el('div', { class: 'info-row' }, [
+        U.el('span', { class: 'i-label', text: 'FBX' }),
+        U.el('span', { class: 'i-value', text: fr.versionLabel + ' · ' + fr.format })
+      ]));
+      if (fr.textures && fr.textures.total) {
+        sc.appendChild(U.el('div', { class: 'info-row' }, [
+          U.el('span', { class: 'i-label', text: 'Texture' }),
+          U.el('span', { class: 'i-value', text: fr.textures.total + ' (' + fr.textures.embedded + ' nhúng' + (fr.textures.pending ? ', ' + fr.textures.pending + ' chưa load' : '') + ')' })
+        ]));
+      }
+      if (fr.morphs && fr.morphs.total) {
+        sc.appendChild(U.el('div', { class: 'info-row', style: 'margin-bottom:8px;' }, [
+          U.el('span', { class: 'i-label', text: 'Morph' }),
+          U.el('span', { class: 'i-value', text: fr.morphs.total + ' target — phát qua FbxImport.setMorphWeight' })
+        ]));
+      }
+    }
+
+    /* Takes: chọn take làm nguồn sinh Idle/Attack (khi file có >1 take) */
+    if (FbxRig.takes && FbxRig.takes.length > 1) {
+      sc.appendChild(U.el('div', { class: 'dim small', style: 'margin:6px 0 4px;line-height:1.5;', text: 'Takes trong file (' + FbxRig.takes.length + ') — chọn take làm nguồn sinh Idle/Attack:' }));
+      var tgrid = U.el('div', { class: 'mt-grid', style: 'grid-template-columns:repeat(2,1fr);gap:5px;margin-bottom:8px;' });
+      FbxRig.takes.forEach(function (t) {
+        var safeName = String(t.name).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        tgrid.appendChild(U.el('button', {
+          class: 'mt-btn' + (FbxRig.sourceTake === t.name ? ' primary' : ''),
+          html: U.icon('animation') + '<span>' + safeName.slice(0, 22) + ' (' + t.duration.toFixed(1) + 's)</span>',
+          onclick: function () { if (FbxRig.setSourceTake(t.name)) FbxRig.renderPanel(); }
+        }));
+      });
+      sc.appendChild(tgrid);
+    }
 
     /* Play buttons */
     const grid = U.el('div', { class: 'mt-grid', style: 'grid-template-columns:repeat(3,1fr);gap:5px;' });

@@ -15,6 +15,15 @@
  * "module chưa load"; khi module đăng ký sau, toolbar tự cập nhật
  * nhờ ArpViewport.onLayerChange.
  *
+ * VIEW2 (2026-11-27, ưu tiên 4): thêm 1 hàng nút phụ (không nằm
+ * trong BUTTONS — BUTTONS giữ đúng 11 nút layer cũ để harness cũ
+ * không đổi; nút phụ dùng attribute data-vp2, không dùng
+ * data-layer): X-ray / Góc khớp / Root motion (3 layer mới, bấm
+ * qua registry như nút chính), Vệt dày (đổi kiểu trail
+ * ribbon↔line qua ArpVpTrails.setTrailStyle), Nhóm xương (mở
+ * popover 8 checkbox ẩn/hiện từng nhóm xương qua
+ * ArpVpSkeleton.setGroupVisible).
+ *
  * 4 layer built-in (markers/ghost/grid/helpers) do toolbar tự đăng ký
  * vào registry khi mount — CHỈ KHI chưa có module nào đăng ký key đó
  * (không ghi đè đăng ký của module khác). Adapter đọc API hiện có,
@@ -72,6 +81,17 @@
   var _btns = {};          /* key -> button element */
   var _unsubscribe = null; /* hủy onLayerChange khi destroy */
   var _builtinsRegistered = false;
+  /* VIEW2 — hàng nút phụ (xem ghi chú đầu file). */
+  var EXTRA_BUTTONS = [
+    { key: 'xray', label: 'X-ray', icon: '🔍', title: 'X-ray: làm mờ mesh để xương hiện xuyên qua' },
+    { key: 'angles', label: 'Góc khớp', icon: '📐', title: 'Hiện/ẩn góc khớp live (khuỷu/gối)' },
+    { key: 'rootmotion', label: 'Root motion', icon: '🛤️', title: 'Hiện/ẩn đường root motion (Hips)' },
+    { key: 'ribbon', label: 'Vệt dày', icon: '➖', title: 'Bật/tắt vệt motion dày (ribbon) — tắt thì chỉ còn line 1px' },
+    { key: 'groups', label: 'Nhóm xương', icon: '🦴', title: 'Hiện/ẩn xương theo nhóm (cột sống/đầu/tay/chân/ngón)' }
+  ];
+  var _extraBtns = {};     /* key -> button element (hàng phụ) */
+  var _groupsPop = null;   /* div popover chọn nhóm xương */
+  var _groupsOpen = false;
 
   function logWarn(msg) {
     if (window.console && console.warn) console.warn('[ArpVpToolbar] ' + msg);
@@ -174,11 +194,36 @@
     return !!QR.current.controlsVisible;
   }
 
+  /* VIEW2 — X-ray: adapter qua ArpVpSkeleton.setXrayEnabled (dùng
+     shading 'xray' có sẵn của viewport, xem arp-vp-skeleton.js).
+     Đăng ký ở toolbar theo mẫu markers/ghost/grid/helpers để module
+     skeleton không tự đăng ký layer (harness skeleton đếm đúng 1
+     lần registerLayer 'skeleton'). getSkeleton() định nghĩa ở mục
+     VIEW2 phía dưới (function declaration nên hoist được). */
+  function xrayShow() {
+    var SK = getSkeleton();
+    if (!SK || typeof SK.setXrayEnabled !== 'function') { logWarn('X-ray: ArpVpSkeleton chưa load.'); return false; }
+    var r = SK.setXrayEnabled(true);
+    return r === true || (r && r.ok === true);
+  }
+  function xrayHide() {
+    var SK = getSkeleton();
+    if (!SK || typeof SK.setXrayEnabled !== 'function') return false;
+    var r = SK.setXrayEnabled(false);
+    return r === true || (r && r.ok === true);
+  }
+  function xrayVisible() {
+    var SK = getSkeleton();
+    if (!SK || typeof SK.isXrayEnabled !== 'function') return false;
+    return !!SK.isXrayEnabled();
+  }
+
   var BUILTIN_LAYERS = [
     { key: 'markers', label: 'Markers', show: markersShow, hide: markersHide, isVisible: markersVisible, defaultVisible: false },
     { key: 'ghost', label: 'Ghost', show: ghostShow, hide: ghostHide, isVisible: ghostVisible, defaultVisible: false },
     { key: 'grid', label: 'Grid', show: gridShow, hide: gridHide, isVisible: gridVisible, defaultVisible: true },
-    { key: 'helpers', label: 'Control helpers', show: helpersShow, hide: helpersHide, isVisible: helpersVisible, defaultVisible: false }
+    { key: 'helpers', label: 'Control helpers', show: helpersShow, hide: helpersHide, isVisible: helpersVisible, defaultVisible: false },
+    { key: 'xray', label: 'X-ray', show: xrayShow, hide: xrayHide, isVisible: xrayVisible, defaultVisible: false }
   ];
 
   function registerBuiltinLayers() {
@@ -278,7 +323,228 @@
     all.appendChild(hideAll);
     wrap.appendChild(all);
 
+    /* VIEW2: hàng nút phụ (X-ray / Góc khớp / Root motion / Vệt dày /
+       Nhóm xương) — nằm dưới hàng nút layer chính. */
+    bar.appendChild(buildExtraRow());
+
+    /* VIEW2: hàng preset hiển thị — trước đây ArpVpPresets.renderInto()
+       không có caller nào trong app nên nút preset (kể cả XRay/Motion
+       mới) không bao giờ hiện trong studio thật. Gắn thẳng vào toolbar
+       để user bấm được ngay trong viewport. */
+    bar.appendChild(buildPresetRow());
+
     return bar;
+  }
+
+  /* ---------- VIEW2: hàng nút phụ + popover nhóm xương ---------- */
+
+  function getTrails() { return (PS && PS.ArpVpTrails) || null; }
+  function getSkeleton() { return (PS && PS.ArpVpSkeleton) || null; }
+
+  function toggleRibbon() {
+    var T = getTrails();
+    if (!T || typeof T.setTrailStyle !== 'function' || typeof T.getTrailStyle !== 'function') {
+      logWarn('Vệt dày: ArpVpTrails chưa load.');
+      return;
+    }
+    var next = T.getTrailStyle() === 'ribbon' ? 'line' : 'ribbon';
+    T.setTrailStyle(next);
+    ArpVpToolbar.refresh();
+  }
+
+  /* Popover chọn nhóm xương: 8 checkbox + Tất cả/Ẩn hết. Nội dung
+     dựng lại mỗi lần mở (số xương/part lấy tươi từ getGroups()). */
+  function buildGroupsPop() {
+    var pop = document.createElement('div');
+    pop.id = 'arp-vp-groups-pop';
+    pop.className = 'arp-vp-groups-pop';
+    pop.style.cssText = 'position:absolute;left:0;top:100%;margin-top:6px;z-index:40;' +
+      'background:rgba(10,18,32,0.96);color:#e8f0ff;border:1px solid #7b61ff;border-radius:8px;' +
+      'padding:8px 10px;font-size:12px;line-height:1.7;min-width:210px;display:none;' +
+      'box-shadow:0 2px 12px rgba(0,0,0,0.5);';
+    var title = document.createElement('div');
+    title.style.cssText = 'font-weight:bold;margin-bottom:4px;';
+    title.textContent = 'Nhóm xương';
+    pop.appendChild(title);
+    var list = document.createElement('div');
+    list.className = 'arp-vp-groups-list';
+    pop.appendChild(list);
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:6px;margin-top:6px;';
+    var allBtn = document.createElement('button');
+    allBtn.type = 'button';
+    allBtn.className = 'arp-vp-btn arp-vp-bulk-btn';
+    allBtn.textContent = 'Tất cả';
+    allBtn.addEventListener('click', function () { setAllGroups(true); });
+    var noneBtn = document.createElement('button');
+    noneBtn.type = 'button';
+    noneBtn.className = 'arp-vp-btn arp-vp-bulk-btn';
+    noneBtn.textContent = 'Ẩn hết';
+    noneBtn.addEventListener('click', function () { setAllGroups(false); });
+    row.appendChild(allBtn);
+    row.appendChild(noneBtn);
+    pop.appendChild(row);
+    return pop;
+  }
+
+  function setAllGroups(on) {
+    var SK = getSkeleton();
+    if (!SK || typeof SK.getGroups !== 'function') { logWarn('Nhóm xương: ArpVpSkeleton chưa load.'); return; }
+    SK.getGroups().forEach(function (g) {
+      if (typeof SK.setGroupVisible === 'function') SK.setGroupVisible(g.key, on);
+    });
+    refreshGroupsPop();
+  }
+
+  function refreshGroupsPop() {
+    if (!_groupsPop) return;
+    var list = _groupsPop.querySelector('.arp-vp-groups-list');
+    if (!list) return;
+    while (list.firstChild) list.removeChild(list.firstChild);
+    var SK = getSkeleton();
+    if (!SK || typeof SK.getGroups !== 'function') {
+      var note = document.createElement('div');
+      note.textContent = 'Chưa có skeleton — rig model trước.';
+      list.appendChild(note);
+      return;
+    }
+    SK.getGroups().forEach(function (g) {
+      var label = document.createElement('label');
+      label.style.cssText = 'display:flex;gap:6px;align-items:center;cursor:pointer;';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !!g.visible;
+      cb.setAttribute('data-vp-group', g.key);
+      cb.addEventListener('change', function () {
+        if (typeof SK.setGroupVisible === 'function') SK.setGroupVisible(g.key, cb.checked);
+        ArpVpToolbar.refresh();
+      });
+      label.appendChild(cb);
+      var span = document.createElement('span');
+      span.textContent = g.label + ' (' + g.bones + ' xương, ' + g.visibleParts + '/' + g.parts + ' hiện)';
+      label.appendChild(span);
+      list.appendChild(label);
+    });
+  }
+
+  function toggleGroupsPop() {
+    if (!_el) return;
+    if (!_groupsPop) {
+      _groupsPop = buildGroupsPop();
+      _el.appendChild(_groupsPop);
+    }
+    _groupsOpen = !_groupsOpen;
+    if (_groupsOpen) refreshGroupsPop();
+    _groupsPop.style.display = _groupsOpen ? 'block' : 'none';
+    ArpVpToolbar.refresh();
+  }
+
+  function buildExtraRow() {
+    var row = document.createElement('div');
+    row.className = 'arp-vp-btns arp-vp-btns-extra';
+    EXTRA_BUTTONS.forEach(function (def) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'arp-vp-btn off';
+      b.setAttribute('data-vp2', def.key); /* VIEW2: KHÔNG dùng data-layer (giữ 11 nút cũ) */
+      b.textContent = def.icon + ' ' + def.label;
+      b.title = def.title;
+      b.setAttribute('aria-pressed', 'false');
+      b.addEventListener('click', function () {
+        if (def.key === 'ribbon') { toggleRibbon(); return; }
+        if (def.key === 'groups') { toggleGroupsPop(); return; }
+        var core = getCore();
+        if (!core) { logWarn('ArpViewport chưa load — không bật/tắt được layer "' + def.key + '".'); return; }
+        var res = core.toggleLayer(def.key);
+        if (res === null) logWarn('Layer "' + def.key + '" chưa sẵn sàng (module chưa đăng ký hoặc bật/tắt thất bại).');
+        ArpVpToolbar.refresh();
+      });
+      row.appendChild(b);
+      _extraBtns[def.key] = b;
+    });
+    return row;
+  }
+
+  /* ---------- VIEW2: hàng preset hiển thị ---------- */
+
+  var _presetBtns = {}; /* name -> button element (hàng preset) */
+  var PRESET_ORDER = ['Rigging', 'Animation', 'Clean', 'Full', 'XRay', 'Motion'];
+  var PRESET_EXTENDED = { XRay: true, Motion: true };
+
+  function getPresets() { return (PS && PS.ArpVpPresets) || null; }
+
+  function buildPresetRow() {
+    var row = document.createElement('div');
+    row.className = 'arp-vp-btns arp-vp-btns-presets';
+    row.setAttribute('data-arp-vp-presets', '');
+    PRESET_ORDER.forEach(function (name) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'arp-vp-btn off';
+      b.setAttribute('data-arp-vp-preset', name);
+      if (PRESET_EXTENDED[name]) b.setAttribute('data-arp-vp-preset-x', name);
+      b.textContent = name;
+      b.title = 'Preset hiển thị: ' + name;
+      b.setAttribute('aria-pressed', 'false');
+      b.addEventListener('click', function () {
+        var P = getPresets();
+        if (!P || typeof P.apply !== 'function') { logWarn('Preset "' + name + '": ArpVpPresets chưa load.'); return; }
+        P.apply(name);
+        ArpVpToolbar.refresh();
+      });
+      row.appendChild(b);
+      _presetBtns[name] = b;
+    });
+    return row;
+  }
+
+  function refreshPresets() {
+    if (!_el) return;
+    var P = getPresets();
+    var active = null;
+    try { active = (P && typeof P.getActive === 'function') ? P.getActive() : null; } catch (e) {}
+    Object.keys(_presetBtns).forEach(function (name) {
+      var b = _presetBtns[name];
+      if (!b) return;
+      var on = active === name;
+      b.classList.toggle('on', on);
+      b.classList.toggle('off', !on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+
+  function refreshExtra() {
+    if (!_el) return;
+    var core = getCore();    ['xray', 'angles', 'rootmotion'].forEach(function (key) {
+      var b = _extraBtns[key];
+      if (!b) return;
+      var registered = !!(core && core.hasLayer && core.hasLayer(key));
+      var visible = !!(core && core.isLayerVisible(key));
+      b.classList.toggle('on', visible);
+      b.classList.toggle('off', !visible);
+      b.classList.toggle('arp-vp-btn-missing', !registered);
+      b.setAttribute('aria-pressed', visible ? 'true' : 'false');
+    });
+    var rb = _extraBtns.ribbon;
+    if (rb) {
+      var T = getTrails();
+      var on = !!(T && typeof T.getTrailStyle === 'function' && T.getTrailStyle() === 'ribbon');
+      var missing = !T || typeof T.setTrailStyle !== 'function';
+      rb.classList.toggle('on', on);
+      rb.classList.toggle('off', !on);
+      rb.classList.toggle('arp-vp-btn-missing', missing);
+      rb.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+    var gb = _extraBtns.groups;
+    if (gb) {
+      var sk = getSkeleton();
+      var missingG = !sk || typeof sk.getGroups !== 'function';
+      gb.classList.toggle('on', _groupsOpen);
+      gb.classList.toggle('off', !_groupsOpen);
+      gb.classList.toggle('arp-vp-btn-missing', missingG);
+      gb.setAttribute('aria-pressed', _groupsOpen ? 'true' : 'false');
+    }
+    if (_groupsOpen) refreshGroupsPop();
   }
 
   /* ---------- API ---------- */
@@ -310,6 +576,10 @@
     if (_el && _el.parentNode) _el.parentNode.removeChild(_el);
     _el = null;
     _btns = {};
+    _extraBtns = {};
+    _presetBtns = {};
+    _groupsPop = null;
+    _groupsOpen = false;
     return true;
   };
 
@@ -327,6 +597,8 @@
       b.setAttribute('aria-pressed', visible ? 'true' : 'false');
       b.title = def.title + (registered ? '' : ' — module chưa load');
     });
+    refreshExtra();
+    refreshPresets();
     return true;
   };
 
@@ -339,11 +611,21 @@
     BUILTIN_LAYERS: BUILTIN_LAYERS,
     registerBuiltinLayers: registerBuiltinLayers,
     getButtons: function () { return _btns; },
+    EXTRA_BUTTONS: EXTRA_BUTTONS,
+    getExtraButtons: function () { return _extraBtns; },
+    PRESET_ORDER: PRESET_ORDER,
+    getPresetButtons: function () { return _presetBtns; },
+    refreshPresets: refreshPresets,
+    getGroupsPop: function () { return _groupsPop; },
+    isGroupsOpen: function () { return _groupsOpen; },
+    toggleGroupsPop: toggleGroupsPop,
+    refreshExtra: refreshExtra,
     adapters: {
       markersShow: markersShow, markersHide: markersHide, markersVisible: markersVisible,
       ghostShow: ghostShow, ghostHide: ghostHide, ghostVisible: ghostVisible,
       gridShow: gridShow, gridHide: gridHide, gridVisible: gridVisible,
-      helpersShow: helpersShow, helpersHide: helpersHide, helpersVisible: helpersVisible
+      helpersShow: helpersShow, helpersHide: helpersHide, helpersVisible: helpersVisible,
+      xrayShow: xrayShow, xrayHide: xrayHide, xrayVisible: xrayVisible
     }
   };
 

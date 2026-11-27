@@ -106,6 +106,11 @@
           bus.emit('transform:changed', { id: sel.uuid, source: 'inspector', channel: channel });
           Inspector._updating = false;
         });
+        /* Undo/Redo toàn diện (v2): 'change' chỉ bắn khi blur/Enter nên
+           1 lần sửa = 1 bước (không spam như 'input' khi kéo số). */
+        input.addEventListener('change', function () {
+          if (PixiStudio.History) PixiStudio.History.push('Transform ' + channel + ' ' + ax.toUpperCase());
+        });
         wrap.appendChild(input);
         row.appendChild(wrap);
       });
@@ -118,7 +123,7 @@
 
     /* Nút utility */
     const tbtns = U.el('div', { style: 'display:flex;gap:6px;margin-top:6px;' }, [
-      U.el('button', { class: 'btn sm grow', text: 'Reset', onclick: function () { sel.position.set(0, sel.position.y, 0); sel.scale.set(1, 1, 1); sel.rotation.set(0, 0, 0); Inspector.syncTransform(sel); bus.emit('transform:changed', { source: 'reset' }); } }),
+      U.el('button', { class: 'btn sm grow', text: 'Reset', onclick: function () { sel.position.set(0, sel.position.y, 0); sel.scale.set(1, 1, 1); sel.rotation.set(0, 0, 0); Inspector.syncTransform(sel); bus.emit('transform:changed', { source: 'reset' }); if (PixiStudio.History) PixiStudio.History.push('Reset transform'); } }),
       U.el('button', { class: 'btn sm grow', text: 'Focus (F)', onclick: function () { PixiStudio.Viewport.focusSelected(); } })
     ]);
     tsc.appendChild(tbtns);

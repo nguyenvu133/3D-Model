@@ -39,6 +39,21 @@
  * toolbar/preset gọi show()/hide()/refresh()/setPose()/setUnit().
  *
  * CHỈ MỞ RỘNG — không sửa file ARP hiện có, không sửa model test.
+ *
+ * MỞ RỘNG VIEW2 (2026-11-27, ưu tiên 4 — góc khớp live):
+ *  • Đo góc tại 6 khớp (khuỷu/gối/hông × trái/phải) từ vị trí world
+ *    của 3 xương kề nhau (A–B–C, góc tại B; 180° = chi thẳng),
+ *    hiện bằng nhãn sprite gần khớp, cập nhật mỗi frame khi đang
+ *    hiện — kể cả lúc phát clip (góc gập khuỷu/gối thay đổi theo
+ *    pose). Text nhãn chỉ vẽ lại khi góc đổi ≥0.5° (đỡ tốn canvas).
+ *  • Vòng lặp gọi updateAngles qua Viewport.render được bọc 1 lần
+ *    (giống ArpVpSelect bọc render để sync overlay) — KHÔNG sửa
+ *    app.js; đồng thời expose ArpVpMeasure.update(dt) để sau này
+ *    app loop gọi trực tiếp nếu muốn.
+ *  • Đăng ký layer 'angles' (Góc khớp) để toolbar/preset điều khiển.
+ *  • GIỚI HẠN: góc đo theo tư thế hiện tại (pose), không phải góc
+ *    T-pose; xương thiếu (vd model không có hông) thì khớp đó bị bỏ
+ *    qua, không báo lỗi ồn ào.
  * ============================================================ */
 (function () {
   'use strict';
@@ -80,8 +95,35 @@
     refGroup: null,          /* Group overlay T/A-pose */
     groundLine: null,
     labels: {},              /* id -> THREE.Sprite */
-    lines: {}                /* id -> THREE.Line/LineSegments */
+    lines: {},               /* id -> THREE.Line/LineSegments */
+    /* VIEW2 — góc khớp live */
+    anglesVisible: false,
+    angleJoints: ['elbowL', 'elbowR', 'kneeL', 'kneeR'],
+    angleLabels: {},         /* id -> {def, sprite, lastDeg} */
+    angleGroup: null,        /* Group chứa nhãn góc, gắn vào scene */
+    angleTarget: null,
+    angles: null             /* giá trị góc đo lần cuối {id:{deg,label}} */
   };
+
+  /* VIEW2 — định nghĩa góc khớp: góc tại xương B giữa 2 xương kề
+     A–B–C (180° = chi thẳng). Hông: đùi so với cột sống. */
+  var ANGLE_DEFS = [
+    { id: 'elbowL', label: 'Khuỷu trái', bones: ['LeftArm', 'LeftForeArm', 'LeftHand'] },
+    { id: 'elbowR', label: 'Khuỷu phải', bones: ['RightArm', 'RightForeArm', 'RightHand'] },
+    { id: 'kneeL', label: 'Gối trái', bones: ['LeftUpLeg', 'LeftLeg', 'LeftFoot'] },
+    { id: 'kneeR', label: 'Gối phải', bones: ['RightUpLeg', 'RightLeg', 'RightFoot'] },
+    { id: 'hipL', label: 'Hông trái', bones: ['LeftUpLeg', 'Hips', 'Spine'] },
+    { id: 'hipR', label: 'Hông phải', bones: ['RightUpLeg', 'Hips', 'Spine'] }
+  ];
+  var ANGLE_DEF_MAP = {};
+  ANGLE_DEFS.forEach(function (d) { ANGLE_DEF_MAP[d.id] = d; });
+  var ANGLE_COLORS = {
+    elbowL: 0xffb020, elbowR: 0xffb020,
+    kneeL: 0x4cc9f0, kneeR: 0x4cc9f0,
+    hipL: 0x7b61ff, hipR: 0x7b61ff
+  };
+  var ANGLE_REDRAW_EPS = 0.5; /* chỉ vẽ lại text khi góc đổi ≥0.5° */
+  var _renderWrapped = false;
 
   function notify(type, title, message, duration) {
     if (bus && bus.emit) bus.emit('notify', { type: type, title: title, message: message, duration: duration || 8000 });
@@ -602,6 +644,143 @@
     return true;
   }
 
+  /* ---------- VIEW2: góc khớp live ---------- */
+
+  /* Góc tại B (độ) giữa 2 vector BA và BC. 180° = chi thẳng. */
+  function angleAt(a, b, c) {
+    var ba = new THREE.Vector3(a.x - b.x, a.y - b.y, a.z - b.z);
+    var bc = new THREE.Vector3(c.x - b.x, c.y - b.y, c.z - b.z);
+    var la = ba.length(), lc = bc.length();
+    if (la < 1e-9 || lc < 1e-9) return null;
+    var cos = ba.dot(bc) / (la * lc);
+    if (cos > 1) cos = 1;
+    if (cos < -1) cos = -1;
+    return Math.acos(cos) * 180 / Math.PI;
+  }
+
+  /* Vẽ lại text 1 nhãn sprite (dùng cho nhãn góc khi góc đổi).
+     Canvas stub (jsdom) thì chỉ cập nhật userData.text. */
+  function _redrawLabelText(sprite, text) {
+    if (!sprite) return false;
+    sprite.userData.text = text;
+    try {
+      var mat = sprite.material;
+      if (mat && mat.map && mat.map.image && mat.map.image.getContext) {
+        var canvas = mat.map.image;
+        var ctx = canvas.getContext('2d');
+        if (ctx && typeof ctx.fillText === 'function') {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = 'rgba(10,12,24,0.78)';
+          if (typeof ctx.fillRect === 'function') ctx.fillRect(4, 12, canvas.width - 8, canvas.height - 24);
+          var col = sprite.userData.labelColor;
+          if (typeof col === 'number' && typeof ctx.beginPath === 'function' && typeof ctx.arc === 'function') {
+            ctx.fillStyle = '#' + ('000000' + col.toString(16)).slice(-6);
+            ctx.beginPath(); ctx.arc(44, canvas.height / 2, 16, 0, Math.PI * 2); ctx.fill();
+          }
+          ctx.fillStyle = '#ffffff';
+          try { ctx.font = 'bold 56px system-ui, -apple-system, sans-serif'; } catch (e) {}
+          try { ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; } catch (e) {}
+          ctx.fillText(text, 72, canvas.height / 2 + 2);
+          mat.map.needsUpdate = true;
+        }
+      }
+    } catch (e) { /* canvas stub: chỉ cập nhật text */ }
+    return true;
+  }
+
+  /* Dựng lại nhãn góc cho target. Khớp nào thiếu xương thì bỏ qua. */
+  function buildAngles(target) {
+    var scene = getScene();
+    if (!scene || !window.THREE) return { ok: false, error: 'THREE/viewport chưa sẵn sàng.' };
+    var bones = collectBones(target);
+    if (!Object.keys(bones).length) return { ok: false, error: 'Model chưa có xương để đo góc.' };
+    var H = 1.8;
+    try {
+      if (ArpVpMeasure.measurements && ArpVpMeasure.measurements.H) H = ArpVpMeasure.measurements.H;
+    } catch (e) {}
+    if (!ArpVpMeasure.angleGroup) {
+      ArpVpMeasure.angleGroup = new THREE.Group();
+      ArpVpMeasure.angleGroup.name = '__arp_angles__';
+      scene.add(ArpVpMeasure.angleGroup);
+    }
+    var g = ArpVpMeasure.angleGroup;
+    while (g.children.length) {
+      var c = g.children[0];
+      g.remove(c);
+      disposeGroup(c);
+    }
+    ArpVpMeasure.angleLabels = {};
+    var built = 0;
+    ArpVpMeasure.angleJoints.forEach(function (id) {
+      var def = ANGLE_DEF_MAP[id];
+      if (!def) return;
+      var okBones = def.bones.every(function (n) { return !!bones[n]; });
+      if (!okBones) return;
+      var sprite = makeLabelSprite(def.label + ' —°', ANGLE_COLORS[id] || 0xffb020, H);
+      if (!sprite) return;
+      sprite.userData.labelId = 'angle:' + id;
+      sprite.userData.isArpAngle = true;
+      sprite.userData.labelColor = ANGLE_COLORS[id] || 0xffb020;
+      g.add(sprite);
+      ArpVpMeasure.angleLabels[id] = { def: def, sprite: sprite, lastDeg: null };
+      built++;
+    });
+    ArpVpMeasure.angleTarget = target;
+    return { ok: built > 0, built: built, total: ArpVpMeasure.angleJoints.length };
+  }
+
+  /* Cập nhật góc + vị trí nhãn mỗi frame. Rẻ: chỉ getWorldPosition
+     3 xương/khớp đang hiện; text chỉ vẽ lại khi góc đổi ≥0.5°. */
+  function updateAngles(dt) {
+    if (!ArpVpMeasure.anglesVisible || !ArpVpMeasure.angleGroup || !ArpVpMeasure.angleTarget) return 0;
+    if (!window.THREE) return 0;
+    var bones = collectBones(ArpVpMeasure.angleTarget);
+    if (!Object.keys(bones).length) return 0;
+    try { ArpVpMeasure.angleTarget.updateMatrixWorld(true); } catch (e) {}
+    var H = 1.8;
+    try {
+      if (ArpVpMeasure.measurements && ArpVpMeasure.measurements.H) H = ArpVpMeasure.measurements.H;
+    } catch (e) {}
+    var out = {};
+    var n = 0;
+    Object.keys(ArpVpMeasure.angleLabels).forEach(function (id) {
+      var L = ArpVpMeasure.angleLabels[id];
+      var def = L.def;
+      var bA = bones[def.bones[0]], bB = bones[def.bones[1]], bC = bones[def.bones[2]];
+      if (!bA || !bB || !bC) return;
+      var pA = boneWorld(bA), pB = boneWorld(bB), pC = boneWorld(bC);
+      var deg = angleAt(pA, pB, pC);
+      if (deg === null || !isFinite(deg)) return;
+      out[id] = { deg: Math.round(deg * 10) / 10, label: def.label };
+      if (L.lastDeg === null || Math.abs(deg - L.lastDeg) >= ANGLE_REDRAW_EPS) {
+        _redrawLabelText(L.sprite, def.label + ' ' + deg.toFixed(0) + '°');
+        L.lastDeg = deg;
+      }
+      L.sprite.position.set(pB.x, pB.y + H * 0.04, pB.z);
+      n++;
+    });
+    ArpVpMeasure.angles = out;
+    return n;
+  }
+
+  /* Bọc Viewport.render 1 lần để updateAngles chạy mỗi frame (giống
+     ArpVpSelect bọc render để sync overlay) — không sửa app.js. */
+  function _wrapRender() {
+    if (_renderWrapped) return true;
+    try {
+      var PS = (typeof window !== 'undefined' && window.PixiStudio) || null;
+      var V = PS && PS.Viewport;
+      if (!V || typeof V.render !== 'function') return false;
+      var prev = V.render;
+      V.render = function (dt) {
+        prev.apply(V, arguments);
+        try { updateAngles(dt); } catch (e) {}
+      };
+      _renderWrapped = true;
+      return true;
+    } catch (e) { return false; }
+  }
+
   /* ---------- API chính ---------- */
   ArpVpMeasure.show = function (target) {
     var scene = getScene();
@@ -749,6 +928,79 @@
     return ArpVpMeasure.gridVisible;
   };
 
+  /* ---------- VIEW2: API góc khớp live ---------- */
+
+  ArpVpMeasure.showAngles = function (target) {
+    var scene = getScene();
+    if (!scene || !window.THREE) { notify('error', 'Góc khớp', 'THREE/viewport chưa sẵn sàng.'); return { ok: false, reason: 'no-three' }; }
+    target = getTarget(target);
+    if (!target) return { ok: false, reason: 'no-target', message: 'Chưa có model nào.' };
+    var r = buildAngles(target);
+    if (!r.ok) return { ok: false, reason: 'no-bones', message: 'Model chưa có đủ xương khớp để đo góc (cần Hips/Spine/tay/chân).' };
+    ArpVpMeasure.anglesVisible = true;
+    if (ArpVpMeasure.angleGroup) ArpVpMeasure.angleGroup.visible = true;
+    _wrapRender();
+    updateAngles(0);
+    return { ok: true, angles: r.built, joints: ArpVpMeasure.angleJoints.slice() };
+  };
+
+  ArpVpMeasure.hideAngles = function () {
+    ArpVpMeasure.anglesVisible = false;
+    if (ArpVpMeasure.angleGroup) ArpVpMeasure.angleGroup.visible = false;
+    return true;
+  };
+
+  ArpVpMeasure.isAnglesVisible = function () { return !!ArpVpMeasure.anglesVisible; };
+
+  /* QUY ƯỚC FIX2: setter trả `true` khi thành công, `{ok:false}`
+     khi thất bại — KHÔNG trả về giá trị mới. */
+  ArpVpMeasure.setAnglesVisible = function (on) {
+    if (on) {
+      var r = ArpVpMeasure.showAngles();
+      return (r && r.ok) ? true : r;
+    }
+    ArpVpMeasure.hideAngles();
+    return true;
+  };
+
+  /* Chọn khớp đo: mảng con của ['elbowL','elbowR','kneeL','kneeR',
+     'hipL','hipR']. Đổi danh sách khi đang hiện thì dựng lại nhãn. */
+  ArpVpMeasure.setAngleJoints = function (ids) {
+    if (!Array.isArray(ids) || !ids.length) return { ok: false, reason: 'bad-joints', allowed: Object.keys(ANGLE_DEF_MAP) };
+    var valid = ids.filter(function (id) { return !!ANGLE_DEF_MAP[id]; });
+    if (!valid.length) return { ok: false, reason: 'bad-joints', allowed: Object.keys(ANGLE_DEF_MAP) };
+    ArpVpMeasure.angleJoints = valid.slice();
+    if (ArpVpMeasure.anglesVisible && ArpVpMeasure.angleTarget) {
+      buildAngles(ArpVpMeasure.angleTarget);
+      updateAngles(0);
+    }
+    return { ok: true, joints: ArpVpMeasure.angleJoints.slice() };
+  };
+
+  ArpVpMeasure.getAngles = function () {
+    var out = {};
+    if (ArpVpMeasure.angles) {
+      Object.keys(ArpVpMeasure.angles).forEach(function (k) {
+        out[k] = { deg: ArpVpMeasure.angles[k].deg, label: ArpVpMeasure.angles[k].label };
+      });
+    }
+    return out;
+  };
+
+  ArpVpMeasure.refreshAngles = function (target) {
+    if (!ArpVpMeasure.anglesVisible) return ArpVpMeasure.showAngles(target);
+    var t = target || ArpVpMeasure.angleTarget || getTarget();
+    if (!t) return { ok: false, reason: 'no-target' };
+    var r = buildAngles(t);
+    if (!r.ok) return r;
+    updateAngles(0);
+    return { ok: true, angles: r.built };
+  };
+
+  /* App loop gọi mỗi frame (tương lai: thêm 1 dòng vào App.startLoop
+     như ArpVpLabels.update; hiện tại Viewport.render đã bọc sẵn). */
+  ArpVpMeasure.update = function (dt) { return updateAngles(dt); };
+
   ArpVpMeasure.getMeasurements = function () {
     return ArpVpMeasure.measurements;
   };
@@ -767,7 +1019,10 @@
       unit: ArpVpMeasure.unit,
       groundVisible: ArpVpMeasure.groundVisible,
       gridVisible: ArpVpMeasure.getGridVisible(),
-      measurements: ArpVpMeasure.measurements
+      measurements: ArpVpMeasure.measurements,
+      anglesVisible: ArpVpMeasure.anglesVisible,
+      angleJoints: ArpVpMeasure.angleJoints.slice(),
+      angles: ArpVpMeasure.getAngles()
     };
   };
 
@@ -783,11 +1038,20 @@
       disposeGroup(ArpVpMeasure.refGroup);
       ArpVpMeasure.refGroup = null;
     }
+    if (ArpVpMeasure.angleGroup) {
+      if (scene) scene.remove(ArpVpMeasure.angleGroup);
+      disposeGroup(ArpVpMeasure.angleGroup);
+      ArpVpMeasure.angleGroup = null;
+    }
     ArpVpMeasure.labels = {};
     ArpVpMeasure.lines = {};
     ArpVpMeasure.measurements = null;
     ArpVpMeasure.landmarks = null;
     ArpVpMeasure.visible = false;
+    ArpVpMeasure.angleLabels = {};
+    ArpVpMeasure.angleTarget = null;
+    ArpVpMeasure.angles = null;
+    ArpVpMeasure.anglesVisible = false;
     return true;
   };
 
@@ -795,7 +1059,10 @@
      thì toolbar/preset gọi refresh() trực tiếp — vẫn đúng). */
   try {
     if (bus && typeof bus.on === 'function') {
-      bus.on('model:loaded', function () { if (ArpVpMeasure.visible) ArpVpMeasure.refresh(); });
+      bus.on('model:loaded', function () {
+        if (ArpVpMeasure.visible) ArpVpMeasure.refresh();
+        if (ArpVpMeasure.anglesVisible) ArpVpMeasure.refreshAngles();
+      });
     }
   } catch (e) { /* bus không hỗ trợ on: bỏ qua */ }
 
@@ -816,9 +1083,20 @@
         refresh: ArpVpMeasure.refresh, setPose: ArpVpMeasure.setPose,
         setVisible: ArpVpMeasure.setReferenceVisible
       });
-      ArpVpMeasure._registeredLayers = ['measure', 'reference'];
+      /* VIEW2 — góc khớp live là 1 layer riêng. */
+      VP.registerLayer('angles', {
+        show: function () { return ArpVpMeasure.showAngles(); },
+        hide: function () { return ArpVpMeasure.hideAngles(); },
+        isVisible: function () { return ArpVpMeasure.isAnglesVisible(); },
+        label: 'Góc khớp'
+      });
+      ArpVpMeasure._registeredLayers = ['measure', 'reference', 'angles'];
     }
   } catch (e) { ArpVpMeasure._registeredLayers = []; }
+
+  /* VIEW2: bọc Viewport.render để góc cập nhật mỗi frame (thử ngay
+     lúc load; chưa có render thì showAngles() thử lại sau). */
+  try { _wrapRender(); } catch (e) {}
 
   window.PixiStudio.ArpVpMeasure = ArpVpMeasure;
 })();

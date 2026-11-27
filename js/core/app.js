@@ -46,6 +46,10 @@
         if (PixiStudio.ArpVpLabels) PixiStudio.ArpVpLabels.update(dt);
         if (PixiStudio.ArpVpIk) PixiStudio.ArpVpIk.update(dt);
         if (PixiStudio.ArpVpTrails) PixiStudio.ArpVpTrails.update(dt);
+        /* ARP Constraints (NHÓM 3): bone constraint stack (Copy/Limit/
+           Track/Stretch/IK) — áp sau Anim/mixer để ghi đè pose mỗi
+           frame, trước render. Module tự guard khi chưa có rig. */
+        if (PixiStudio.ArpConstraints) PixiStudio.ArpConstraints.update(dt);
         PixiStudio.Physics.step(dt);
         PixiStudio.GridEnv.pulse(now / 1000);
 
@@ -219,6 +223,7 @@
     getBoot().bootProgress(60, 'Building UI panels…');
     PixiStudio.Toolbar.render();
     PixiStudio.Topbar.init();
+    if (PixiStudio.HistoryPanel) PixiStudio.HistoryPanel.init();
     if (PixiStudio.MapLink) PixiStudio.MapLink.init();
     PixiStudio.Panels.init();
     PixiStudio.Shortcuts.init();
@@ -253,6 +258,9 @@
       setTimeout(function () {
         PixiStudio.Models.loadDefault().then(function () {
           getBoot().bootProgress(100, 'Ready!');
+          /* Undo/Redo toàn diện (v2): baseline = state sau khi model mẫu
+             đã load — bước đầu tiên của user undo được về đúng đây. */
+          if (PixiStudio.History && PixiStudio.History.captureBaseline) PixiStudio.History.captureBaseline();
           setTimeout(function () {
             getBoot().hideBoot();
             App._maybeShowWhatsNew();

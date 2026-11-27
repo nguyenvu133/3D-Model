@@ -78,9 +78,9 @@
  *     hips nhưng FK state (fingerCurl/footRoll/head/neck/jaw) chỉ
  *     giữ khi sửa trực tiếp trên keys (trim/retime/reverse/mirror
  *     của module này làm vậy); bản THREE build từ keys không mang FK.
- *   • Mirror clip THREE là gần đúng hình học (đổi cặp L/R + lật
- *     dấu quat x,z / vị trí x), giống Animator — không phải mirror
- *     theo bind pose thật.
+ *   • Mirror clip THREE đúng qua mặt phẳng dọc YZ (Nhóm B,
+ *     arp-restpose.js): đổi cặp L/R + quat (x,−y,−z,w) / vị trí
+ *     (−x,y,z); xương chỉ có 1 bên được tạo track bên kia.
  *   • Clip studio autogen chỉ phát được (không scrub/chỉnh sửa)
  *     vì AnimAutoGen không expose clip THREE (giới hạn của Animator).
  *   • Retarget chỉ liệt kê clip đã remap XONG (lastRemapped /
@@ -832,22 +832,62 @@
     });
   }
   function mirrorTracks(tracks) {
+    /* [NHÓM B] Luật đúng qua mặt phẳng dọc YZ: quat (x,−y,−z,w) /
+       vị trí (−x,y,z) + đổi cặp L/R (xem arp-restpose.js).
+       Luật cũ (−x,y,−z,w) là mirror qua mặt phẳng ngang — SAI.
+       Xương chỉ có 1 bên trong clip → TẠO track bên kia. */
     var byKey = {};
+    var order = [];
     tracks.forEach(function (tr) {
-      byKey[stripBoneName(tr.name) + '|' + (isQuatTrackName(tr.name) ? 'q' : 'v')] = tr;
+      var key = stripBoneName(tr.name) + '|' + (isQuatTrackName(tr.name) ? 'q' : 'v');
+      if (!byKey[key]) { byKey[key] = tr; order.push(key); }
     });
-    return tracks.map(function (tr) {
+    function mirrorTrackName(name) {
+      var dot = String(name).lastIndexOf('.');
+      if (dot <= 0) return name;
+      var bonePart = name.slice(0, dot);
+      var prop = name.slice(dot);
+      var m = bonePart.match(/^(mixamorig:?|model:?)(.*)$/i);
+      var core = m ? m[2] : bonePart;
+      return (m ? m[1] : '') + counterpart(core) + prop;
+    }
+    function mirrorAt(srcTr, t, isQuat) {
+      var s = samplePlain(srcTr, t);
+      if (isQuat) return [s[0], -s[1], -s[2], s[3]];
+      return [-s[0], s[1], s[2]];
+    }
+    var done = {};
+    var out = [];
+    order.forEach(function (key) {
+      if (done[key]) return;
+      var tr = byKey[key];
       var bone = stripBoneName(tr.name);
       var kind = isQuatTrackName(tr.name) ? 'q' : 'v';
-      var twin = byKey[counterpart(bone) + '|' + kind] || tr;
-      var values = [];
-      for (var i = 0; i < tr.times.length; i++) {
-        var s = samplePlain(twin, tr.times[i]);
-        if (kind === 'q') values.push(-s[0], s[1], -s[2], s[3]);
-        else values.push(-s[0], s[1], s[2]);
+      var isQuat = kind === 'q';
+      var twinBone = counterpart(bone);
+      var twinKey = twinBone + '|' + kind;
+      var twinTr = byKey[twinKey] || null;
+      done[key] = true;
+      done[twinKey] = true;
+      var srcA = twinTr || tr;
+      var valuesA = [];
+      tr.times.forEach(function (t) {
+        /* KHÔNG round ở đây: mirror 2 lần phải về đúng giá trị gốc
+           (eps 1e-6) — round4 (1e-4) làm vỡ hồi quy (5d). */
+        mirrorAt(srcA, t, isQuat).forEach(function (v) { valuesA.push(v); });
+      });
+      out.push({ name: tr.name, times: tr.times.slice(), values: valuesA });
+      if (twinBone !== bone) {
+        var twinName = twinTr ? twinTr.name : mirrorTrackName(tr.name);
+        var baseTr = twinTr || tr;
+        var valuesB = [];
+        baseTr.times.forEach(function (t) {
+          mirrorAt(tr, t, isQuat).forEach(function (v) { valuesB.push(v); });
+        });
+        out.push({ name: twinName, times: baseTr.times.slice(), values: valuesB });
       }
-      return { name: tr.name, times: tr.times.slice(), values: values };
     });
+    return out;
   }
 
   /* --- 4 hàm pure public --- */

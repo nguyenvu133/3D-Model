@@ -198,6 +198,10 @@
     prev: '<path d="M15 5l-7 7 7 7"/>',
     next: '<path d="M9 5l7 7-7 7"/>',
     loop: '<path d="M4 12a8 8 0 018-8h5"/><path d="M14 1.5L17.5 4 14 6.5M20 12a8 8 0 01-8 8H7"/><path d="M10 17.5L6.5 20 10 22.5"/>',
+    /* undo / redo / history (topbar v2, 2026-11-27) */
+    undo: '<path d="M8 5L3 10l5 5"/><path d="M3 10h11a6 6 0 016 6v1"/>',
+    redo: '<path d="M16 5l5 5-5 5"/><path d="M21 10H10a6 6 0 00-6 6v1"/>',
+    history: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/><path d="M3.5 12a8.5 8.5 0 015-7.7"/>',
     key: '<rect x="10.5" y="3.5" width="9" height="9" rx="1.5" transform="rotate(45 15 8)"/><path d="M8 16l-5 5M6 18l2 2M4 20l1.5 1.5"/>',
     /* timeline & edit */
     copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2"/>',

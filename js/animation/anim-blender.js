@@ -35,10 +35,11 @@
     return r.clips.find(function (c) { return c.id === id; }) || null;
   }
   function nodeOf(trackName) {
-    // 'mixamorig:LeftArm.quaternion' | 'LeftArm.quaternion' -> 'LeftArm'
+    // 'mixamorig:LeftArm.quaternion' | 'mixamorigLeftArm.quaternion'
+    // (FBXLoader r128) | 'LeftArm.quaternion' -> 'LeftArm'
     const dot = trackName.indexOf('.');
     const node = dot >= 0 ? trackName.slice(0, dot) : trackName;
-    return node.replace(/^mixamorig:/, '');
+    return node.replace(/^mixamorig:?/i, '');
   }
 
   /* Lọc clip chỉ giữ track của nhóm xương cho trước. */

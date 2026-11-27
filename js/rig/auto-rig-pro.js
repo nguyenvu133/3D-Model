@@ -959,6 +959,17 @@
         neckSegments: opts.neckSegments == null ? 1 : opts.neckSegments,
         pose: opts.pose || 'T'
       };
+      /* [NHÓM 1 — Decimation/Shape 2026-11-27] Gắn metadata phân tích
+         hình dạng + rig plan + kết quả decimate (nếu tab Smart đã
+         phân tích/decimate trước khi rig) vào result + rig object.
+         Chỉ gắn thêm field — không đổi pipeline đo/dựng/skin. */
+      if (opts.shapeAnalysis) {
+        result.shapeAnalysis = opts.shapeAnalysis;
+        result.rigPlan = opts.rigPlan || null;
+        rig.shapeAnalysis = opts.shapeAnalysis;
+        rig.rigPlan = opts.rigPlan || null;
+      }
+      if (opts.decimateResult) result.decimate = opts.decimateResult;
       /* 3. Skin tự động */
       var bound = bindSkin(target, rig);
       result.skinnedMeshes = bound;
@@ -976,6 +987,9 @@
         (result.warnings.length ? ' — LƯU Ý: ' + result.warnings.join('; ') : ''), 12000);
       bus.emit('autorigpro:done', { ok: true, boneCount: rig.boneList.length, skinnedMeshes: bound });
       try { bus.emit('arp:rig-complete', { source: 'autorigpro', target: target, rootBone: rig.rootBone, boneCount: rig.boneList.length, helper: rig.helper || null }); } catch (e) {} /* PHẦN 1 Viewport: tự hiện skeleton sau khi rig */
+      /* Undo/Redo toàn diện (v2): rig xong là 1 bước — undo khôi phục
+         POSE trước rig; skeleton mới dựng KHÔNG bị tháo (giới hạn đã ghi). */
+      try { if (PixiStudio.History) PixiStudio.History.push('Smart Rig: ' + (target.name || 'model')); } catch (e2) {}
       /* 5. Xuất FBX rigged + .py (trừ khi opts.export === false) */
       if (opts.export !== false) {
         var exp = exportBlend(target, opts.modelName);

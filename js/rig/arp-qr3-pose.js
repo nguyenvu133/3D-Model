@@ -347,6 +347,20 @@
     }
     var r = applyPoseToBones(cur.bones, p);
     if (!r.ok) return r;
+    /* Undo/Redo toàn diện (v2): áp pose là 1 bước của stack toàn cục
+       (pose apply CHƯA được sync-history ghi vào stack QR3 — chỉ emit
+       event — nên không double-record). Chặn spam: tối đa 1 bước/800ms
+       (playback/scrub gọi applyPose liên tục thì không ghi). */
+    try {
+      var H = window.PixiStudio && PixiStudio.History;
+      if (H && !(opts && opts.silent)) {
+        var now = Date.now();
+        if (!Pose._lastHistPush || now - Pose._lastHistPush > 800) {
+          Pose._lastHistPush = now;
+          H.push('Pose: ' + p.name);
+        }
+      }
+    } catch (e) {}
     /* Đồng bộ fkRotations + control với tư thế cuối cùng của mọi xương. */
     Object.keys(cur.bones).forEach(function (dst) {
       var bone = cur.bones[dst];

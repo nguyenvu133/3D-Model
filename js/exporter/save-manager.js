@@ -1007,6 +1007,64 @@ tỉ lệ.
     { tris: 9500, tex: 256, q: 0.60, dropNormal: true, err: 0.04 }
   ];
 
+  /* MỨC NHẸ HƠN (v2-lite, 2026-11-27) — cùng nguyên tắc
+     TEXTURE-FIRST trong ngân sách nhỏ hơn: 2 mức đầu vẫn giữ
+     texture 512², chỉ giảm TRIS trước; mức 3-4 mới hạ 384²;
+     mức cuối mới về 256² + bỏ normalMap. Ước tính theo model
+     "xấu nhất" đã đo (Thiếu Lâm rigged, geometry ~64 B/tri do
+     đỉnh double nhiễu; texture đo thật: 512² q80 ≈ 75KB,
+     512² q70 ≈ 58KB, 384² q80 ≈ 47KB, 384² q70 ≈ 36KB,
+     256² q60 ≈ 15KB map-only):
+       700KB: mức 1 ≈ 9.500×64 + 75K ≈ 680KB vừa;
+       500KB: mức 1 ≈ 6.500×64 + 75K ≈ 489KB vừa;
+       300KB: mức 1 ≈ 3.500×64 + 58K ≈ 281KB vừa.
+     Ở 300KB tris chỉ còn ~3.500 — silhouette sẽ thô rõ, chỉ
+     còn texture giữ mặt/áo đọc được (xem render so sánh trong
+     harness). Rig + skin giữ nguyên ở mọi mức (chỉ tris và
+     texture thay đổi); clip thì writer vốn không ghi (giới hạn
+     đã biết, không liên quan mức dung lượng). */
+  var OPT_ATTEMPTS_700K = [
+    { tris: 9500, tex: 512, q: 0.80, dropNormal: false, err: 0.02 },
+    { tris: 8500, tex: 512, q: 0.70, dropNormal: false, err: 0.03 },
+    { tris: 7500, tex: 384, q: 0.80, dropNormal: false, err: 0.03 },
+    { tris: 6500, tex: 384, q: 0.70, dropNormal: false, err: 0.04 },
+    { tris: 5500, tex: 256, q: 0.60, dropNormal: true, err: 0.05 }
+  ];
+  var OPT_ATTEMPTS_500K = [
+    { tris: 6500, tex: 512, q: 0.80, dropNormal: false, err: 0.03 },
+    { tris: 6000, tex: 512, q: 0.70, dropNormal: false, err: 0.03 },
+    { tris: 5500, tex: 384, q: 0.80, dropNormal: false, err: 0.04 },
+    { tris: 4500, tex: 384, q: 0.70, dropNormal: false, err: 0.04 },
+    { tris: 3500, tex: 256, q: 0.60, dropNormal: true, err: 0.05 }
+  ];
+  var OPT_ATTEMPTS_300K = [
+    { tris: 3500, tex: 512, q: 0.70, dropNormal: false, err: 0.03 },
+    { tris: 3000, tex: 512, q: 0.70, dropNormal: false, err: 0.04 },
+    { tris: 2800, tex: 384, q: 0.80, dropNormal: false, err: 0.04 },
+    { tris: 2400, tex: 384, q: 0.70, dropNormal: false, err: 0.05 },
+    { tris: 2000, tex: 256, q: 0.60, dropNormal: true, err: 0.05 }
+  ];
+  /* Bảng mức dung lượng cho nút Tối ưu FBX (UI: select cạnh nút,
+     mặc định 1MB — hành vi cũ không đổi khi không chọn gì). */
+  var OPT_TARGETS = [
+    { id: '1mb', label: '<1MB', bytes: 1048576, suffix: 'opt1mb', attempts: OPT_ATTEMPTS },
+    { id: '700k', label: '<700KB', bytes: 716800, suffix: 'opt700k', attempts: OPT_ATTEMPTS_700K },
+    { id: '500k', label: '<500KB', bytes: 512000, suffix: 'opt500k', attempts: OPT_ATTEMPTS_500K },
+    { id: '300k', label: '<300KB', bytes: 307200, suffix: 'opt300k', attempts: OPT_ATTEMPTS_300K }
+  ];
+  /* Tra mức theo số byte yêu cầu: khớp đúng id/bytes thì lấy đúng
+     mức; số lạ thì lấy mức lớn nhất mà vẫn <= yêu cầu (không bao
+     giờ tự nhảy lên mức nặng hơn); dưới 300KB thì lấy 300KB. */
+  function optTargetFor(bytes) {
+    var b = (typeof bytes === 'number' && isFinite(bytes) && bytes > 0) ? Math.floor(bytes) : OPT_1MB;
+    /* Bảng xếp từ nặng xuống nhẹ: mức đầu tiên vừa <= yêu cầu là
+       mức lớn nhất còn đạt — không bao giờ tự nhảy lên mức nặng hơn. */
+    for (var i = 0; i < OPT_TARGETS.length; i++) {
+      if (OPT_TARGETS[i].bytes <= b) return OPT_TARGETS[i];
+    }
+    return OPT_TARGETS[OPT_TARGETS.length - 1]; /* dưới 300KB thì lấy 300KB */
+  }
+
   /* Số tam giác của 1 geometry (triCountOf nằm trong
      MixamoSafeExport, không có sẵn trong scope này). */
   function triCountOfGeo(geo) {
@@ -1053,6 +1111,16 @@ tỉ lệ.
         o.skeleton = new THREE.Skeleton(nb, o.skeleton.boneInverses);
       }
     });
+    /* --- ARP-RIGLAYERS (Nhóm 5, 2026-11-27): gỡ control/mechanism
+       khỏi bản clone xuất — xương __proxy LÀ Bone nên FBXBinary.write
+       sẽ ghi nó nếu không gỡ; control Object3D + mesh hiển thị cũng
+       được gỡ cho sạch. Chỉ gỡ xương KHÔNG nằm trong skeleton.bones
+       nên skin không đổi. Không có ArpRigLayers thì bỏ qua, export
+       chạy như cũ. --- */
+    try {
+      var RL = window.PixiStudio && PixiStudio.ArpRigLayers;
+      if (RL && typeof RL.stripNonDeformFromClone === 'function') RL.stripNonDeformFromClone(clone);
+    } catch (e) {}
     return clone;
   }
 
@@ -1264,13 +1332,18 @@ tỉ lệ.
   /* Vòng lặp tối ưu trên root đã cho (KHÔNG sửa root gốc — clone +
      decimate + ghi thử từng mức). textureProvider(maxDim, quality,
      dropNormal) -> textureBytes map; mặc định dùng canvas (trình
-     duyệt). Trả {bytes, filename, size, trisBefore, trisAfter,
-     texMaxDim, texQ, attempt, under1MB, report} hoặc null. */
-  SaveManager.optimizeRootUnder1MB = function (root, modelName, textureProvider) {
+     duyệt). targetBytes (tùy chọn): mức dung lượng mục tiêu —
+     1MB mặc định (hành vi cũ); 700KB/500KB/300KB dùng bảng attempt
+     nhẹ tương ứng (xem OPT_TARGETS). Trả {bytes, filename, size,
+     trisBefore, trisAfter, texMaxDim, texQ, attempt, targetBytes,
+     targetId, targetLabel, underTarget, under1MB, report} hoặc null. */
+  SaveManager.optimizeRootUnder1MB = function (root, modelName, textureProvider, targetBytes) {
+    var target = optTargetFor(targetBytes);
+    var attempts = target.attempts;
     var best = null;
     var trisBefore = countTris(root);
-    for (var a = 0; a < OPT_ATTEMPTS.length; a++) {
-      var att = OPT_ATTEMPTS[a];
+    for (var a = 0; a < attempts.length; a++) {
+      var att = attempts[a];
       var texBytes = null;
       try { texBytes = textureProvider ? textureProvider(att.tex, att.q, att.dropNormal) : null; } catch (e) { texBytes = null; }
       var clone = cloneModelForExport(root);
@@ -1287,19 +1360,197 @@ tỉ lệ.
       var size = res.bytes.length;
       var entry = { bytes: res.bytes, size: size, trisAfter: dec.trisAfter, texMaxDim: att.tex, texQ: att.q, attempt: a + 1, report: res.report };
       if (!best || size < best.size) best = entry;
-      if (size < OPT_1MB) break;
+      if (size < target.bytes) break;
     }
     if (!best) return null;
     return {
-      bytes: best.bytes, filename: buildFileName(modelName, 'opt1mb', '.fbx'),
+      bytes: best.bytes, filename: buildFileName(modelName, target.suffix, '.fbx'),
       size: best.size, trisBefore: trisBefore, trisAfter: best.trisAfter,
       texMaxDim: best.texMaxDim, texQ: best.texQ, attempt: best.attempt,
+      targetBytes: target.bytes, targetId: target.id, targetLabel: target.label,
+      underTarget: best.size < target.bytes,
       under1MB: best.size < OPT_1MB, report: best.report
     };
   };
 
-  /* Nút "Tối ưu FBX <1MB": tối ưu model đang ở trong scene rồi tải về. */
-  SaveManager.optimizeFBXUnder1MB = function () {
+  /* ============================================================
+     ĐƯỜNG WORKER (NHÓM 3, 2026-11-27) — tối ưu FBX off-main-thread
+     Bản async của vòng lặp tối ưu: meshopt decimate + texture
+     downscale chạy trong Web Worker (js/workers/), FBXBinary.write
+     VẪN chạy main thread (cần THREE.Object3D — xem ghi chú trong
+     pixistudio-worker.js). Mọi bước worker lỗi -> fallback về hàm
+     sync cũ ngay tại chỗ, kết quả cuối giống hệt đường sync.
+     ============================================================ */
+
+  /* Thu thập textureBytes đã downscale — bản async: từng texture đi
+     qua WorkerBridge.downscaleTextureViaWorker (ImageBitmap ->
+     worker resize + encode JPEG); bridge tự fallback canvas sync
+     khi worker lỗi/không hỗ trợ. */
+  function collectDownscaledTexturesAsync(root, maxDim, quality, dropNormal, onProgress) {
+    var WB = PixiStudio.WorkerBridge;
+    var jobs = [];
+    if (!root || !root.traverse) return Promise.resolve({});
+    root.traverse(function (o) {
+      if (!o.isMesh || !o.material) return;
+      var mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach(function (m) {
+        if (!m) return;
+        if (m.map) jobs.push({ mat: m, slot: 'map', tex: m.map });
+        if (!dropNormal && m.normalMap) jobs.push({ mat: m, slot: 'normalMap', tex: m.normalMap });
+      });
+    });
+    var seen = {};
+    var uniq = jobs.filter(function (j) {
+      var k = (j.mat.name || '') + '|' + j.slot;
+      if (seen[k]) return false;
+      seen[k] = true;
+      return true;
+    });
+    var out = {};
+    var done = 0;
+    var chain = Promise.resolve();
+    uniq.forEach(function (j) {
+      chain = chain.then(function () {
+        var p;
+        if (WB && WB.downscaleTextureViaWorker) {
+          p = WB.downscaleTextureViaWorker(j.tex, maxDim, quality)
+            .catch(function () { return downscaleTextureToBytes(j.tex, j.slot, maxDim, quality); });
+        } else {
+          p = Promise.resolve(downscaleTextureToBytes(j.tex, j.slot, maxDim, quality));
+        }
+        return p.then(function (b) {
+          if (b) {
+            var key = j.mat.name || '';
+            out[key] = out[key] || {};
+            out[key][j.slot] = b;
+          }
+          done++;
+          if (onProgress) onProgress(done / Math.max(1, uniq.length), 'Texture ' + done + '/' + uniq.length);
+        });
+      });
+    });
+    return chain.then(function () { return out; });
+  }
+
+  /* Bản async của decimateCloneToBudget: weld/compact vẫn main
+     thread (THREE), chỉ bước meshopt simplify đi qua worker. */
+  function decimateCloneToBudgetAsync(clone, triBudget, targetError, onProgress) {
+    var MSE = PixiStudio.MixamoSafeExport;
+    var WB = PixiStudio.WorkerBridge;
+    var meshes = [];
+    clone.traverse(function (o) {
+      if (o.isMesh && o.geometry && o.geometry.attributes && o.geometry.attributes.position) {
+        if (o.userData && o.userData.isBoneVisual) return;
+        meshes.push(o);
+      }
+    });
+    var total = 0;
+    meshes.forEach(function (m) { total += triCountOfGeo(m.geometry); });
+    var trisAfter = total;
+    if (MSE && typeof MSE.decimateMeshopt === 'function' && total > triBudget) {
+      var done = 0;
+      var chain = Promise.resolve();
+      meshes.forEach(function (m, i) {
+        chain = chain.then(function () {
+          var t = triCountOfGeo(m.geometry);
+          var share = (i === meshes.length - 1)
+            ? Math.max(1, triBudget - done)
+            : Math.max(1, Math.floor(triBudget * t / Math.max(1, total)));
+          var welded = weldGeometry(m.geometry);
+          function applySync() {
+            var d = MSE.decimateMeshopt(welded, share, targetError);
+            if (d) { m.geometry = weldGeometry(compactGeometry(d.geometry)); done += d.trisAfter; }
+            else { m.geometry = welded; done += t; }
+          }
+          if (WB && WB.decimateGeometryViaWorker) {
+            return WB.decimateGeometryViaWorker(welded, share, targetError)
+              .then(function (r) {
+                if (r && r.geometry && r.geometry !== welded) {
+                  m.geometry = weldGeometry(compactGeometry(r.geometry)); done += r.trisAfter;
+                } else if (r && r.unchanged) { m.geometry = welded; done += t; }
+                else applySync();
+              })
+              .catch(function () { applySync(); });
+          }
+          applySync();
+          return Promise.resolve();
+        }).then(function () {
+          if (onProgress) onProgress((i + 1) / Math.max(1, meshes.length), 'Decimate mesh ' + (i + 1) + '/' + meshes.length);
+        });
+      });
+      return chain.then(function () { return { trisBefore: total, trisAfter: done }; });
+    }
+    return Promise.resolve({ trisBefore: total, trisAfter: trisAfter });
+  }
+
+  /* Bản async của optimizeRootUnder1MB: cùng bảng attempt (1MB /
+     700K / 500K / 300K — KHÔNG sửa), chỉ đổi textureProvider +
+     decimate sang bản async qua worker. Trả cùng shape kết quả. */
+  SaveManager.optimizeRootUnder1MBAsync = function (root, modelName, targetBytes, onProgress, cancelFlag) {
+    var target = optTargetFor(targetBytes);
+    var attempts = target.attempts;
+    var best = null;
+    var trisBefore = countTris(root);
+    var stopped = false; /* dừng khi 1 attempt đã đạt target (như break ở bản sync) */
+    var chain = Promise.resolve();
+    for (var a = 0; a < attempts.length; a++) {
+      (function (a) {
+        chain = chain.then(function () {
+          if (stopped) return null;
+          if (cancelFlag && cancelFlag.cancelled) return null;
+          var att = attempts[a];
+          if (onProgress) onProgress(5 + (a / attempts.length) * 90, 'Mức ' + (a + 1) + '/' + attempts.length + ' — texture ' + att.tex + 'px, ' + att.tris + ' tris…');
+          return collectDownscaledTexturesAsync(root, att.tex, att.q, att.dropNormal, function (f, msg) {
+            if (onProgress) onProgress(5 + (a / attempts.length) * 90 + f * 10, msg);
+          }).then(function (texBytes) {
+            if (cancelFlag && cancelFlag.cancelled) return null;
+            var clone = cloneModelForExport(root);
+            return decimateCloneToBudgetAsync(clone, att.tris, att.err, function (f, msg) {
+              if (onProgress) onProgress(5 + (a / attempts.length) * 90 + 10 + f * 20, msg);
+            }).then(function (dec) {
+              if (cancelFlag && cancelFlag.cancelled) return null;
+              var res = null;
+              try {
+                /* FBXBinary.write VẪN main thread (cần THREE.Object3D). */
+                res = PixiStudio.FBXBinary.write(clone, {
+                  version: 7300, upAxis: 'Y', autoScale: true,
+                  prepareMixamo: true, keepSkeleton: true,
+                  embedTextures: true, textureBytes: texBytes
+                });
+              } catch (e) { res = null; }
+              if (!res || !res.bytes || !res.bytes.length) return null;
+              var size = res.bytes.length;
+              var entry = { bytes: res.bytes, size: size, trisAfter: dec.trisAfter, texMaxDim: att.tex, texQ: att.q, attempt: a + 1, report: res.report };
+              if (!best || size < best.size) best = entry;
+              if (size < target.bytes) stopped = true;
+              return (size < target.bytes) ? 'done' : null;
+            });
+          });
+        }).then(function (stop) {
+          /* stopped đã được set ở trên; link tiếp theo tự bỏ qua. */
+        });
+      })(a);
+    }
+    return chain.then(function () {
+      if (cancelFlag && cancelFlag.cancelled) return null;
+      if (!best) return null;
+      return {
+        bytes: best.bytes, filename: buildFileName(modelName, target.suffix, '.fbx'),
+        size: best.size, trisBefore: trisBefore, trisAfter: best.trisAfter,
+        texMaxDim: best.texMaxDim, texQ: best.texQ, attempt: best.attempt,
+        targetBytes: target.bytes, targetId: target.id, targetLabel: target.label,
+        underTarget: best.size < target.bytes,
+        under1MB: best.size < OPT_1MB, report: best.report, viaWorker: true
+      };
+    });
+  };
+
+  /* Nút "Tối ưu FBX" — đường worker: chờ texture + meshopt sẵn
+     sàng như đường sync, rồi chạy optimizeRootUnder1MBAsync với
+     progress + nút Hủy (WorkerBridge.runWithProgress). Bất kỳ lỗi
+     nào trong đường worker đều fallback về đường sync cũ
+     (optimizeRootUnder1MB) — không bao giờ fail hẳn chỉ vì worker. */
+  SaveManager.optimizeFBXUnder1MBWorker = function (targetBytes) {
     var target = PixiStudio.State.get('selection') || PixiStudio.Viewport.getMainModel();
     if (!target) {
       bus.emit('notify', { type: 'warning', title: 'Tối ưu FBX', message: 'Chưa có model nào trong scene để tối ưu.' });
@@ -1307,7 +1558,84 @@ tỉ lệ.
     }
     var modelName = target.name || 'model';
     var t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-    PixiStudio.Notifications.showLoading('Đang tối ưu FBX < 1MB…', 5);
+    var optTarget = optTargetFor(targetBytes);
+    var WB = PixiStudio.WorkerBridge;
+    var cancelFlag = { cancelled: false };
+    var MSE = PixiStudio.MixamoSafeExport;
+    var readyP = (MSE && MSE.waitMeshoptReady) ? MSE.waitMeshoptReady(5000) : Promise.resolve(false);
+    var flow = Promise.all([waitForTextures(target, 8000), readyP]).then(function () {
+      return SaveManager.optimizeRootUnder1MBAsync(target, modelName, optTarget.bytes, function (pct, msg) {
+        if (PixiStudio.Notifications && PixiStudio.Notifications.updateLoading) {
+          PixiStudio.Notifications.updateLoading(pct, 'Tối ưu FBX ' + optTarget.label + ' (worker) — ' + msg);
+        }
+      }, cancelFlag);
+    }).then(function (res) {
+      if (cancelFlag.cancelled) {
+        bus.emit('notify', { type: 'warning', title: 'Tối ưu FBX', message: 'Đã hủy tối ưu.' });
+        return null;
+      }
+      if (!res) {
+        /* Worker path không ra kết quả -> fallback đường sync cũ. */
+        return SaveManager.optimizeRootUnder1MB(target, modelName, function (maxDim, q, dropNormal) {
+          return collectDownscaledTextures(target, maxDim, q, dropNormal);
+        }, optTarget.bytes);
+      }
+      return res;
+    }).then(function (res) {
+      if (!res) {
+        bus.emit('notify', { type: 'error', title: 'Tối ưu FBX lỗi', message: 'Không ghi được file FBX.' });
+        return null;
+      }
+      var blob = new Blob([res.bytes], { type: 'application/octet-stream' });
+      U.downloadBlob(blob, res.filename);
+      var elapsed = Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - t0);
+      SaveManager.logSave({ name: res.filename, format: 'fbx-' + res.targetId, sizeBytes: res.size });
+      var sizeTxt = res.size >= 1048576 ? (res.size / 1048576).toFixed(2) + ' MB' : Math.round(res.size / 1024) + ' KB';
+      bus.emit('notify', {
+        type: res.underTarget ? 'success' : 'warning',
+        title: res.underTarget ? 'Đã tối ưu FBX ' + res.targetLabel : 'Đã tối ưu FBX (vẫn trên ' + res.targetLabel + ')',
+        message: sizeTxt + ' · ' + res.trisBefore + ' → ' + res.trisAfter + ' tam giác · texture ' + res.texMaxDim + 'px JPEG q' + Math.round(res.texQ * 100) + ' · rig + skin giữ nguyên · ' + (elapsed >= 1000 ? (elapsed / 1000).toFixed(1) + 's' : elapsed + 'ms') + ' · worker' +
+          (res.underTarget ? '' : ' — đã thử 5 mức, model này khó xuống dưới ' + res.targetLabel + ' (thử bỏ normalMap / giảm tris tay).'),
+        duration: 12000
+      });
+      return res;
+    }).catch(function (err) {
+      if (cancelFlag.cancelled) return null;
+      bus.emit('notify', { type: 'error', title: 'Tối ưu FBX lỗi', message: String(err && err.message || err) });
+      return null;
+    });
+    /* Progress overlay + nút Hủy (tạo động, không sửa index.html). */
+    var handle = null;
+    if (WB && WB.runWithProgress) {
+      handle = WB.runWithProgress('Đang tối ưu FBX ' + optTarget.label + ' (worker)…', flow, { cancellable: true });
+      var origCancel = handle.cancel;
+      handle.cancel = function () {
+        cancelFlag.cancelled = true;
+        if (WB) WB.cancelAll();
+        origCancel();
+      };
+      return handle.promise;
+    }
+    return flow;
+  };
+
+  /* Nút "Tối ưu FBX": tối ưu model đang ở trong scene rồi tải về.
+     targetBytes (tùy chọn, từ select cạnh nút — mặc định 1MB). */
+  SaveManager.optimizeFBXUnder1MB = function (targetBytes) {
+    var target = PixiStudio.State.get('selection') || PixiStudio.Viewport.getMainModel();
+    if (!target) {
+      bus.emit('notify', { type: 'warning', title: 'Tối ưu FBX', message: 'Chưa có model nào trong scene để tối ưu.' });
+      return Promise.resolve(null);
+    }
+    var modelName = target.name || 'model';
+    var t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    var optTarget = optTargetFor(targetBytes);
+    /* NHÓM 3 (Web Worker): worker khả dụng -> đi đường worker
+       (meshopt + texture off-main-thread, có progress + nút Hủy);
+       đường sync cũ bên dưới giữ nguyên làm fallback. */
+    var WB0 = PixiStudio.WorkerBridge;
+    if (WB0 && WB0.isSupported()) return SaveManager.optimizeFBXUnder1MBWorker(targetBytes);
+    PixiStudio.Notifications.showLoading('Đang tối ưu FBX ' + optTarget.label + '…', 5);
     var MSE = PixiStudio.MixamoSafeExport;
     var readyP = (MSE && MSE.waitMeshoptReady) ? MSE.waitMeshoptReady(5000) : Promise.resolve(false);
     return Promise.all([waitForTextures(target, 8000), readyP]).then(function () {
@@ -1316,7 +1644,7 @@ tỉ lệ.
           try {
             var res = SaveManager.optimizeRootUnder1MB(target, modelName, function (maxDim, q, dropNormal) {
               return collectDownscaledTextures(target, maxDim, q, dropNormal);
-            });
+            }, optTarget.bytes);
             PixiStudio.Notifications.hideLoading();
             if (!res) {
               bus.emit('notify', { type: 'error', title: 'Tối ưu FBX lỗi', message: 'Không ghi được file FBX.' });
@@ -1325,12 +1653,13 @@ tỉ lệ.
             var blob = new Blob([res.bytes], { type: 'application/octet-stream' });
             U.downloadBlob(blob, res.filename);
             var elapsed = Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - t0);
-            SaveManager.logSave({ name: res.filename, format: 'fbx-opt1mb', sizeBytes: res.size });
+            SaveManager.logSave({ name: res.filename, format: 'fbx-' + res.targetId, sizeBytes: res.size });
+            var sizeTxt = res.size >= 1048576 ? (res.size / 1048576).toFixed(2) + ' MB' : Math.round(res.size / 1024) + ' KB';
             bus.emit('notify', {
-              type: res.under1MB ? 'success' : 'warning',
-              title: res.under1MB ? 'Đã tối ưu FBX < 1MB' : 'Đã tối ưu FBX (vẫn trên 1MB)',
-              message: (res.size / 1048576).toFixed(2) + ' MB · ' + res.trisBefore + ' → ' + res.trisAfter + ' tam giác · texture ' + res.texMaxDim + 'px JPEG q' + Math.round(res.texQ * 100) + ' · rig + skin giữ nguyên · ' + (elapsed >= 1000 ? (elapsed / 1000).toFixed(1) + 's' : elapsed + 'ms') +
-                (res.under1MB ? '' : ' — đã thử 5 mức, model này khó xuống dưới 1MB (thử bỏ normalMap / giảm tris tay).'),
+              type: res.underTarget ? 'success' : 'warning',
+              title: res.underTarget ? 'Đã tối ưu FBX ' + res.targetLabel : 'Đã tối ưu FBX (vẫn trên ' + res.targetLabel + ')',
+              message: sizeTxt + ' · ' + res.trisBefore + ' → ' + res.trisAfter + ' tam giác · texture ' + res.texMaxDim + 'px JPEG q' + Math.round(res.texQ * 100) + ' · rig + skin giữ nguyên · ' + (elapsed >= 1000 ? (elapsed / 1000).toFixed(1) + 's' : elapsed + 'ms') +
+                (res.underTarget ? '' : ' — đã thử 5 mức, model này khó xuống dưới ' + res.targetLabel + ' (thử bỏ normalMap / giảm tris tay).'),
               duration: 12000
             });
             resolve(res);
@@ -1347,12 +1676,20 @@ tỉ lệ.
   /* Expose để test harness kiểm chứng (không dùng trong UI). */
   SaveManager._optimizeFBX = {
     OPT_1MB: OPT_1MB, OPT_ATTEMPTS: OPT_ATTEMPTS,
+    OPT_ATTEMPTS_700K: OPT_ATTEMPTS_700K,
+    OPT_ATTEMPTS_500K: OPT_ATTEMPTS_500K,
+    OPT_ATTEMPTS_300K: OPT_ATTEMPTS_300K,
+    OPT_TARGETS: OPT_TARGETS, optTargetFor: optTargetFor,
     cloneModelForExport: cloneModelForExport,
     compactGeometry: compactGeometry,
     weldGeometry: weldGeometry,
     decimateCloneToBudget: decimateCloneToBudget,
+    decimateCloneToBudgetAsync: decimateCloneToBudgetAsync,
     downscaleTextureToBytes: downscaleTextureToBytes,
-    collectDownscaledTextures: collectDownscaledTextures
+    collectDownscaledTextures: collectDownscaledTextures,
+    collectDownscaledTexturesAsync: collectDownscaledTexturesAsync,
+    optimizeRootUnder1MBAsync: SaveManager.optimizeRootUnder1MBAsync,
+    optimizeFBXUnder1MBWorker: SaveManager.optimizeFBXUnder1MBWorker
   };
 
   /* ============================================================

@@ -83,6 +83,13 @@
     }
     Viewport.orbit.update(dt);
 
+    /* Occlusion culling (scene-culling.js): ẩn object ngoài cell/phòng
+       camera trước khi vẽ — guard khi module chưa load / đang tắt, và
+       không bao giờ chặn render nếu culling lỗi. */
+    if (PixiStudio.OcclusionCulling && PixiStudio.OcclusionCulling.enabled) {
+      try { PixiStudio.OcclusionCulling.update(Viewport.orbit.camera); } catch (e) { /* bỏ qua */ }
+    }
+
     PixiStudio.GridEnv.pulse(time);
 
     /* Quad fit theo model chính */

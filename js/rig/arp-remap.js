@@ -39,10 +39,22 @@
  *   • Chỉ map theo tên xương — KHÔNG xử lý khác tỉ lệ xương, khác
  *     hướng rest-pose, hay khác trục quay giữa 2 rig. Clip từ rig có
  *     tỉ lệ khác (vd chibi đầu to vs người thật) sẽ phát đúng tên
- *     xương nhưng tư thế có thể lệch.
+ *     xương nhưng tư thế có thể lệch. → ĐÃ CÓ BÙ REST POSE:
+ *     js/rig/arp-restpose.js — ArpRestPose.retargetClipWithRestPose
+ *     (qOffset = qDstRest × qSrcRest⁻¹, áp vào từng key; checkbox
+ *     "Bù rest pose" nằm trong mục scale-aware của tab Remap (nhóm
+ *     Rig, mặc định BẬT) + bảng offset từng xương hiển thị sau khi
+ *     retarget). Tỉ lệ xương
+ *     (scale 1.8m vs 2.2m) vẫn do coordinator Rig xử lý riêng và
+ *     truyền vào qua opts.positionScale (xem arp-restpose.js).
  *   • Track .position của Hips được giữ nguyên giá trị gốc (root
  *     motion theo đúng clip nguồn); nếu 2 rig cao khác nhau thì nhân
  *     vật có thể trượt chân / lơ lửng — xem retargetClip opts.scaleRoot.
+ *   • [SCALE-AWARE 2026-11-27 NHÓM 2] retargetClip(opts.scaleAware +
+ *     opts.srcRig) ủy quyền cho js/rig/arp-retarget-scale.js
+ *     (PixiStudio.ArpRetargetScale): đo chiều cao/chân 2 rig, scale
+ *     root motion + Hips Y, bù rest pose, scale biên độ góc theo
+ *     chiều dài chi. Không có srcRig thì giữ hành vi cũ (scaleRoot).
  *   • Không retarget morph target / blend shape, chỉ bone tracks.
  * ============================================================ */
 (function () {
@@ -270,6 +282,25 @@
       } catch (e) { amByDst = null; }
     }
     var scaleRoot = (typeof opts.scaleRoot === 'number' && isFinite(opts.scaleRoot) && opts.scaleRoot > 0) ? opts.scaleRoot : 1;
+    /* --- [SCALE-AWARE 2026-11-27 NHÓM 2] Đo 1 lần từ rig nguồn +
+       rig đích (chiều cao, chân, rest pose) rồi biến đổi track theo
+       arp-retarget-scale.js. Chỉ khi opts.scaleAware && opts.srcRig;
+       không có srcRig thì scaleCtx=null → giữ hành vi cũ bên dưới. --- */
+    var scaleCtx = null;
+    var RS_scale = null;
+    if (opts.scaleAware && opts.srcRig) {
+      try {
+        RS_scale = (typeof window !== 'undefined' && window.PixiStudio && window.PixiStudio.ArpRetargetScale) || null;
+        if (RS_scale && typeof RS_scale.createContext === 'function') {
+          scaleCtx = RS_scale.createContext(opts.srcRig, rig, {
+            scaleRootMotion: opts.scaleRootMotion,
+            scaleHipsY: opts.scaleHipsY,
+            restPoseComp: opts.restPoseComp,
+            scaleLimbAngles: opts.scaleLimbAngles
+          });
+        }
+      } catch (e) { scaleCtx = null; }
+    }
 
     var totalBoneTracks = 0;
     var mappedTracks = 0;
@@ -299,8 +330,17 @@
       matchedSet[normalizeBoneName(destBone)] = true;
       var nt = track.clone();
       nt.name = destBone + '.' + parsed.prop;
-      /* scale root motion Hips.position nếu 2 rig cao khác nhau */
-      if (scaleRoot !== 1 && normalizeBoneName(parsed.bone) === 'hips' && parsed.prop === 'position') {
+      /* [SCALE-AWARE 2026-11-27 NHÓM 2] Biến đổi track theo context
+         đo được (Hips.position re-base + scale, quaternion re-base
+         theo rest pose + scale biên độ góc theo chi). */
+      if (scaleCtx && RS_scale) {
+        if (parsed.prop === 'quaternion') {
+          nt.values = RS_scale.transformQuaternionTrackValues(track.values, normalizeBoneName(parsed.bone), scaleCtx);
+        } else if (parsed.prop === 'position' && normalizeBoneName(parsed.bone) === 'hips') {
+          nt.values = RS_scale.transformHipsTrackValues(track.values, scaleCtx);
+        }
+      } else if (scaleRoot !== 1 && normalizeBoneName(parsed.bone) === 'hips' && parsed.prop === 'position') {
+        /* hành vi cũ: scale root motion Hips.position nếu 2 rig cao khác nhau */
         var vals = nt.values;
         for (var i = 0; i < vals.length; i++) vals[i] = vals[i] * scaleRoot;
       }
@@ -381,6 +421,13 @@
     newClip.userData = { sourceClip: src.name, compat: result.compat, remappedFrom: src.name };
     result.ok = true;
     result.clip = newClip;
+    /* [SCALE-AWARE 2026-11-27 NHÓM 2] Báo cáo tỷ lệ đo được để UI hiển thị. */
+    if (scaleCtx) {
+      result.scaleReport = scaleCtx.report;
+      result.scale = scaleCtx.scale;
+      newClip.userData.scale = scaleCtx.scale;
+      newClip.userData.scaleMethod = scaleCtx.scaleMethod;
+    }
     result.reason = '';
     ArpRemap.lastRemapped = newClip;
     ArpRemap.lastResult = result;
@@ -397,6 +444,21 @@
     return result;
   }
   ArpRemap.retargetClip = retargetClip;
+
+  /* Retarget + bù rest pose (Nhóm B, js/rig/arp-restpose.js):
+     delegate cho ArpRestPose.retargetClipWithRestPose khi module đã
+     load; chưa load thì fallback về retargetClip (chỉ map tên) và
+     ghi rõ restCompensated=false trong kết quả. */
+  ArpRemap.retargetClipWithRestPose = function (clip, targetRig, opts) {
+    var RP = (typeof window !== 'undefined' && window.PixiStudio && window.PixiStudio.ArpRestPose) || null;
+    if (RP && typeof RP.retargetClipWithRestPose === 'function') {
+      return RP.retargetClipWithRestPose(clip, targetRig, opts);
+    }
+    var r = retargetClip(clip, targetRig, opts);
+    r.restCompensated = false;
+    r.restReason = 'ArpRestPose chưa load — clip chỉ map tên, chưa bù rest pose.';
+    return r;
+  };
 
   /* ---------- Mixer riêng cho preview (không đụng AnimAutoGen) ---------- */
   var _mixer = null;
@@ -574,10 +636,79 @@
   function renderRemapTab(container) {
     if (!container) return;
     container.innerHTML = '';
-    var state = { selectedId: '', result: null };
+    var state = {
+      selectedId: '', result: null, srcRig: null,
+      scaleOpts: { scaleRootMotion: true, scaleHipsY: true, restPoseComp: true, scaleLimbAngles: true }
+    };
 
-    var head = el('div', { class: 'dim small', style: 'line-height:1.6;margin-bottom:8px;', text: 'Retarget clip sang rig Auto Rig Pro (41 xương Mixamo) bằng tên xương chuẩn. Tương thích ≥ 80% mới cho phát/xuất; dưới 80% sẽ liệt kê xương thiếu. Chỉ map theo tên — chưa xử lý khác tỉ lệ xương.' });
+    var head = el('div', { class: 'dim small', style: 'line-height:1.6;margin-bottom:8px;', text: 'Retarget clip sang rig Auto Rig Pro (41 xương Mixamo) bằng tên xương chuẩn. Tương thích ≥ 80% mới cho phát/xuất; dưới 80% sẽ liệt kê xương thiếu. Chỉ map theo tên — muốn xử lý khác tỉ lệ / rest pose thì đặt rig nguồn ở mục scale-aware bên dưới.' });
     container.appendChild(head);
+
+    /* --- [SCALE-AWARE 2026-11-27 NHÓM 2] Section tỷ lệ: đặt rig nguồn
+       (model đang chọn) → đo chiều cao/chân 2 rig → Retarget dùng
+       tỷ lệ đó (root motion, Hips Y, bù rest pose, biên độ góc). --- */
+    var scaleBox = el('div', { class: 'arp-remap-scale small', style: 'line-height:1.6;margin-bottom:8px;padding:8px;border:1px solid var(--border,#888);border-radius:6px;' });
+    scaleBox.appendChild(el('div', { html: '<b>Retarget theo tỷ lệ (scale-aware)</b> — đo rig nguồn vs rig đích rồi scale root motion + Hips Y, bù rest pose, scale góc theo chiều dài chi.' }));
+    var scaleMeasure = el('div', { text: 'Chưa đặt rig nguồn — chọn model nguồn rồi bấm nút bên dưới (mặc định retarget giữ nguyên giá trị clip như cũ).' });
+    scaleBox.appendChild(scaleMeasure);
+    var renderScaleMeasure = function () {
+      var RS = (typeof window !== 'undefined' && window.PixiStudio && window.PixiStudio.ArpRetargetScale) || null;
+      var dst = getTarget();
+      if (!RS || !state.srcRig || !dst) {
+        scaleMeasure.textContent = state.srcRig
+          ? 'Đã đặt rig nguồn, nhưng chưa có rig đích (chọn model đích).'
+          : 'Chưa đặt rig nguồn — chọn model nguồn rồi bấm nút bên dưới (mặc định retarget giữ nguyên giá trị clip như cũ).';
+        return;
+      }
+      try {
+        var ctx = RS.createContext(state.srcRig, dst, state.scaleOpts);
+        var r = ctx.report;
+        var fmt = function (x) { return isFinite(x) ? x.toFixed(2) : '—'; };
+        scaleMeasure.textContent = 'Tỷ lệ ×' + ctx.scale.toFixed(2) + ' (' + ctx.scaleMethod + ')' +
+          ' · cao nguồn ' + fmt(r.srcHeight) + 'm → đích ' + fmt(r.dstHeight) + 'm' +
+          ' · chân nguồn ' + fmt(r.srcLeg) + 'm → đích ' + fmt(r.dstLeg) + 'm' +
+          ' · tay nguồn ' + fmt(r.srcArm) + 'm → đích ' + fmt(r.dstArm) + 'm' +
+          ' · Hips nghỉ nguồn ' + fmt(r.srcHipsRestY) + 'm → đích ' + fmt(r.dstHipsRestY) + 'm';
+      } catch (e) {
+        scaleMeasure.textContent = 'Không đo được tỷ lệ: ' + (e && e.message);
+      }
+    };
+    var scaleBtnRow = el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;margin:6px 0;' });
+    scaleBtnRow.appendChild(el('button', {
+      class: 'btn', text: '📌 Đặt model đang chọn làm rig nguồn',
+      onclick: function () {
+        var src = getTarget();
+        if (!src) { notify('warning', 'Remap scale', 'Chưa chọn model nguồn.'); return; }
+        state.srcRig = src;
+        renderScaleMeasure();
+        notify('success', 'Remap scale', 'Đã đặt rig nguồn — bấm Retarget để dùng tỷ lệ đo được.');
+      }
+    }));
+    scaleBtnRow.appendChild(el('button', {
+      class: 'btn', text: '↻ Đo lại tỷ lệ',
+      onclick: function () { renderScaleMeasure(); }
+    }));
+    scaleBox.appendChild(scaleBtnRow);
+    var optDefs = [
+      ['scaleRootMotion', 'Scale root motion (Hips X/Z theo tỷ lệ)'],
+      ['scaleHipsY', 'Scale Hips Y (giữ chân chạm đất)'],
+      ['restPoseComp', 'Bù rest pose (offset quaternion từng xương)'],
+      ['scaleLimbAngles', 'Scale biên độ góc theo chiều dài chi (θ ∝ 1/L)']
+    ];
+    optDefs.forEach(function (def) {
+      var key = def[0], label = def[1];
+      var lab = el('label', { style: 'display:block;' });
+      var cb = el('input', { type: 'checkbox' });
+      cb.checked = !!state.scaleOpts[key];
+      cb.addEventListener('change', function () {
+        state.scaleOpts[key] = !!cb.checked;
+        renderScaleMeasure();
+      });
+      lab.appendChild(cb);
+      lab.appendChild(document.createTextNode(' ' + label));
+      scaleBox.appendChild(lab);
+    });
+    container.appendChild(scaleBox);
 
     var select = el('select', { class: 'arp-select', style: 'width:100%;margin-bottom:8px;' });
     var refreshList = function () {
@@ -619,6 +750,37 @@
       }
       resultBox.innerHTML = '';
       resultBox.appendChild(el('div', { style: 'color:var(--success,#4c4);', html: '<b>✓ Tương thích ' + Math.round(r.compat * 100) + '%</b> — phủ ' + r.matchedBones + '/' + r.rigBoneTotal + ' xương rig, khớp ' + r.mapped + '/' + r.total + ' track.' }));
+      /* [SCALE-AWARE 2026-11-27 NHÓM 2] Báo cáo tỷ lệ sau retarget. */
+      if (r.scaleReport) {
+        var sr = r.scaleReport;
+        var fmt = function (x) { return isFinite(x) ? x.toFixed(2) : '—'; };
+        resultBox.appendChild(el('div', {
+          text: 'Scale-aware ×' + r.scale.toFixed(2) + ' (' + sr.scaleMethod + '): cao ' + fmt(sr.srcHeight) + '→' + fmt(sr.dstHeight) + 'm · chân ' + fmt(sr.srcLeg) + '→' + fmt(sr.dstLeg) + 'm · Hips nghỉ ' + fmt(sr.srcHipsRestY) + '→' + fmt(sr.dstHipsRestY) + 'm · root motion ' + (sr.scaleRootMotion ? 'bật' : 'tắt') + ' · Hips Y ' + (sr.scaleHipsY ? 'bật' : 'tắt') + ' · bù rest pose ' + (sr.restPoseComp ? 'bật' : 'tắt') + ' · scale góc chi ' + (sr.scaleLimbAngles ? 'bật' : 'tắt')
+        }));
+      }
+      /* [NHÓM B — Animation] Bảng offset rest pose từng xương (top 8
+         theo góc lệch). Nguồn offset: r.restOffsets (đường
+         restpose) hoặc đo lại từ state.srcRig + rig đích (đường
+         scale-aware — cùng số đo với ctx.restOffsets của nhóm Rig). */
+      (function () {
+        var RP = (typeof window !== 'undefined' && window.PixiStudio && window.PixiStudio.ArpRestPose) || null;
+        if (!RP) return;
+        var off = r.restOffsets || null;
+        if (!off && r.scaleReport && state.srcRig) {
+          try { off = RP.computeRestOffsets(state.srcRig, getTarget()); } catch (e) { off = null; }
+        }
+        if (!off) {
+          if (!r.scaleReport) resultBox.appendChild(el('div', { text: 'Chưa bù rest pose — đặt rig nguồn ở mục scale-aware phía trên rồi Retarget lại (bù kèm scale), hoặc gọi ArpRestPose.setSourceRest(modelNguon).' }));
+          return;
+        }
+        var comp = r.restCompensated || (r.scaleReport && r.scaleReport.restPoseComp);
+        var src = r.restCompSource || (r.scaleReport ? 'scale-aware' : '');
+        resultBox.appendChild(el('div', { text: 'Bù rest pose ' + (comp ? '✓ (' + src + ')' : '— chưa bù' + (r.restReason ? ': ' + r.restReason : '')) + ' · lệch lớn nhất ' + off.maxAngleDeg.toFixed(1) + '° (' + (off.maxBone || '—') + ') · trung bình ' + off.meanAngleDeg.toFixed(1) + '° · ' + off.count + ' xương.' }));
+        var rows = RP.restOffsetsTable(off, 8);
+        if (rows.length) resultBox.appendChild(el('div', { text: 'Offset từng xương: ' + rows.map(function (rw) { return rw.bone + ' ' + rw.angleDeg.toFixed(1) + '°' + (rw.posMm ? ' / +' + rw.posMm.toFixed(1) + 'mm' : ''); }).join(' · ') }));
+        if (off.missingSrc && off.missingSrc.length) resultBox.appendChild(el('div', { text: 'Xương đích không có ở nguồn (không bù được): ' + off.missingSrc.join(', ') }));
+        if (off.missingDst && off.missingDst.length) resultBox.appendChild(el('div', { text: 'Xương nguồn không có ở đích: ' + off.missingDst.join(', ') }));
+      })();
       if (r.autoMatchCount) resultBox.appendChild(el('div', { text: 'Tự khớp ' + r.autoMatchCount + ' track: ' + r.autoMatched.map(function (a) { return a.clipBone + ' → ' + a.dstBone + ' (' + a.method + ' ' + a.confidence + '%)'; }).join(', ') }));
       if (r.missing.length) resultBox.appendChild(el('div', { text: 'Xương rig không có trong clip (' + r.missing.length + '): ' + r.missing.join(', ') }));
       else resultBox.appendChild(el('div', { text: 'Phủ 100% rig — không thiếu xương nào.' }));
@@ -632,7 +794,26 @@
       class: 'btn primary', text: '⇄ Retarget',
       onclick: function () {
         if (!state.selectedId) { notify('warning', 'Remap', 'Chưa chọn clip nguồn.'); return; }
-        state.result = retargetClip(state.selectedId, null, {});
+        /* [SCALE-AWARE 2026-11-27 NHÓM 2] Chỉ bật scale-aware khi đã
+           đặt rig nguồn; chưa đặt thì giữ hành vi cũ (scaleRoot=1). */
+        var o = {};
+        if (state.srcRig) {
+          o.scaleAware = true;
+          o.srcRig = state.srcRig;
+          o.scaleRootMotion = state.scaleOpts.scaleRootMotion;
+          o.scaleHipsY = state.scaleOpts.scaleHipsY;
+          o.restPoseComp = state.scaleOpts.restPoseComp;
+          o.scaleLimbAngles = state.scaleOpts.scaleLimbAngles;
+          state.result = retargetClip(state.selectedId, null, o);
+        } else {
+          /* [NHÓM B] Chưa đặt rig nguồn: thử đường standalone (bù
+             rest pose, không scale) nếu rest pose nguồn đã được đặt
+             trước qua ArpRestPose.setSourceRest(modelNguon); chưa có
+             thì giữ hành vi cũ (chỉ map tên). */
+          var RP = (typeof window !== 'undefined' && window.PixiStudio && window.PixiStudio.ArpRestPose) || null;
+          if (RP && RP._sourceRest) state.result = RP.retargetClipWithRestPose(state.selectedId, null, {});
+          else state.result = retargetClip(state.selectedId, null, o);
+        }
         renderResult();
       }
     }));

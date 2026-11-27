@@ -88,7 +88,18 @@
     mirrorEnabled: true,
     manualMode: false,
     humanoidCheck: null,
-    rigOpts: { boneCount: 41, fingers: true, toes: true, twist: false, spineSegments: 3, neckSegments: 1, pose: 'T' },
+    rigOpts: { boneCount: 41, fingers: true, toes: true, twist: false, spineSegments: 3, neckSegments: 1, pose: 'T',
+      /* NHÓM 6 — Animal presets: 'humanoid' | 'quadruped' | 'robot' | 'bird'
+         (xem js/rig/arp-animal-presets.js). Mặc định humanoid = hành vi cũ. */
+      preset: 'humanoid' },
+    /* [NHÓM 1 — Decimation/Shape 2026-11-27] Tùy chọn decimate trước
+       khi rig + kết quả phân tích hình dạng / rig plan / decimate
+       gần nhất (xem js/rig/arp-decimate.js). */
+    decimateOpts: { enabled: false, ratio: 0.32, protectJoints: true },
+    lastShapeAnalysis: null,
+    lastRigPlan: null,
+    lastDecimate: null,
+    lastDecimateTarget: null,
     ghost: { group: null, joints: {}, jointPositions: {}, pairs: [], lines: null, visible: false },
     lastSymmetry: null,
     _orbitOff: false
@@ -860,6 +871,16 @@
      dùng chung công thức). Kéo marker → updateGhost() tính lại ngay. */
   function rigOptsToVariantOpts() {
     var r = ArpSmart.rigOpts;
+    /* NHÓM 6 — Animal presets: preset động vật thì boneSet 'animal:<id>'
+       (AutoRigPro chưa biết boneSet này → ArpSmart.rig() chặn lại, xem
+       dưới; ghost/marker vẫn dùng boneDefs của preset). */
+    if (r.preset && r.preset !== 'humanoid') {
+      return {
+        boneSet: 'animal:' + r.preset, animalPreset: r.preset,
+        fingers: r.fingers !== false, toes: r.toes !== false, twist: !!r.twist,
+        spineSegments: r.spineSegments || 3, neckSegments: r.neckSegments || 1, pose: r.pose || 'T'
+      };
+    }
     return {
       boneSet: r.boneCount === 28 ? 'hy3d28' : (r.boneCount === 15 ? 'minimal15' : 'full41'),
       fingers: r.fingers !== false, toes: r.toes !== false, twist: !!r.twist,
@@ -867,6 +888,24 @@
     };
   }
   ArpSmart.rigOptsToVariantOpts = rigOptsToVariantOpts;
+
+  /* NHÓM 6 — Animal presets: preset đang chọn + boneDefs tương ứng
+     (humanoid → null, để code cũ dùng variantBoneDefs như trước). */
+  ArpSmart.getActivePresetId = function () {
+    var id = ArpSmart.rigOpts && ArpSmart.rigOpts.preset;
+    if (!id) return 'humanoid';
+    var AP = (typeof window !== 'undefined' ? window : global).PixiStudio &&
+      ((typeof window !== 'undefined' ? window : global).PixiStudio.ArpAnimalPresets);
+    if (AP && AP.getPreset && !AP.getPreset(id)) return 'humanoid';
+    return id;
+  };
+  ArpSmart.getActiveBoneDefs = function () {
+    var id = ArpSmart.getActivePresetId();
+    if (id === 'humanoid') return null;
+    var AP = (typeof window !== 'undefined' ? window : global).PixiStudio &&
+      ((typeof window !== 'undefined' ? window : global).PixiStudio.ArpAnimalPresets);
+    return (AP && AP.boneDefs) ? AP.boneDefs(id) : null;
+  };
 
   ArpSmart._updateGhostLines = function (pos) {
     var g = ArpSmart.ghost;
@@ -892,7 +931,13 @@
       useDepth: !!ArpSmart.settings.useDepth,
       twist: vOpts.twist, neckSegments: vOpts.neckSegments, pose: vOpts.pose
     });
-    var defs = (ARP._test.variantBoneDefs ? ARP._test.variantBoneDefs(vOpts) : ARP.BONE_DEFS);
+    /* NHÓM 6 — Animal presets: suy vị trí khớp preset từ vị trí humanoid. */
+    if (ArpSmart.getActivePresetId() !== 'humanoid') {
+      var APg = window.PixiStudio && PixiStudio.ArpAnimalPresets;
+      if (APg && APg.resolvePositions) pos = APg.resolvePositions(pos, ArpSmart.getActivePresetId());
+    }
+    var defs = ArpSmart.getActiveBoneDefs() ||
+      (ARP._test.variantBoneDefs ? ARP._test.variantBoneDefs(vOpts) : ARP.BONE_DEFS);
     var pairs = [];
     defs.forEach(function (d) { if (d.parent) pairs.push([d.parent, d.name]); });
     ArpSmart.ghost.jointPositions = {};
@@ -952,6 +997,11 @@
       useDepth: !!ArpSmart.settings.useDepth,
       twist: vOpts.twist, neckSegments: vOpts.neckSegments, pose: vOpts.pose
     });
+    /* NHÓM 6 — Animal presets: suy vị trí khớp preset từ vị trí humanoid. */
+    if (ArpSmart.getActivePresetId() !== 'humanoid') {
+      var APu = window.PixiStudio && PixiStudio.ArpAnimalPresets;
+      if (APu && APu.resolvePositions) pos = APu.resolvePositions(pos, ArpSmart.getActivePresetId());
+    }
     Object.keys(pos).forEach(function (k) {
       ArpSmart.ghost.jointPositions[k] = { x: pos[k].x, y: pos[k].y, z: pos[k].z };
       var j = ArpSmart.ghost.joints[k];
@@ -1003,6 +1053,65 @@
     return true;
   };
 
+  /* ---------- [NHÓM 1 — Decimation/Shape 2026-11-27] Phân tích
+     hình dạng mesh + decimate trước khi rig (js/rig/arp-decimate.js).
+     Render trực tiếp trong tab Smart (không qua QuickRig
+     registerSection — phân tích + decimate là bước chuẩn bị của
+     Smart, chạy trước Guess Markers/Rig). ---------- */
+  ArpSmart.analyzeShape = function (target) {
+    var AD = window.PixiStudio && PixiStudio.ArpDecimate;
+    if (!AD || !AD.analyzeShape) { notify('error', 'Tab Smart', 'ArpDecimate chưa load (js/rig/arp-decimate.js).'); return null; }
+    target = getTarget(target || ArpSmart.target);
+    if (!target) { notify('warning', 'Tab Smart', 'Chưa có model nào — load model trước rồi bấm “Phân tích mesh”.'); return null; }
+    var a = AD.analyzeShape(target);
+    if (!a || !a.ok) { notify('error', 'Tab Smart', 'Phân tích mesh lỗi: ' + ((a && a.error) || '?')); return a; }
+    ArpSmart.target = target;
+    ArpSmart.lastShapeAnalysis = a;
+    ArpSmart.lastRigPlan = a.rigPlan || null;
+    ArpSmart.saveSession();
+    ArpSmart.refreshReadout();
+    notify('success', 'Phân tích mesh xong', AD.summarizeAnalysis(a), 15000);
+    return a;
+  };
+
+  ArpSmart.setDecimateOpt = function (key, value) {
+    var d = ArpSmart.decimateOpts;
+    if (key === 'enabled') d.enabled = !!value;
+    else if (key === 'protectJoints') d.protectJoints = !!value;
+    else if (key === 'ratio') {
+      var r = +value;
+      if (!isFinite(r) || r <= 0 || r >= 1) return false;
+      d.ratio = r;
+    } else return false;
+    ArpSmart.saveSession();
+    ArpSmart._syncControls();
+    ArpSmart.refreshReadout();
+    return true;
+  };
+
+  /* Decimate ngay (không chờ Rig): chờ meshopt WASM rồi chạy đồng
+     bộ. Trả Promise<result>. */
+  ArpSmart.decimateNow = function (target) {
+    var AD = window.PixiStudio && PixiStudio.ArpDecimate;
+    if (!AD || !AD.decimateAsync) { notify('error', 'Tab Smart', 'ArpDecimate chưa load (js/rig/arp-decimate.js).'); return Promise.resolve(null); }
+    target = getTarget(target || ArpSmart.target);
+    if (!target) { notify('warning', 'Tab Smart', 'Chưa có model nào để decimate.'); return Promise.resolve(null); }
+    return AD.decimateAsync(target, {
+      ratio: ArpSmart.decimateOpts.ratio,
+      protectJoints: ArpSmart.decimateOpts.protectJoints,
+      landmarks: ArpSmart.landmarks || undefined
+    }).then(function (r) {
+      if (r && r.ok) {
+        ArpSmart.lastDecimate = r;
+        if (r.trisAfter < r.trisBefore) ArpSmart.lastDecimateTarget = target;
+        ArpSmart.saveSession();
+        ArpSmart.refreshReadout();
+        notify('success', 'Decimate xong', AD.summarizeDecimate(r), 12000);
+      } else if (r) notify('error', 'Decimate lỗi', r.error || '?');
+      return r;
+    });
+  };
+
   /* ---------- Tùy chọn rig khi generate ---------- */
   ArpSmart.setRigOpt = function (key, value) {
     var r = ArpSmart.rigOpts;
@@ -1023,6 +1132,15 @@
     } else if (key === 'pose') {
       if (value !== 'T' && value !== 'A') return false;
       r.pose = value;
+    } else if (key === 'preset') {
+      /* NHÓM 6 — Animal presets: chỉ nhận id preset hợp lệ; humanoid
+         giữ nguyên mọi hành vi cũ. */
+      var ids = ['humanoid', 'quadruped', 'robot', 'bird'];
+      var APs = (typeof window !== 'undefined' ? window : global).PixiStudio &&
+        ((typeof window !== 'undefined' ? window : global).PixiStudio.ArpAnimalPresets);
+      if (APs && APs.listIds) ids = APs.listIds();
+      if (ids.indexOf(value) < 0) return false;
+      r.preset = value;
     } else return false;
     ArpSmart.saveSession();
     if (ArpSmart.ghost.visible) ArpSmart.buildGhost();
@@ -1047,6 +1165,9 @@
         manualMode: ArpSmart.manualMode,
         humanoidCheck: ArpSmart.humanoidCheck,
         rigOpts: ArpSmart.rigOpts,
+        /* [NHÓM 1] Lưu tùy chọn decimate (không lưu kết quả phân tích
+           — phân tích lại bằng nút "Phân tích mesh" sau khi load). */
+        decimateOpts: ArpSmart.decimateOpts,
         markers: ArpSmart.markers.map(function (m) {
           var p = m.mesh ? { x: m.mesh.position.x, y: m.mesh.position.y, z: m.mesh.position.z } : (m.position || { x: 0, y: 0, z: 0 });
           return { id: m.id, position: p };
@@ -1074,6 +1195,12 @@
     }
     if (data.rigOpts) {
       Object.keys(data.rigOpts).forEach(function (k) { ArpSmart.rigOpts[k] = data.rigOpts[k]; });
+    }
+    /* [NHÓM 1] Khôi phục tùy chọn decimate. */
+    if (data.decimateOpts) {
+      if (data.decimateOpts.enabled !== undefined) ArpSmart.decimateOpts.enabled = !!data.decimateOpts.enabled;
+      if (data.decimateOpts.ratio) ArpSmart.decimateOpts.ratio = data.decimateOpts.ratio;
+      if (data.decimateOpts.protectJoints !== undefined) ArpSmart.decimateOpts.protectJoints = !!data.decimateOpts.protectJoints;
     }
     if (data.markerLevel !== undefined) ArpSmart.markerLevel = data.markerLevel;
     if (data.mirrorEnabled !== undefined) ArpSmart.mirrorEnabled = !!data.mirrorEnabled;
@@ -1245,8 +1372,27 @@
       twist: vOpts.twist,
       spineSegments: vOpts.spineSegments,
       neckSegments: vOpts.neckSegments,
-      pose: vOpts.pose
+      pose: vOpts.pose,
+      /* NHÓM 6 — Animal presets: chuyển tiếp cho auto-rig-pro.js tương lai
+         (hiện AutoRigPro chưa đọc animalPreset — ArpSmart.rig() chặn
+         preset động vật, xem dưới). */
+      animalPreset: vOpts.animalPreset || null,
+      animalBoneDefs: ArpSmart.getActiveBoneDefs()
     };
+    /* [NHÓM 1 — Decimation/Shape 2026-11-27] Áp rig plan từ phân tích
+       hình dạng (robot → 28 xương gọn, bỏ ngón tay/chân) + gắn
+       metadata phân tích/decimate để AutoRigPro.run() lưu vào
+       result/rig. Chỉ ghi đè khi plan tương thích pipeline humanoid
+       (autoRigCompatible); plan quadruped/creature đã bị chặn ở
+       ArpSmart.rig() nên không tới được đây. */
+    if (ArpSmart.lastRigPlan && ArpSmart.lastRigPlan.autoRigCompatible) {
+      if (ArpSmart.lastRigPlan.boneSet === 'hy3d28') {
+        opts.boneSet = 'hy3d28'; opts.fingers = false; opts.toes = false;
+      }
+    }
+    if (ArpSmart.lastShapeAnalysis) opts.shapeAnalysis = ArpSmart.lastShapeAnalysis;
+    if (ArpSmart.lastRigPlan) opts.rigPlan = ArpSmart.lastRigPlan;
+    if (ArpSmart.lastDecimate) opts.decimateResult = ArpSmart.lastDecimate;
     if (extra) Object.keys(extra).forEach(function (k) { opts[k] = extra[k]; });
     return opts;
   };
@@ -1254,8 +1400,49 @@
   ArpSmart.rig = function (extra) {
     var ARP = PixiStudio.AutoRigPro;
     if (!ARP || !ARP.run) { notify('error', 'Tab Smart', 'AutoRigPro chưa sẵn sàng.'); return null; }
+    /* NHÓM 6 — Animal presets: AutoRigPro.run() hiện chỉ dựng được
+       skeleton humanoid (variantBoneDefs/buildSkeleton). Rig tự động
+       với preset động vật CHƯA hỗ trợ — chặn lại kèm hướng dẫn thay vì
+       rig lén 41 xương humanoid lên thú/robot. Dùng Quick Rig để map
+       xương có sẵn của model theo preset. */
+    if (ArpSmart.getActivePresetId() !== 'humanoid') {
+      notify('warning', 'Tab Smart',
+        'Preset "' + ArpSmart.getActivePresetId() + '" chưa rig tự động được qua Smart ' +
+        '(AutoRigPro mới dựng skeleton humanoid). Mở tab Quick Rig để map xương có sẵn ' +
+        'của model theo preset này.');
+      return null;
+    }
     var target = getTarget(ArpSmart.target);
     if (!target) { notify('warning', 'Tab Smart', 'Chưa có model nào để rig. Load model trước.'); return null; }
+    /* [NHÓM 1 — Decimation/Shape 2026-11-27] Chặn rig humanoid khi
+       phân tích hình dạng đã chọn rig không tương thích
+       (quadruped/creature) — không ép 41 xương lên thú; báo plan +
+       cách làm thay thế, lưu vào metadata để các tab khác đọc. */
+    if (ArpSmart.lastShapeAnalysis && ArpSmart.lastRigPlan && !ArpSmart.lastRigPlan.autoRigCompatible) {
+      notify('warning', 'Tab Smart',
+        'Không rig humanoid cho model này: ' + ArpSmart.lastRigPlan.reason + ' ' + (ArpSmart.lastRigPlan.buildVia || ''), 15000);
+      ArpSmart.refreshReadout();
+      return { ok: false, blocked: 'non-humanoid', shapeAnalysis: ArpSmart.lastShapeAnalysis, rigPlan: ArpSmart.lastRigPlan, errors: ['Rig humanoid không phù hợp: ' + ArpSmart.lastRigPlan.reason] };
+    }
+    /* [NHÓM 1] Decimate trước khi rig khi user bật tùy chọn — chỉ 1
+       lần cho mỗi target (tránh decimate chồng lên mesh đã gọn).
+       Meshopt WASM chưa sẵn sàng thì dừng và bảo user bấm
+       "Decimate ngay" trước, không rig lén trên mesh chưa decimate. */
+    if (ArpSmart.decimateOpts.enabled && ArpSmart.lastDecimateTarget !== target) {
+      var AD1 = window.PixiStudio && PixiStudio.ArpDecimate;
+      var MSE1 = window.PixiStudio && PixiStudio.MixamoSafeExport;
+      var ready = AD1 && AD1.meshoptAvailable() && (!MSE1 || !MSE1.meshoptReady || MSE1.meshoptReady());
+      if (!AD1 || !ready) {
+        notify('warning', 'Tab Smart', 'Decimate trước khi rig đang BẬT nhưng meshopt chưa sẵn sàng — bấm “Decimate ngay” để chờ WASM rồi bấm Rig lại.');
+        return { ok: false, blocked: 'decimate-not-ready', errors: ['Meshopt chưa sẵn sàng'] };
+      }
+      var dr = AD1.decimate(target, { ratio: ArpSmart.decimateOpts.ratio, protectJoints: ArpSmart.decimateOpts.protectJoints, landmarks: ArpSmart.landmarks || undefined });
+      if (dr && dr.ok) {
+        ArpSmart.lastDecimate = dr;
+        if (dr.trisAfter < dr.trisBefore) ArpSmart.lastDecimateTarget = target;
+        else notify('warning', 'Tab Smart', 'Decimate chạy nhưng không giảm được tris (meshopt trả nguyên) — vẫn rig trên mesh gốc.');
+      }
+    }
     var result = ARP.run(target, ArpSmart.buildRunOpts(extra));
     if (result && result.ok) {
       ArpSmart.hideGhost();   /* rig thật đã có SkeletonHelper — ẩn ghost */
@@ -1312,6 +1499,9 @@
     if (man) man.style.display = ArpSmart.manualMode ? '' : 'none';
     var bc = g('arp-smart-bonecount');
     if (bc) bc.value = String(ArpSmart.rigOpts.boneCount);
+    /* NHÓM 6 — Animal presets: đồng bộ dropdown preset. */
+    var pr = g('arp-smart-preset');
+    if (pr) pr.value = ArpSmart.getActivePresetId();
     var fi = g('arp-smart-fingers');
     if (fi) fi.checked = ArpSmart.rigOpts.fingers !== false;
     var to = g('arp-smart-toes');
@@ -1324,6 +1514,13 @@
     if (nk) nk.value = String(ArpSmart.rigOpts.neckSegments);
     var po = g('arp-smart-pose');
     if (po) po.value = ArpSmart.rigOpts.pose || 'T';
+    /* [NHÓM 1] Đồng bộ control decimate + phân tích. */
+    var dcOn = g('arp-smart-decimate-on');
+    if (dcOn) dcOn.checked = !!ArpSmart.decimateOpts.enabled;
+    var dcRatio = g('arp-smart-decimate-ratio');
+    if (dcRatio) dcRatio.value = String(ArpSmart.decimateOpts.ratio);
+    var dcJ = g('arp-smart-decimate-joints');
+    if (dcJ) dcJ.checked = ArpSmart.decimateOpts.protectJoints !== false;
     /* sliders + danh sách set đã lưu */
     var meas = ArpSmart.computeMeasurements();
     var setSlider = function (id, key) {
@@ -1355,6 +1552,20 @@
     var measure = document.getElementById('arp-smart-measure');
     var picklist = document.getElementById('arp-smart-picklist');
     var symRes = document.getElementById('arp-smart-symmetry-result');
+    /* [NHÓM 1] Hiện kết quả phân tích hình dạng + decimate. */
+    var AD = window.PixiStudio && PixiStudio.ArpDecimate;
+    var shapeEl = document.getElementById('arp-smart-shape-result');
+    if (shapeEl && AD) {
+      shapeEl.textContent = ArpSmart.lastShapeAnalysis
+        ? AD.summarizeAnalysis(ArpSmart.lastShapeAnalysis)
+        : 'Chưa phân tích — bấm “Phân tích mesh”.';
+    }
+    var decEl = document.getElementById('arp-smart-decimate-result');
+    if (decEl && AD) {
+      decEl.textContent = ArpSmart.lastDecimate
+        ? AD.summarizeDecimate(ArpSmart.lastDecimate)
+        : 'Chưa decimate.';
+    }
     if (measure) {
       var meas = ArpSmart.computeMeasurements();
       measure.textContent = meas
@@ -1492,6 +1703,15 @@
       '<option value="28">28 — gọn kiểu HY3D</option>' +
       '<option value="15">15 — tối giản</option>' +
       '</select></label>' +
+      /* NHÓM 6 — Animal presets: dropdown chọn preset rig (humanoid mặc
+         định; quadruped/robot/bird dùng marker + boneDefs riêng, xem
+         js/rig/arp-animal-presets.js). */
+      '<label class="arp-check">Preset rig: <select id="arp-smart-preset">' +
+      '<option value="humanoid">Humanoid — 41 xương Mixamo</option>' +
+      '<option value="quadruped">Quadruped — 4 chân (26 xương)</option>' +
+      '<option value="robot">Robot — khớp cứng (17 xương)</option>' +
+      '<option value="bird">Bird — chim/cánh (23 xương)</option>' +
+      '</select></label>' +
       '<label class="arp-check">Tư thế gốc: <select id="arp-smart-pose">' +
       '<option value="T">T-pose (tay ngang 90°)</option>' +
       '<option value="A">A-pose (tay chếch ~45°)</option>' +
@@ -1513,6 +1733,24 @@
       '<option value="2">2 (Neck/Neck1)</option>' +
       '</select></label>' +
       '</div>' +
+      '</div>' +
+      '<div class="arp-section"><h4>🔍 Phân tích mesh + Decimation (NHÓM 1)</h4>' +
+      '<div class="arp-row">' +
+      '<button id="arp-smart-analyze" class="arp-btn">🔍 Phân tích mesh</button>' +
+      '<button id="arp-smart-decimate-now" class="arp-btn">✂ Decimate ngay</button>' +
+      '</div>' +
+      '<div class="arp-row">' +
+      '<label class="arp-check"><input type="checkbox" id="arp-smart-decimate-on"> Decimate trước khi rig</label>' +
+      '<label class="arp-check">Tỉ lệ: <select id="arp-smart-decimate-ratio">' +
+      '<option value="0.5">50% tris</option>' +
+      '<option value="0.32" selected>32% (~15k tris)</option>' +
+      '<option value="0.2">20% tris</option>' +
+      '</select></label>' +
+      '<label class="arp-check"><input type="checkbox" id="arp-smart-decimate-joints" checked> Giữ chi tiết vùng khớp</label>' +
+      '</div>' +
+      '<p class="arp-note">“Phân tích mesh” đo hình dạng thật (độ dày chi, số chân chạm đất, đuôi, cánh/sừng, dấu hiệu robot) rồi CHỌN rig phù hợp thay vì ép humanoid 41 xương: humanoid → 41 xương; robot → 28 xương gọn (bỏ ngón); 4 chân/creature → KHÔNG rig humanoid, báo rig cần dùng. “Decimate ngay” giảm tris bằng meshopt (giữ biên/UV/skin, không dùng voxel). Bật “Decimate trước khi rig” thì bấm Rig sẽ decimate trước (1 lần/model).</p>' +
+      '<div id="arp-smart-shape-result" class="arp-status">Chưa phân tích — bấm “Phân tích mesh”.</div>' +
+      '<div id="arp-smart-decimate-result" class="arp-status">Chưa decimate.</div>' +
       '</div>' +
       '<div class="arp-section"><h4>💾 Marker set (lưu nhiều bộ marker đặt tên)</h4>' +
       '<div class="arp-row">' +
@@ -1538,6 +1776,12 @@
       if (el) el.addEventListener(ev, fn);
     };
     on('arp-smart-guess', 'click', function () { ArpSmart.guessMarkers(); });
+    /* [NHÓM 1] Phân tích mesh + Decimate (js/rig/arp-decimate.js). */
+    on('arp-smart-analyze', 'click', function () { ArpSmart.analyzeShape(); });
+    on('arp-smart-decimate-now', 'click', function () { ArpSmart.decimateNow(); });
+    on('arp-smart-decimate-on', 'change', function (e) { ArpSmart.setDecimateOpt('enabled', !!e.target.checked); });
+    on('arp-smart-decimate-ratio', 'change', function (e) { ArpSmart.setDecimateOpt('ratio', +e.target.value); });
+    on('arp-smart-decimate-joints', 'change', function (e) { ArpSmart.setDecimateOpt('protectJoints', !!e.target.checked); });
     on('arp-smart-rig', 'click', function () { ArpSmart.rig(); });
     on('arp-smart-rerig', 'click', function () { ArpSmart.rig({ export: false }); });
     on('arp-smart-addneck', 'click', function () {
@@ -1598,6 +1842,8 @@
     });
     on('arp-smart-regen', 'click', function () { ArpSmart.regenerateGhost(); });
     on('arp-smart-bonecount', 'change', function (e) { ArpSmart.setRigOpt('boneCount', +e.target.value); });
+    /* NHÓM 6 — Animal presets: đổi preset → ghost/marker dùng boneDefs preset đó. */
+    on('arp-smart-preset', 'change', function (e) { ArpSmart.setRigOpt('preset', e.target.value); });
     on('arp-smart-pose', 'change', function (e) { ArpSmart.setRigOpt('pose', e.target.value); });
     on('arp-smart-fingers', 'change', function (e) { ArpSmart.setRigOpt('fingers', !!e.target.checked); });
     on('arp-smart-toes', 'change', function (e) { ArpSmart.setRigOpt('toes', !!e.target.checked); });

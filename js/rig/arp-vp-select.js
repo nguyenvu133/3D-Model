@@ -13,6 +13,12 @@
  *     viewport -> map: highlight dòng tương ứng trong .arp-map-table
  *     map -> viewport: bấm vào 1 dòng trong bảng map (không bấm vào
  *       dropdown) thì chọn xương đó trong viewport.
+ * - VIEW2 (2026-11-27, ưu tiên 4): hover chuột lên xương trong
+ *   viewport hiện tooltip tên xương (+ độ dài, xương cha) ngay cạnh
+ *   con trỏ và highlight nhẹ khớp đó (xanh nhạt, to hơn 1.25x) —
+ *   KHÔNG đổi lựa chọn đang chọn; rời chuột thì tooltip + highlight
+ *   hover biến mất. Raycast hover throttle 80ms, chỉ chạy khi đã
+ *   có overlay (không tự dựng overlay, không chạm camera khi chưa có).
  * - Phân biệt bấm vs kéo xoay camera: chỉ chọn khi pointerdown ->
  *   pointerup di chuyển <= ngưỡng (mặc định 8px) và < 600ms; kéo
  *   OrbitCam / pinch 2 ngón / kéo gizmo thì KHÔNG chọn. Mobile:
@@ -48,8 +54,12 @@
 
   var COLOR_DEFAULT = 0x4da3ff;  /* khớp/đoạn xương thường: xanh dương */
   var COLOR_SELECTED = 0xffb300; /* xương đang chọn: vàng cam */
+  var COLOR_HOVER = 0x66d9ff;    /* VIEW2: xương đang hover: xanh nhạt */
   var SELECT_SCALE = 1.6;        /* khớp đang chọn to hơn */
+  var HOVER_SCALE = 1.25;        /* VIEW2: khớp đang hover to hơn */
+  var HOVER_THROTTLE_MS = 80;    /* VIEW2: raycast hover tối đa 1 lần / 80ms */
   var PANEL_ID = 'arp-vpselect-panel';
+  var HOVER_ID = 'arp-vpselect-hover'; /* VIEW2: tooltip tên xương khi hover */
   var GROUP_NAME = '__arp_vpselect__';
 
   var VpSelect = {
@@ -58,7 +68,8 @@
     maxClickMs: 600,     /* ms: bấm giữ quá lâu = không tính là click */
     selected: null,      /* tên xương gọn (đã bóc prefix) đang chọn */
     selectedBone: null,
-    boneCount: 0
+    boneCount: 0,
+    hoverEnabled: true   /* VIEW2: bật/tắt tooltip + highlight khi hover */
   };
 
   var state = {
@@ -74,7 +85,11 @@
     listeners: null,     /* {wrap, down, move, up, cancel, docClick} */
     prevRender: null,
     renderWrapped: false,
-    lastPanelRefresh: 0
+    lastPanelRefresh: 0,
+    /* VIEW2 — hover tooltip */
+    hovered: null,        /* tên gọn xương đang hover, hoặc null */
+    hoverEl: null,        /* div tooltip trong wrap */
+    lastHoverAt: 0        /* ms: lần raycast hover gần nhất (throttle) */
   };
 
   /* ---------------- helpers ---------------- */
@@ -516,6 +531,124 @@
     });
   }
 
+  /* ---------------- VIEW2: hover tooltip + highlight nhẹ ---------------- */
+  /* Tooltip là div con của wrap (position:absolute, pointer-events
+     none) nên không chặn bấm/kéo viewport; chỉ hiện khi raycast
+     trúng xương. Hover KHÔNG đổi lựa chọn (selected giữ nguyên) và
+     không tự dựng overlay: chưa có overlay thì không hover. */
+  function getHoverEl() {
+    if (state.hoverEl && state.hoverEl.parentNode) return state.hoverEl;
+    var wrap = getWrap();
+    if (!wrap || typeof document === 'undefined') return null;
+    var tip = el('div', { id: HOVER_ID, class: 'arp-vpselect-hover' });
+    tip.style.cssText = 'position:absolute;left:0;top:0;z-index:31;display:none;' +
+      'background:rgba(10,18,32,0.93);color:#e8f0ff;border:1px solid #66d9ff;border-radius:6px;' +
+      'padding:3px 8px;font-size:12px;line-height:1.4;pointer-events:none;white-space:nowrap;' +
+      'box-shadow:0 2px 8px rgba(0,0,0,0.45);';
+    try { wrap.appendChild(tip); } catch (e) { return null; }
+    state.hoverEl = tip;
+    return tip;
+  }
+
+  function _applyHoverStyle(stripped) {
+    var entry = state.entries[stripped];
+    if (!entry) return false;
+    try {
+      if (entry.joint) {
+        entry.joint.material.color.setHex(COLOR_HOVER);
+        entry.joint.scale.setScalar(entry.baseJointRadius * HOVER_SCALE);
+      }
+      if (entry.seg) entry.seg.material.color.setHex(COLOR_HOVER);
+    } catch (e) {}
+    return true;
+  }
+  /* Trả khớp về đúng trạng thái của nó: đang chọn → vàng cam to 1.6x,
+     không chọn → xanh mặc định (KHÔNG dùng restoreEntry trần ở đây
+     vì restoreEntry không biết xương đang chọn). */
+  function _clearHoverStyle(stripped) {
+    var entry = state.entries[stripped];
+    if (!entry) return;
+    if (stripped === VpSelect.selected) { applyHighlight(stripped); return; }
+    restoreEntry(entry);
+  }
+
+  function clearHover() {
+    var prev = state.hovered;
+    state.hovered = null;
+    if (prev) _clearHoverStyle(prev);
+    var tip = state.hoverEl;
+    if (tip) { try { tip.style.display = 'none'; } catch (e) {} }
+    return { ok: true, prev: prev };
+  }
+  VpSelect.clearHover = clearHover;
+
+  function setHovered(stripped, clientX, clientY) {
+    if (!stripped) return clearHover();
+    var prev = state.hovered;
+    if (prev && prev !== stripped) _clearHoverStyle(prev);
+    state.hovered = stripped;
+    if (stripped !== VpSelect.selected) _applyHoverStyle(stripped);
+    var tip = getHoverEl();
+    if (tip) {
+      var info = getInfo(stripped);
+      var text = stripped;
+      if (info) {
+        if (info.lengthCm != null) text += ' · dài ' + info.lengthCm.toFixed(1) + ' cm';
+        if (info.parent) text += ' · cha: ' + info.parent;
+      }
+      tip.textContent = text;
+      var wrap = getWrap();
+      var left = (clientX || 0) + 14, top = (clientY || 0) + 14;
+      try {
+        if (wrap && wrap.getBoundingClientRect) {
+          var r = wrap.getBoundingClientRect();
+          left = (clientX || 0) - (r.left || 0) + 14;
+          top = (clientY || 0) - (r.top || 0) + 14;
+          /* không để tooltip tràn khỏi khung viewport */
+          var w = tip.offsetWidth || 180, h = tip.offsetHeight || 24;
+          if (r.width && left + w > r.width) left = Math.max(4, r.width - w - 4);
+          if (r.height && top + h > r.height) top = Math.max(4, (clientY || 0) - (r.top || 0) - h - 8);
+        }
+      } catch (e) {}
+      tip.style.left = left + 'px';
+      tip.style.top = top + 'px';
+      tip.style.display = 'block';
+    }
+    return { ok: true, bone: stripped };
+  }
+
+  /* pointermove trên wrap: raycast (throttle 80ms) rồi hiện/ẩn
+     tooltip. Không stopPropagation/preventDefault; không dựng
+     overlay; không chạm camera khi chưa có (pick() trả null êm). */
+  function handleHoverMove(e) {
+    if (!VpSelect.enabled || !VpSelect.hoverEnabled) return;
+    if (!state.group || !VpSelect.boneCount) return;
+    try {
+      var t = e.target;
+      if (t && t.closest && (t.closest('#' + PANEL_ID) || t.closest('.vp-hud') || t.closest('button') || t.closest('input') || t.closest('select') || t.closest('textarea'))) {
+        clearHover();
+        return;
+      }
+    } catch (err) {}
+    var now = (typeof Date !== 'undefined' && Date.now) ? Date.now() : 0;
+    if (now - state.lastHoverAt < HOVER_THROTTLE_MS) return;
+    state.lastHoverAt = now;
+    var hit = null;
+    try { hit = pickAtClient(e.clientX, e.clientY); } catch (err) { hit = null; }
+    if (hit) setHovered(hit, e.clientX, e.clientY);
+    else clearHover();
+  }
+
+  function handleHoverLeave() { clearHover(); }
+
+  VpSelect.setHoverEnabled = function (on) {
+    VpSelect.hoverEnabled = !!on;
+    if (!VpSelect.hoverEnabled) clearHover();
+    return VpSelect.hoverEnabled;
+  };
+  VpSelect.isHoverEnabled = function () { return !!VpSelect.hoverEnabled; };
+  VpSelect.getHovered = function () { return state.hovered; };
+
   /* ---------------- panel thông tin ---------------- */
   function buildPanel() {
     if (state.panelEl) return state.panelEl;
@@ -628,6 +761,10 @@
     var prev = VpSelect.selected;
     if (prev === stripped && VpSelect.selectedBone === bone && !opts.force) {
       refreshPanel();
+      /* VIEW2: đã chọn rồi vẫn highlight lại dòng map — bảng map có
+         thể vừa render lại (vd user mới mở tab Quick Rig) nên dòng
+         tương ứng chưa có class highlight. */
+      if (!opts.skipMap) highlightMapRow(stripped);
       return { ok: true, bone: stripped, info: getInfo(bone), alreadySelected: true };
     }
     clearHighlight();
@@ -867,7 +1004,9 @@
       targetName: state.target ? (state.target.name || '') : null,
       clickThreshold: VpSelect.clickThreshold,
       maxClickMs: VpSelect.maxClickMs,
-      panelVisible: !!(state.panelEl && state.panelEl.style.display !== 'none')
+      panelVisible: !!(state.panelEl && state.panelEl.style.display !== 'none'),
+      hovered: state.hovered,
+      hoverEnabled: !!VpSelect.hoverEnabled
     };
   };
 
@@ -875,13 +1014,16 @@
   VpSelect.init = function () {
     if (state.listeners) return { ok: true, alreadyInit: true };
     var wrap = getWrap();
-    var L = { wrap: wrap, down: handlePointerDown, move: handlePointerMove, up: handlePointerUp, cancel: handlePointerCancel, docClick: handleDocClick };
+    var L = { wrap: wrap, down: handlePointerDown, move: handlePointerMove, up: handlePointerUp, cancel: handlePointerCancel, docClick: handleDocClick, hover: handleHoverMove, leave: handleHoverLeave };
     try {
       if (wrap && wrap.addEventListener) {
         wrap.addEventListener('pointerdown', L.down);
         wrap.addEventListener('pointermove', L.move);
         wrap.addEventListener('pointerup', L.up);
         wrap.addEventListener('pointercancel', L.cancel);
+        /* VIEW2: hover tooltip (listener riêng, không chặn bấm/kéo) */
+        wrap.addEventListener('pointermove', L.hover);
+        wrap.addEventListener('pointerleave', L.leave);
       }
     } catch (e) {}
     try {
@@ -937,6 +1079,8 @@
           L.wrap.removeEventListener('pointermove', L.move);
           L.wrap.removeEventListener('pointerup', L.up);
           L.wrap.removeEventListener('pointercancel', L.cancel);
+          L.wrap.removeEventListener('pointermove', L.hover);
+          L.wrap.removeEventListener('pointerleave', L.leave);
         }
         if (typeof document !== 'undefined' && document.removeEventListener) {
           document.removeEventListener('click', L.docClick);
@@ -944,6 +1088,9 @@
       } catch (e) {}
       state.listeners = null;
     }
+    try { if (state.hoverEl && state.hoverEl.parentNode) state.hoverEl.parentNode.removeChild(state.hoverEl); } catch (e) {}
+    state.hoverEl = null;
+    state.hovered = null;
     try {
       var V = getViewport();
       if (state.renderWrapped && V && state.prevRender) { V.render = state.prevRender; state.renderWrapped = false; state.prevRender = null; }
@@ -964,6 +1111,12 @@
     handlePointerUp: handlePointerUp,
     handlePointerCancel: handlePointerCancel,
     handleDocClick: handleDocClick,
+    handleHoverMove: handleHoverMove,
+    handleHoverLeave: handleHoverLeave,
+    getHoverEl: getHoverEl,
+    setHovered: setHovered,
+    COLOR_HOVER: COLOR_HOVER,
+    HOVER_SCALE: HOVER_SCALE,
     pickTargets: pickTargets,
     findBone: findBone,
     resolveTarget: resolveTarget,

@@ -157,6 +157,35 @@
       }
     });
 
+    /* Undo / Redo toàn diện (v2) — nút topbar + panel Lịch sử */
+    const undoBtn = document.getElementById('btn-undo');
+    if (undoBtn) {
+      undoBtn.addEventListener('click', function () {
+        if (PixiStudio.History) PixiStudio.History.undo();
+      });
+    }
+    const redoBtn = document.getElementById('btn-redo');
+    if (redoBtn) {
+      redoBtn.addEventListener('click', function () {
+        if (PixiStudio.History) PixiStudio.History.redo();
+      });
+    }
+    const histBtn = document.getElementById('btn-history');
+    if (histBtn) {
+      histBtn.addEventListener('click', function () {
+        if (PixiStudio.HistoryPanel) PixiStudio.HistoryPanel.toggle();
+      });
+    }
+    const syncUndoRedo = function (data) {
+      if (undoBtn) undoBtn.disabled = !(data && data.canUndo);
+      if (redoBtn) redoBtn.disabled = !(data && data.canRedo);
+      if (undoBtn) undoBtn.setAttribute('data-tooltip', 'Undo (Ctrl+Z)' + (data && data.label ? ' — ' + data.label : ''));
+      if (redoBtn) redoBtn.setAttribute('data-tooltip', 'Redo (Ctrl+Shift+Z / Ctrl+Y)');
+    };
+    bus.on('history:changed', syncUndoRedo);
+    /* trạng thái ban đầu: chưa undo/redo được */
+    syncUndoRedo({ canUndo: false, canRedo: false });
+
     /* Save button */
     const saveBtn = document.getElementById('btn-save');
     if (saveBtn) {

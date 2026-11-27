@@ -78,12 +78,34 @@
  *   renderStatus(el) / syncPanelRow() / syncToolbarButton()
  *   setThickness(v) / setJointSize(v) / setColor(group, hex)
  *   setAutoShow(b) / getSettings() / getBoneCount() / init()
+ *   VIEW2: setGroupVisible(g, on) / getGroupVisibility() / getGroups()
+ *   setXrayEnabled(on) / toggleXray() / isXrayEnabled() / getXrayState()
  *
  * SỬA VÒNG 1 (2026-11-27, nhóm Target resolution): _findSkeleton hợp
  * nhất skeleton.bones + traverse (FBX Mixamo thật: 34 → 41 xương);
  * _resolveTarget ưu tiên selection → Models.current → Anim.target
  * thay vì getMainModel() đầu tiên; autoShow() + cờ _manualHiddenFor
  * tách "tắt tay trong phiên" khỏi "visible:false đã lưu".
+ *
+ * MỞ RỘNG VIEW2 (2026-11-27, ưu tiên 4 — nhóm xương + X-ray):
+ *  • Nhóm xương: mỗi part (khớp cầu / đoạn xương) mang
+ *    userData.vpGroup ∈ spine|head|arm-left|arm-right|leg-left|
+ *    leg-right|fingers|other (xem _groupOf); setGroupVisible()
+ *    ẩn/hiện từng nhóm, trạng thái nhóm lưu localStorage cùng
+ *    _settings.groups; _setPartsVisible(true) tôn trọng nhóm.
+ *  • X-ray: KHÔNG tự làm mờ mesh — dùng sẵn chế độ shading 'xray'
+ *    của viewport.js (State 'shading' + Viewport.applyShading, vốn
+ *    đã bỏ qua mesh isBoneVisual): setXrayEnabled(true) chuyển
+ *    shading sang 'xray' (nhớ chế độ cũ để khôi phục), false thì
+ *    trả về chế độ cũ (mặc định 'lit' khi không nhớ được). Layer
+ *    'xray' do toolbar đăng ký (adapter, theo mẫu markers/ghost/
+ *    grid/helpers) — module này chỉ expose setXrayEnabled /
+ *    isXrayEnabled, KHÔNG tự đăng ký layer (để harness skeleton
+ *    đếm đúng 1 lần registerLayer 'skeleton').
+ *    GIỚI HẠN: applyShading không trả material.transparent về
+ *    false khi rời xray (chỉ opacity khôi phục) — mesh vẫn hiển thị
+ *    đúng (opacity 1) nhưng cờ transparent còn true; không sửa
+ *    viewport.js ở vòng này.
  * ============================================================ */
 (function () {
   'use strict';
@@ -107,12 +129,22 @@
     Neck: 1, Neck1: 1, Head: 1, HeadTopEnd: 1
   };
 
+  /* VIEW2 — nhóm xương hiển thị (thứ tự kiểm tra trong _groupOf
+     quan trọng: ngón trước (tên ngón chứa Thumb/Index/...), đầu
+     trước cột sống (Head/Neck), rồi trái/phải theo chi. */
+  var GROUP_ORDER = ['spine', 'head', 'arm-left', 'arm-right', 'leg-left', 'leg-right', 'fingers', 'other'];
+  var GROUP_LABELS = {
+    spine: 'Cột sống', head: 'Đầu', 'arm-left': 'Tay trái', 'arm-right': 'Tay phải',
+    'leg-left': 'Chân trái', 'leg-right': 'Chân phải', fingers: 'Ngón tay/chân', other: 'Khác'
+  };
+
   var _settings = {
     visible: true,      /* mặc định BẬT sau khi rig */
     autoShow: true,     /* tự hiện khi nhận event rig-complete */
     thickness: 'thick', /* FIX2: mặc định dày nhất cho dễ thấy (xem THICKNESS_RADIUS) */
     jointSize: 0.022,   /* bán kính khớp cầu, mét — FIX2: 0.012 → 0.022 (≥12px ở fit 3.5m / cao 720px) */
-    colors: { spine: DEFAULT_COLORS.spine, left: DEFAULT_COLORS.left, right: DEFAULT_COLORS.right }
+    colors: { spine: DEFAULT_COLORS.spine, left: DEFAULT_COLORS.left, right: DEFAULT_COLORS.right },
+    groups: { spine: true, head: true, 'arm-left': true, 'arm-right': true, 'leg-left': true, 'leg-right': true, fingers: true, other: true }
   };
 
   var _state = {
@@ -142,6 +174,10 @@
    * → model mới load auto-show như mặc định). */
   var _manualHiddenFor = null; /* uuid model đã tắt tay trong phiên, hoặc null */
   var _nextHideManual = false; /* toggle() đặt trước khi gọi hide() */
+  /* VIEW2 — X-ray: chế độ shading trước khi bật xray (để khôi phục
+     khi tắt); enabled là cờ của module, trạng thái thật đọc từ
+     State.get('shading') === 'xray' (xem _isXrayEnabled). */
+  var _xray = { enabled: false, prevShading: null };
 
   /* ---------- helpers ---------- */
   function _PS() {
@@ -192,6 +228,11 @@
           if (typeof s.colors[g] === 'number') _settings.colors[g] = s.colors[g];
         });
       }
+      if (s.groups && typeof s.groups === 'object') {
+        GROUP_ORDER.forEach(function (g) {
+          if (typeof s.groups[g] === 'boolean') _settings.groups[g] = s.groups[g];
+        });
+      }
     } catch (e) {}
   }
   function _saveSettings() {
@@ -201,7 +242,7 @@
       ls.setItem(STORAGE_KEY, JSON.stringify({
         visible: _settings.visible, autoShow: _settings.autoShow,
         thickness: _settings.thickness, jointSize: _settings.jointSize,
-        colors: _settings.colors
+        colors: _settings.colors, groups: _settings.groups
       }));
     } catch (e) {}
   }
@@ -227,6 +268,28 @@
   function _colorOf(group) {
     var c = _settings.colors[group];
     return (typeof c === 'number') ? c : DEFAULT_COLORS[group] || 0xffffff;
+  }
+  /* VIEW2 — nhóm hiển thị của 1 xương (tên đã strip). Thứ tự:
+     ngón (Thumb/Index/Middle/Ring/Pinky/Finger) → đầu (Head/Neck)
+     → cột sống (Hips/Spine/Chest) → chi trái/phải (chân trước tay
+     sau trong mỗi bên) → other (twist/prop/xương lạ). */
+  function _groupOf(bone) {
+    var n = _stripName(bone && bone.name);
+    if (/thumb|index|middle|ring|pinky|finger/i.test(n)) return 'fingers';
+    if (/^(head|neck)/i.test(n)) return 'head';
+    if (/^(hips|spine|chest)/i.test(n)) return 'spine';
+    if (/^left/i.test(n)) {
+      if (/^(leftupleg|leftleg|leftfoot|lefttoebase|lefttoe_end|leftankle)/i.test(n)) return 'leg-left';
+      return 'arm-left';
+    }
+    if (/^right/i.test(n)) {
+      if (/^(rightupleg|rightleg|rightfoot|righttoebase|righttoe_end|rightankle)/i.test(n)) return 'leg-right';
+      return 'arm-right';
+    }
+    return 'other';
+  }
+  function _isGroupVisible(g) {
+    return _settings.groups[g] !== false; /* nhóm lạ chưa lưu → hiện */
   }
 
   /* ---------- đồng bộ hình xương với Bone Shape (vòng Bone Shape) ----------
@@ -455,6 +518,7 @@
 
     found.bones.forEach(function (bone) {
       var group = _classifyBone(bone);
+      var vpGroup = _groupOf(bone); /* VIEW2: nhóm hiển thị của xương này */
       var color = _colorOf(group);
       var spec = _boneShapeSpec(bone); /* null = chưa custom → mặc định VP */
       /* --- khớp cầu tại gốc xương (hình/cỡ/màu theo Bone Shape nếu có) --- */
@@ -474,6 +538,7 @@
         );
         jm.name = '__arp_vp_joint_' + _stripName(bone.name);
         jm.userData.isArpVpSkeleton = true;
+        jm.userData.vpGroup = vpGroup; /* VIEW2: nhóm hiển thị */
         /* Quy ước repo: mesh trang trí của xương PHẢI có isBoneVisual để
            FBXBinary.write / GLBWriter / MixamoSafeExport bỏ qua — nếu không
            file FBX export sẽ chứa 94 mesh cầu/trụ thừa (đã đo: report.meshes
@@ -489,7 +554,7 @@
       var kids = (bone.children || []).filter(function (c) { return c && c.isBone; });
       var segs = [];
       kids.forEach(function (kid) {
-        segs.push({ dir: kid.position.clone(), len: kid.position.length() });
+        segs.push({ dir: kid.position.clone(), len: kid.position.length(), child: kid });
       });
       if (!segs.length) segs.push({ dir: new THREE.Vector3(0, -1, 0), len: stubLen });
       segs.forEach(function (seg) {
@@ -515,6 +580,9 @@
           }
           cm.name = '__arp_vp_bone_' + _stripName(bone.name);
           cm.userData.isArpVpSkeleton = true;
+          /* VIEW2: đoạn tới xương ngón thuộc nhóm fingers, đoạn khác
+             thuộc nhóm của xương cha; stub lá thuộc nhóm xương lá. */
+          cm.userData.vpGroup = (seg.child && _groupOf(seg.child) === 'fingers') ? 'fingers' : vpGroup;
           cm.userData.isBoneVisual = true; /* xem ghi chú ở khớp cầu trên */
           cm.frustumCulled = false;
           cm.renderOrder = 998;
@@ -598,9 +666,22 @@
       if (tb) tb.disabled = _state.boneCount === 0 && !_state.rootBone;
     } catch (e) {}
   }
+  /* Toolbar ARP View (#arp-vp-toolbar) chỉ tự refresh khi layer đổi QUA
+     registry (onLayerChange); auto-show/show()/hide() trực tiếp bypass
+     registry nên nút kẹt ở "off" dù xương đang hiện (thấy trong screenshot
+     vp-fix1-b.png). Refresh kèm ở đây để nút luôn đúng trạng thái thật —
+     core.isLayerVisible() đọc live layer.isVisible() nên chỉ cần gọi
+     refresh, không cần đụng registry. Guarded: toolbar có thể chưa load. */
+  function _refreshVpToolbar() {
+    try {
+      var T = window.PixiStudio && window.PixiStudio.ArpVpToolbar;
+      if (T && typeof T.refresh === 'function') T.refresh();
+    } catch (e) {}
+  }
   function _syncUI() {
     _syncToolbarButton();
     _syncPanelRow();
+    _refreshVpToolbar();
   }
 
   /* ---------- bus: tự hiện khi rig xong ---------- */
@@ -667,7 +748,72 @@
     } catch (e) {}
   }
   function _setPartsVisible(v) {
-    _state.parts.forEach(function (p) { try { p.visible = !!v; } catch (e) {} });
+    _state.parts.forEach(function (p) {
+      try {
+        /* VIEW2 nhóm xương: bật lại chỉ hiện part thuộc nhóm đang
+           bật; tắt thì ẩn hết bất kể nhóm. Part không có vpGroup
+           (dựng trước vòng VIEW2) luôn hiện khi bật. */
+        p.visible = !!v && (!p.userData || !p.userData.vpGroup || _isGroupVisible(p.userData.vpGroup));
+      } catch (e) {}
+    });
+  }
+
+  /* ---------- VIEW2: X-ray (dùng shading có sẵn của viewport) ----------
+   * Bật: State 'shading' → 'xray' (nhớ chế độ cũ để khôi phục);
+   * Viewport.applyShading() làm mờ mesh thường còn 0.35, mesh
+   * isBoneVisual (xương/khớp/IK/trails...) giữ nguyên 0.9–0.95 nên
+   * xương hiện xuyên qua mesh. Tắt: trả shading về chế độ cũ
+   * (mặc định 'lit' — giá trị mặc định trong js/core/state.js —
+   * khi không nhớ được vì xray được bật từ dropdown shading).
+   * Trả `true` khi thành công (quy ước FIX2 cho layer show/hide),
+   * {ok:false} khi State chưa sẵn sàng. Không đụng viewport.js. */
+  function _setXrayEnabled(on) {
+    var PS = _PS();
+    var st = PS && PS.State;
+    if (!st || typeof st.get !== 'function' || typeof st.set !== 'function') {
+      return { ok: false, reason: 'no-state', message: 'PixiStudio.State chưa sẵn sàng — không đổi được chế độ shading.' };
+    }
+    var cur = null;
+    try { cur = st.get('shading'); } catch (e) { cur = null; }
+    var shading = 'lit';
+    if (on) {
+      if (cur !== 'xray') _xray.prevShading = cur;
+      _xray.enabled = true;
+      shading = 'xray';
+      try { st.set('shading', 'xray'); } catch (e) { return { ok: false, reason: 'set-failed' }; }
+    } else {
+      _xray.enabled = false;
+      shading = _xray.prevShading || 'lit';
+      _xray.prevShading = null;
+      try { st.set('shading', shading); } catch (e) { return { ok: false, reason: 'set-failed' }; }
+    }
+    /* Ép Viewport áp shading ngay (render loop cũng gọi
+       applyShading() mỗi frame, nhưng invalidate để chắc chắn đổi
+       ngay cả khi render đang tạm dừng). */
+    try {
+      var VP = PS && PS.Viewport;
+      if (VP) {
+        if (typeof VP.invalidateShading === 'function') VP.invalidateShading();
+        else VP._shadingDirty = true;
+        if (typeof VP.applyShading === 'function') VP.applyShading();
+      }
+    } catch (e) {}
+    _refreshVpToolbar();
+    return { ok: true, xray: !!on, shading: shading };
+  }
+  /* Trạng thái thật: ưu tiên State (user có thể bật xray từ
+     dropdown shading ở toolbar chính); State không trả được thì
+     dùng cờ của module. */
+  function _isXrayEnabled() {
+    try {
+      var PS = _PS();
+      if (PS && PS.State && typeof PS.State.get === 'function') {
+        var cur = PS.State.get('shading');
+        if (cur === 'xray') return true;
+        if (typeof cur === 'string') return false;
+      }
+    } catch (e) {}
+    return !!_xray.enabled;
   }
 
   /* ---------- API ---------- */
@@ -867,10 +1013,77 @@
 
   ArpVpSkeleton.getBoneCount = function () { return _state.boneCount; };
 
+  /* ---------- VIEW2: nhóm xương + X-ray ---------- */
+
+  /* Ẩn/hiện 1 nhóm xương (spine/head/arm-left/arm-right/leg-left/
+     leg-right/fingers/other). Nhóm sai → {ok:false, allowed}. */
+  ArpVpSkeleton.setGroupVisible = function (group, on) {
+    if (GROUP_ORDER.indexOf(group) === -1) {
+      return { ok: false, reason: 'bad-group', allowed: GROUP_ORDER.slice() };
+    }
+    _settings.groups[group] = !!on;
+    _saveSettings();
+    if (_state.visible) _setPartsVisible(true);
+    _syncUI();
+    return { ok: true, group: group, visible: !!on };
+  };
+
+  ArpVpSkeleton.getGroupVisibility = function () {
+    var out = {};
+    GROUP_ORDER.forEach(function (g) { out[g] = !!_settings.groups[g]; });
+    return out;
+  };
+
+  /* Thống kê từng nhóm: số xương, số part, số part đang hiện. */
+  ArpVpSkeleton.getGroups = function () {
+    var counts = {};
+    GROUP_ORDER.forEach(function (g) { counts[g] = { bones: 0, parts: 0, visibleParts: 0, visible: !!_settings.groups[g] }; });
+    _state.bones.forEach(function (b) {
+      var g = _groupOf(b);
+      if (counts[g]) counts[g].bones++;
+    });
+    _state.parts.forEach(function (p) {
+      var g = (p.userData && p.userData.vpGroup) || 'other';
+      if (counts[g]) {
+        counts[g].parts++;
+        if (p.visible) counts[g].visibleParts++;
+      }
+    });
+    return GROUP_ORDER.map(function (g) {
+      return { key: g, label: GROUP_LABELS[g], visible: counts[g].visible, bones: counts[g].bones, parts: counts[g].parts, visibleParts: counts[g].visibleParts };
+    });
+  };
+
+  ArpVpSkeleton.setXrayEnabled = function (on) {
+    var r = _setXrayEnabled(!!on);
+    /* Quy ước FIX2: layer show/hide trả true khi thành công. */
+    return (r && r.ok === true) ? true : r;
+  };
+
+  ArpVpSkeleton.toggleXray = function () {
+    return ArpVpSkeleton.setXrayEnabled(!ArpVpSkeleton.isXrayEnabled());
+  };
+
+  ArpVpSkeleton.isXrayEnabled = function () { return _isXrayEnabled(); };
+
+  ArpVpSkeleton.getXrayState = function () {
+    var shading = null;
+    try {
+      var PS = _PS();
+      if (PS && PS.State && typeof PS.State.get === 'function') shading = PS.State.get('shading');
+    } catch (e) {}
+    return { xray: _isXrayEnabled(), shading: shading, prevShading: _xray.prevShading };
+  };
+
   /* Test hooks */
   ArpVpSkeleton._test = {
     classifyBone: _classifyBone,
     stripName: _stripName,
+    groupOf: _groupOf,
+    GROUP_ORDER: GROUP_ORDER,
+    GROUP_LABELS: GROUP_LABELS,
+    setXrayEnabled: _setXrayEnabled,
+    isXrayEnabled: _isXrayEnabled,
     findSkeleton: _findSkeleton,
     buildDisplay: _buildDisplay,
     onRigComplete: _onRigComplete,

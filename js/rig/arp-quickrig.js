@@ -366,8 +366,14 @@
     return null;
   }
 
-  /* mapBones: tên trước; thiếu thì đoán theo vị trí để bù. */
-  function mapBones(skeleton) {
+  /* mapBones: tên trước; thiếu thì đoán theo vị trí để bù.
+     NHÓM 6 — Animal presets: mapBones(skeleton, presetId) — preset động
+     vật ('quadruped'/'robot'/'bird') thì map theo danh sách xương của
+     preset đó (js/rig/arp-animal-presets.js), KHÔNG ép 41 xương humanoid
+     và KHÔNG đoán theo vị trí humanoid. Không truyền presetId (hoặc
+     'humanoid') → hành vi cũ y nguyên. */
+  function mapBones(skeleton, presetId) {
+    if (presetId && presetId !== 'humanoid') return mapBonesForPreset(skeleton, presetId);
     var byName = mapBonesByName(skeleton);
     if (byName.mappedCount >= DST_NAMES.length) { QuickRig.lastMap = byName; return byName; }
     var guessed = guessMapByPosition(skeleton);
@@ -417,6 +423,45 @@
   }
   QuickRig.mapBones = mapBones;
   QuickRig.mapBonesByName = mapBonesByName;
+
+  /* NHÓM 6 — Animal presets: map xương theo preset động vật.
+     Dùng PixiStudio.ArpAnimalPresets.mapBones (khớp tên theo regex từng
+     xương đích); trả về cùng shape mapBones + preset/limbs/fkBones để
+     control rig dùng chuỗi IK của preset. Module chưa load → fallback
+     mapBones humanoid (không crash). */
+  QuickRig.activePreset = 'humanoid';
+  QuickRig.setPreset = function (presetId) {
+    var AP = window.PixiStudio && PixiStudio.ArpAnimalPresets;
+    var ids = AP && AP.listIds ? AP.listIds() : ['humanoid', 'quadruped', 'robot', 'bird'];
+    if (ids.indexOf(presetId) < 0) return false;
+    QuickRig.activePreset = presetId;
+    return true;
+  };
+  QuickRig.getPresetControls = function (presetId) {
+    var AP = window.PixiStudio && PixiStudio.ArpAnimalPresets;
+    return (AP && AP.controls) ? AP.controls(presetId || QuickRig.activePreset || 'humanoid') : null;
+  };
+  function mapBonesForPreset(skeleton, presetId) {
+    presetId = presetId || QuickRig.activePreset || 'humanoid';
+    var AP = window.PixiStudio && PixiStudio.ArpAnimalPresets;
+    if (!AP || typeof AP.mapBones !== 'function' || presetId === 'humanoid') {
+      var fallback = mapBones(skeleton);
+      fallback.preset = 'humanoid';
+      QuickRig.lastMap = fallback;
+      return fallback;
+    }
+    var res = AP.mapBones(skeleton, presetId);
+    var ctrls = AP.controls ? AP.controls(presetId) : null;
+    res.limbs = ctrls ? ctrls.ikChains : [];
+    res.fkBones = ctrls ? ctrls.fkBones : [];
+    QuickRig.lastMap = res;
+    return res;
+  }
+  QuickRig.mapBonesForPreset = mapBonesForPreset;
+  QuickRig.detectAnimalPreset = function (skeleton) {
+    var AP = window.PixiStudio && PixiStudio.ArpAnimalPresets;
+    return (AP && AP.detectPreset) ? AP.detectPreset(skeleton) : 'humanoid';
+  };
 
   /* Sửa map thủ công: đổi xương nguồn của 1 xương đích chuẩn. */
   function setManualMap(dst, srcName) {
@@ -1849,6 +1894,10 @@
         (clips.length ? ' · ' + clips.length + ' clip đã gắn' : ' · không có clip') +
         (warnings.length ? ' — LƯU Ý: ' + warnings.join(' ') : ''), 12000);
       try { bus.emit('arpquickrig:mixamo-done', result); } catch (e) {}
+      /* Undo/Redo toàn diện (v2): AutoGen xong là 1 bước — undo khôi phục
+         POSE trước rig; control rig mới KHÔNG bị tháo (giới hạn đã ghi).
+         Các thao tác pose/clip sau đó vào stack QR3 (sync-history). */
+      try { if (PixiStudio.History) PixiStudio.History.push('Quick Rig AutoGen Mixamo'); } catch (e2) {}
       try { bus.emit('arp:rig-complete', { source: 'quickrig-mixamo', target: target, boneCount: map.mappedCount }); } catch (e) {} /* PHẦN 1 Viewport: tự hiện skeleton sau khi rig */
       return result;
     })();

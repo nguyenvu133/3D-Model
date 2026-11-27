@@ -54,7 +54,12 @@
 }
 .asset-card.drag-over { border-color: var(--accent); border-style: dashed; }
 
-#import-btn-zone { padding: 10px 12px 4px; }
+/* Import zone — đầu panel Asset Library, luôn cố định trên cùng (zone nằm
+   ngoài .panel-body nên không cuộn theo grid; không cần position:sticky).
+   Nút giữ nguyên id/class, chỉ làm nổi bật: primary full-width, cao hơn. */
+#import-btn-zone { flex: none; padding: 10px 12px 8px; background: var(--panel); border-bottom: 1px solid var(--border-soft); }
+#import-btn-zone #btn-import { min-height: 38px; font-size: 13px; font-weight: 800; }
+#import-btn-zone .dim { line-height: 1.35; }
 
 /* Model Tools grid */
 #model-tools { padding: 6px 12px 14px; }
@@ -409,3 +414,139 @@
   line-height: 1.4;
 }
 .history-item:hover { border-color: var(--primary); color: var(--text); }
+
+/* ============================================================
+   ASSET LIBRARY — MỞ RỘNG (nhóm C, 2026-11-27)
+   Toolbar lọc/sắp xếp, favorite/tag, list view, recent,
+   bulk bar, footer đếm + tổng dung lượng. Không sửa rule
+   #import-btn-zone (nhóm A sở hữu).
+   ============================================================ */
+#asset-lib-extra {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  padding: 2px 12px 8px;
+}
+#asset-lib-extra .al-select {
+  flex: 1 1 90px; min-width: 0;
+  font-size: 11px; padding: 5px 6px;
+  background: var(--panel-2); color: var(--text-2);
+  border: 1px solid var(--border-soft); border-radius: 7px;
+}
+#asset-lib-extra .btn.sm.active { background: var(--primary-dim); border-color: rgba(113,59,255,.5); color: #d3c2ff; }
+.asset-tag-filter-note {
+  font-size: 11px; font-weight: 700; color: #ffd479;
+  background: rgba(255,180,60,.12); border: 1px solid rgba(255,180,60,.4);
+  border-radius: 20px; padding: 3px 9px; cursor: pointer;
+}
+#asset-bulk-bar {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  margin: 0 12px 8px; padding: 7px 9px;
+  background: var(--primary-dim); border: 1px solid rgba(113,59,255,.4);
+  border-radius: 9px;
+}
+#asset-bulk-bar .btn.sm.danger { color: #ff9a9a; border-color: rgba(255,90,90,.5); }
+#asset-recent { padding: 2px 12px 8px; }
+#asset-recent .ar-title { font-size: 11px; font-weight: 800; color: var(--text-3); margin-bottom: 6px; }
+#asset-recent .ar-row { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+#asset-recent .ar-chip {
+  flex: none; width: 64px; cursor: pointer;
+  background: var(--panel-2); border: 1px solid var(--border-soft);
+  border-radius: 8px; overflow: hidden; text-align: center;
+}
+#asset-recent .ar-chip:hover { border-color: var(--primary); }
+#asset-recent .ar-chip img { width: 100%; height: 48px; object-fit: cover; display: block; }
+#asset-recent .ar-chip span {
+  display: block; font-size: 9px; font-weight: 700; color: var(--text-2);
+  padding: 3px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#asset-lib-footer {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px 4px;
+}
+#asset-lib-footer .al-foot-btns { margin-left: auto; display: flex; gap: 6px; }
+/* favorite / tag / badge trên card */
+.asset-card .asset-fav {
+  position: absolute; top: 5px; left: 5px; z-index: 2;
+  width: 20px; height: 20px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: rgba(20,20,30,.65); color: #8a8a9e;
+  font-size: 12px; line-height: 1; cursor: pointer;
+}
+.asset-card .asset-fav.on { color: #ffd479; }
+.asset-card .asset-fav:hover { transform: scale(1.15); }
+.asset-card.fav { border-color: rgba(255,212,121,.55); }
+.asset-card .asset-ext {
+  position: absolute; top: 5px; right: 5px; z-index: 2;
+  font-size: 8px; font-weight: 800; letter-spacing: .04em;
+  background: rgba(20,20,30,.7); color: #b79bff;
+  border-radius: 5px; padding: 2px 5px;
+}
+.asset-card.selected::after { z-index: 3; }
+.asset-card .a-meta {
+  padding: 0 7px 2px; font-size: 8.5px; font-weight: 600;
+  color: var(--text-4); font-family: var(--font-mono);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.asset-card .asset-tags {
+  display: flex; gap: 3px; flex-wrap: wrap;
+  padding: 0 7px 6px;
+}
+.asset-tag {
+  font-size: 8.5px; font-weight: 700; color: #9fd8ff;
+  background: rgba(39,191,255,.12); border: 1px solid rgba(39,191,255,.3);
+  border-radius: 20px; padding: 1px 6px; cursor: pointer;
+  white-space: nowrap;
+}
+.asset-tag:hover { background: rgba(39,191,255,.25); }
+.asset-tag-more { font-size: 8.5px; font-weight: 700; color: var(--text-4); }
+.asset-card .asset-check {
+  position: absolute; top: 6px; left: 30px; z-index: 2;
+  width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer;
+}
+/* list view */
+#asset-grid.list-view { display: flex; flex-direction: column; gap: 6px; }
+.asset-row {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--panel-2); border: 1.5px solid var(--border-soft);
+  border-radius: 10px; padding: 6px 10px; cursor: pointer;
+}
+.asset-row:hover { border-color: #4d4d68; }
+.asset-row.selected { border-color: var(--primary); box-shadow: var(--glow-primary); }
+.asset-row .ar-thumb {
+  width: 44px; height: 44px; flex: none; border-radius: 8px; overflow: hidden;
+  background: linear-gradient(150deg, #2c2c40, #20202c);
+  display: grid; place-items: center; color: var(--text-3);
+}
+.asset-row .ar-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.asset-row .ar-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.asset-row .ar-info b {
+  font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.asset-row .ar-info span { font-size: 10.5px; color: var(--text-3); }
+.asset-row .ar-stat { font-size: 11px; font-weight: 700; font-family: var(--font-mono); color: var(--text-2); white-space: nowrap; }
+.asset-row .asset-fav { font-size: 15px; color: #8a8a9e; cursor: pointer; flex: none; }
+.asset-row .asset-fav.on { color: #ffd479; }
+.asset-row .asset-check { width: 16px; height: 16px; accent-color: var(--primary); flex: none; }
+
+/* ============================================================
+ * Asset Library storage (nhóm B, 2026-11-27) — block dung lượng
+ * + badge/nút "thiếu file" trên thẻ asset. Append-only, không sửa
+ * vùng import zone (nhóm A sở hữu).
+ * ============================================================ */
+#asset-storage-block .section-content { padding: 10px 12px; }
+#asset-storage-usage { line-height: 1.5; }
+.asset-card.missing-file { border-color: #e8a13c; opacity: .92; }
+.asset-missing-badge {
+  position: absolute; top: 6px; left: 6px;
+  background: #e8a13c; color: #241a05;
+  font-size: 10px; font-weight: 700;
+  padding: 2px 7px; border-radius: 20px;
+  pointer-events: none; z-index: 2;
+}
+.asset-missing-btn {
+  margin: 4px 8px 8px; padding: 5px 8px;
+  font-size: 11px; font-weight: 600;
+  color: var(--text); background: var(--panel-2);
+  border: 1px solid #e8a13c; border-radius: 7px;
+  cursor: pointer; width: calc(100% - 16px);
+}
+.asset-missing-btn:hover { background: #e8a13c; color: #241a05; }

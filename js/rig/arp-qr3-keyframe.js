@@ -275,6 +275,8 @@
     Keyframe.loop = false;
     hideGhost();
     try { bus.emit('arpqr3:clip-new', { name: Keyframe.clip.name }); } catch (e) {}
+    /* Undo/Redo toàn diện (v2): clip mới là 1 bước — undo khôi phục clip cũ */
+    try { if (window.PixiStudio && PixiStudio.History) PixiStudio.History.push('Keyframe: clip mới ' + Keyframe.clip.name); } catch (e) {}
     return { ok: true, name: Keyframe.clip.name, keys: 0 };
   }
   function setClipName(name) {
@@ -317,6 +319,10 @@
     }
     if (key.t > clip.duration) clip.duration = key.t;
     try { bus.emit('arpqr3:key-recorded', { t: key.t, index: idx, keyCount: clip.keys.length }); } catch (e) {}
+    /* Undo/Redo toàn diện (v2): keyframe clip là dữ liệu JSON thuần nên
+       snapshot toàn cục deep-copy được — undo khôi phục đúng keys cũ.
+       (Keyframe CHƯA được sync-history ghi vào stack QR3.) */
+    try { if (window.PixiStudio && PixiStudio.History) PixiStudio.History.push('Keyframe @' + key.t.toFixed(2) + 's'); } catch (e) {}
     return { ok: true, t: key.t, index: idx, keyCount: clip.keys.length, duration: clip.duration, replaced: replaced };
   }
 
@@ -352,6 +358,8 @@
     var removed = clip.keys.splice(r.index, 1)[0];
     if (clip.keys.length) clip.duration = Math.max(clip.duration, clip.keys[clip.keys.length - 1].t);
     if (Keyframe.time > clip.duration && !Keyframe.loop) Keyframe.time = clip.duration;
+    /* Undo/Redo toàn diện (v2) */
+    try { if (window.PixiStudio && PixiStudio.History) PixiStudio.History.push('Keyframe: xoá key @' + removed.t.toFixed(2) + 's'); } catch (e) {}
     return { ok: true, removedT: removed.t, index: r.index, keyCount: clip.keys.length, duration: clip.duration };
   }
 
@@ -396,6 +404,8 @@
     var removed = clip.keys.splice(r.index, 1)[0];
     if (clip.keys.length) clip.duration = Math.max(clip.duration, clip.keys[clip.keys.length - 1].t);
     if (Keyframe.time > clip.duration && !Keyframe.loop) Keyframe.time = clip.duration;
+    /* Undo/Redo toàn diện (v2) */
+    try { if (window.PixiStudio && PixiStudio.History) PixiStudio.History.push('Keyframe: xoá key @' + removed.t.toFixed(2) + 's'); } catch (e) {}
     return { ok: true, removedT: removed.t, index: r.index, keyCount: clip.keys.length, duration: clip.duration };
   }
 
@@ -501,7 +511,17 @@
       keys.forEach(function (k) {
         var e = (k.pose && k.pose[dst]) || { x: 0, y: 0, z: 0 };
         var q = eulerToQuat(e);
-        values.push(round4(q.x), round4(q.y), round4(q.z), round4(q.w));
+        /* Chuẩn hoá SAU khi làm tròn 4 chữ số (nhóm D): round4 có
+           thể đẩy |q| lên > 1 (vd 1.00004) → dot giữa 2 key kề > 1
+           → THREE r128 slerp coi như "giống hệt" và đóng băng pose
+           cả đoạn rồi nhảy cóc ở key sau (đo được trên clip
+           Keyframe sin: lệch đo "ảo" 1.2–1.7°). Chuẩn hoá các giá
+           trị ĐÃ làm tròn thì |q| = 1 đúng tới sai số float, slerp
+           chạy mượt; giá trị lệch khỏi lưới 4 chữ số ≤ ~1e-4, không
+           đáng kể. */
+        var rx = round4(q.x), ry = round4(q.y), rz = round4(q.z), rw = round4(q.w);
+        var rl = Math.sqrt(rx * rx + ry * ry + rz * rz + rw * rw) || 1;
+        values.push(rx / rl, ry / rl, rz / rl, rw / rl);
       });
       tracks.push({ name: boneFullName(dst) + '.quaternion', times: times.slice(), values: values });
     });
@@ -537,6 +557,57 @@
     var cur = getRig();
     var boneNames = cur ? Object.keys(cur.bones || {}).map(function (dst) { return cur.bones[dst] ? cur.bones[dst].name : dst; }) : [];
     var id = (clip.name || 'Clip 1').replace(/[^A-Za-z0-9_]+/g, '_');
+    /* NÉN (nhóm D — arp-anim-compression.js): chỉ khi opts.compress
+       === true (UI Animator truyền rõ; gọi API không truyền gì thì
+       KHÔNG nén để file cũ byte-identical). Chỉ nén bản XUẤT —
+       clip.keys trong bộ nhớ giữ nguyên để sửa tiếp. */
+    var outKeys = clip.keys;
+    var compStats = null, bytesBefore = null, bytesAfter = null;
+    if (opts.compress === true) {
+      var AC = (window.PixiStudio && PixiStudio.ArpAnimCompression) || null;
+      if (AC && typeof AC.compressKeyframeKeys === 'function') {
+        var ck = AC.compressKeyframeKeys(clip.keys, { posEpsMm: opts.posEpsMm, rotEpsDeg: opts.rotEpsDeg, quantize: opts.quantize });
+        var tracksBefore = tracksFromKeys(clip.keys);
+        var tracksAfter = tracksFromKeys(ck.keys);
+        /* nén cả tracks (loại key thừa theo track + quantize) */
+        var tc = AC.compressPlainTracks(tracksAfter, { posEpsMm: opts.posEpsMm, rotEpsDeg: opts.rotEpsDeg, quantize: opts.quantize });
+        bytesBefore = AC.bytesOfJSON({ keys: clip.keys, tracks: tracksBefore });
+        bytesAfter = AC.bytesOfJSON({ keys: ck.keys, tracks: tc.tracks });
+        outKeys = ck.keys;
+        var dev = AC.measureDeviation(
+          { duration: clip.duration, tracks: tracksBefore },
+          { duration: clip.duration, tracks: tc.tracks },
+          { posEpsMm: opts.posEpsMm, rotEpsDeg: opts.rotEpsDeg });
+        compStats = {
+          keysBefore: clip.keys.length, keysAfter: ck.keys.length, dropped: ck.dropped,
+          keySavedPct: clip.keys.length ? Math.round((1 - ck.keys.length / clip.keys.length) * 1000) / 10 : 0,
+          trackKeysBefore: tc.keysBefore, trackKeysAfter: tc.keysAfter,
+          bytesBefore: bytesBefore, bytesAfter: bytesAfter,
+          savedPct: bytesBefore ? Math.round((1 - bytesAfter / bytesBefore) * 1000) / 10 : 0,
+          maxPosMm: dev.maxPosMm, maxRotDeg: dev.maxRotDeg, samples: dev.samples
+        };
+        try { console.info('[Keyframe] Nén JSON: ' + AC.formatStats(compStats)); } catch (e) {}
+        var data = {
+          format: FORMAT, compressed: true, compression: compStats,
+          character: 'quickrig',
+          skeleton: { boneNames: boneNames, boneCount: boneNames.length },
+          clips: [{
+            id: id, name: clip.name, duration: clip.duration, loop: !!clip.loop,
+            source: 'arp-keyframe', fps: clip.fps || 30,
+            compressed: true, compression: compStats,
+            keys: JSON.parse(JSON.stringify(outKeys)),
+            tracks: tc.tracks
+          }]
+        };
+        var text = JSON.stringify(data, null, 1);
+        var filename = 'quickrig_' + id + '_clips.json';
+        if (opts.download !== false && U && typeof U.downloadText === 'function') {
+          try { U.downloadText(text, filename, 'application/json'); } catch (e) {}
+        }
+        try { bus.emit('notify', { type: 'success', title: 'Keyframe', message: filename + ' — ' + outKeys.length + '/' + clip.keys.length + ' keys (nén), ' + data.clips[0].tracks.length + ' tracks, tiết kiệm ' + compStats.savedPct + '%.' }); } catch (e) {}
+        return { ok: true, json: data, text: text, filename: filename, format: FORMAT, trackCount: data.clips[0].tracks.length, keyCount: outKeys.length, compression: compStats, bytesBefore: bytesBefore, bytesAfter: bytesAfter, savedPct: compStats.savedPct };
+      }
+    }
     var data = {
       format: FORMAT,
       character: 'quickrig',
@@ -554,7 +625,7 @@
       try { U.downloadText(text, filename, 'application/json'); } catch (e) {}
     }
     try { bus.emit('notify', { type: 'success', title: 'Keyframe', message: filename + ' — ' + clip.keys.length + ' keys, ' + data.clips[0].tracks.length + ' tracks.' }); } catch (e) {}
-    return { ok: true, json: data, text: text, filename: filename, format: FORMAT, trackCount: data.clips[0].tracks.length, keyCount: clip.keys.length };
+    return { ok: true, json: data, text: text, filename: filename, format: FORMAT, trackCount: data.clips[0].tracks.length, keyCount: clip.keys.length, compression: null, bytesBefore: null, bytesAfter: null, savedPct: null };
   }
 
   /* Lấy mẫu quaternion tại thời gian t từ 1 track (slerp giữa 2 key

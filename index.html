@@ -10,9 +10,11 @@
 <link rel="stylesheet" href="css/layout.css">
 <link rel="stylesheet" href="css/components.css">
 <link rel="stylesheet" href="css/panels.css">
+<link rel="stylesheet" href="css/physics-panel.css">
 <link rel="stylesheet" href="css/timeline.css">
 <link rel="stylesheet" href="css/responsive.css">
 <link rel="stylesheet" href="css/arp-panel.css">
+<link rel="stylesheet" href="css/anim-graph.css">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%23713BFF'/%3E%3Cpath d='M12 5l7 4v6l-7 4-7-4V9l7-4z' fill='none' stroke='white' stroke-width='1.6'/%3E%3C/svg%3E">
 </head>
 <body>
@@ -68,9 +70,13 @@
       <button class="btn sm" id="btn-save-mixamo-rig" data-tooltip="Save Mixamo Rig — FBX 2013 mesh-only (< 50k tris, texture nhúng), Mixamo tự auto-rig — giống file Thiếu Lâm/Thần Điêu đã sửa → upload mixamo.com"><i data-ic="model"></i><span class="lbl">Save Mixamo Rig</span></button>
       <button class="btn sm" id="btn-save-objzip" data-tooltip="Save OBJ ZIP — xuất ZIP gồm .obj + .mtl + ảnh texture (map_Kd) nên OBJ có màu"><i data-ic="scene"></i><span class="lbl">Save OBJ ZIP</span></button>
       <button class="btn sm" id="btn-convert-glb-fbx" data-tooltip="GLB → FBX Mixamo — chọn file .glb trên máy, chuyển thẳng thành FBX 2013 mesh-only (< 50k tris, texture nhúng) để upload mixamo.com — không cần load model vào scene"><i data-ic="wand"></i><span class="lbl">GLB → FBX Mixamo</span></button>
-      <button class="btn sm" id="btn-optimize-fbx" data-tooltip="Tối ưu FBX < 1MB — giảm tris bằng meshopt (giữ rig + skin) + thu nhỏ texture về JPEG 512px, lặp đến khi file dưới 1MB rồi tải về"><i data-ic="wand"></i><span class="lbl">Tối ưu FBX &lt;1MB</span></button>
+      <button class="btn sm" id="btn-optimize-fbx" data-tooltip="Tối ưu FBX — giảm tris bằng meshopt (giữ rig + skin) + thu nhỏ texture về JPEG 512px, lặp đến khi file dưới mức đã chọn rồi tải về"><i data-ic="wand"></i><span class="lbl">Tối ưu FBX</span></button>
+      <select class="btn sm" id="opt-target-size" data-tooltip="Mức dung lượng mục tiêu cho nút Tối ưu FBX (mặc định <1MB; mức càng nhẹ thì tris càng ít nhưng texture vẫn ưu tiên giữ 512px trước)"><option value="1048576" selected>&lt;1MB</option><option value="716800">&lt;700KB</option><option value="512000">&lt;500KB</option><option value="307200">&lt;300KB</option></select>
       <button class="btn sm" id="btn-auto-rig-pro" data-tooltip="Auto Rig Pro Blend — tự đo landmark trên model chưa rig, dựng skeleton Mixamo 41 xương khớp đúng tỉ lệ model, skin tự động, xuất FBX rigged + script Blender (.py) để lưu thành .blend"><i data-ic="rig"></i><span class="lbl">Auto Rig Pro Blend</span></button>
       <button class="btn sm" id="btn-save-mixamo" data-tooltip="Save Mixamo — xuất FBX 2013 mesh-only (< 50k tris, tự giảm giữ UV khi cần) + texture nhúng (có màu), Mixamo tự auto-rig → upload mixamo.com"><i data-ic="wand"></i><span class="lbl">Save Mixamo</span></button>
+      <button class="btn sm" id="btn-undo" data-tooltip="Undo (Ctrl+Z)" disabled><i data-ic="undo"></i><span class="lbl">Undo</span></button>
+      <button class="btn sm" id="btn-redo" data-tooltip="Redo (Ctrl+Shift+Z / Ctrl+Y)" disabled><i data-ic="redo"></i><span class="lbl">Redo</span></button>
+      <button class="btn sm" id="btn-history" data-tooltip="Lịch sử Undo/Redo — bấm 1 bước để nhảy tới"><i data-ic="history"></i><span class="lbl">Lịch sử</span></button>
       <button class="btn sm" id="btn-save" data-tooltip="Save Project (Ctrl+S)"><i data-ic="save"></i><span class="lbl">Save</span></button>
       <button class="btn sm primary" id="btn-export-top" data-tooltip="Export (GLB/JSON/Image)"><i data-ic="export"></i><span class="lbl">Export</span></button>
       <button class="btn sm" id="btn-whats-new" data-tooltip="Có gì mới trong v21.0"><i data-ic="wand"></i><span class="lbl">What's New</span></button>
@@ -102,6 +108,16 @@
 
       <!-- ===== PAGE: ASSETS (Asset Library) ===== -->
       <div class="lp-page" id="page-assets">
+        <!-- Import ở TRÊN CÙNG panel (ngoài .panel-body nên luôn cố định, không cuộn theo grid) -->
+        <div id="import-btn-zone">
+          <button class="btn primary block" id="btn-import">
+            <i data-ic="import"></i>&nbsp; Import 3D / Image / FBX / GLB
+          </button>
+          <div class="dim small" style="text-align:center;margin-top:6px;">
+            Kéo &amp; thả file vào đây — hoặc dùng Import · <span class="state-badge off">FBX ⏸ cần converter</span>
+          </div>
+        </div>
+
         <div id="asset-lib-head" style="flex:none;">
           <div class="ah-row">
             <div class="search-box grow">
@@ -122,15 +138,6 @@
 
           <div id="asset-grid">
             <!-- Asset cards render bởi assets/asset-library.js -->
-          </div>
-
-          <div id="import-btn-zone">
-            <button class="btn primary block" id="btn-import">
-              <i data-ic="import"></i>&nbsp; Import 3D / Image / FBX / GLB
-            </button>
-            <div class="dim small" style="text-align:center;margin-top:6px;">
-              Kéo &amp; thả file vào đây — hoặc dùng Import · <span class="state-badge off">FBX ⏸ cần converter</span>
-            </div>
           </div>
 
           <div class="section-block" id="model-tools-block" style="margin:10px 12px 14px;">
@@ -538,9 +545,15 @@
 <!-- ============ MODELS & ASSETS ============ -->
 <script src="js/models/sample-model.js"></script>
 <script src="js/models/obj-texture-core.js"></script>
+<script src="js/assets/fbx-import.js"></script>
 <script src="js/models/model-manager.js"></script>
 <script src="js/assets/importers.js"></script>
 <script src="js/assets/asset-library.js"></script>
+<script src="js/assets/asset-library-storage.js"></script>
+<!-- Asset Library Preview (nhóm D — animation preview): WRAP
+     Library._buildCard/_buildRow/showDetails lúc load, KHÔNG sửa
+     asset-library.js. Load SAU asset-library.js. -->
+<script src="js/assets/asset-library-preview.js"></script>
 <script src="js/mesh/lod-generator.js"></script>
 
 <!-- ============ RIGGING & ANIMATION ============ -->
@@ -561,12 +574,37 @@
 <!-- ARP AutoMatch: PHẢI load TRƯỚC arp-smart.js / arp-remap.js /
      arp-quickrig.js (3 module đều tra PixiStudio.ArpAutoMatch khi chạy). -->
 <script src="js/rig/arp-automatch.js"></script>
+<!-- ARP RestPose + AnimMirror (NHÓM B, Animation): bù rest pose khi
+     retarget + mirror clip đúng qua YZ. Load SAU arp-automatch.js và
+     TRƯỚC arp-remap.js / arp-animator.js (2 module tra lười lúc chạy
+     qua PixiStudio.ArpRestPose / ArpAnimMirror nên thứ tự không cứng,
+     nhưng để trước cho tab Remap/Animator dùng ngay khi render). -->
+<script src="js/rig/arp-restpose.js"></script>
+<!-- NHÓM 6 — Animal presets: PHẢI load TRƯỚC arp-smart.js /
+     arp-quickrig.js (2 module đều tra PixiStudio.ArpAnimalPresets). -->
+<script src="js/rig/arp-animal-presets.js"></script>
 <script src="js/rig/arp-smart.js"></script>
+<!-- NHÓM 1 — Decimation + Shape analysis: load SAU arp-smart.js
+     (arp-decimate.js tra PixiStudio.ArpSmart/AutoRigPro khi chạy,
+     tab Smart gọi ArpDecimate.analyzeShape/decimate). -->
+<script src="js/rig/arp-decimate.js"></script>
 <script src="js/rig/arp-remap.js"></script>
+<!-- NHÓM 2 — Retarget scale-aware: load SAU arp-remap.js
+     (arp-remap.js tra PixiStudio.ArpRetargetScale khi chạy). -->
+<script src="js/rig/arp-retarget-scale.js"></script>
 <script src="js/rig/arp-export.js"></script>
 <script src="js/rig/arp-quickrig.js"></script>
+<!-- ARP Constraints (NHÓM 3): bone constraint system — load SAU
+     arp-quickrig.js (đăng ký section 'constraints' vào tab Quick Rig).
+     AdvIK được tra lười lúc chạy nên thứ tự với arp-qr3-advik.js
+     không quan trọng. -->
+<script src="js/rig/arp-constraints.js"></script>
 <script src="js/rig/arp-qr3-pose.js"></script>
 <script src="js/rig/arp-qr3-keyframe.js"></script>
+<!-- Animation Compression (nhóm D): nén clip khi xuất JSON
+     (loại key thừa + quantize float16/mm). Load SAU keyframe và
+     TRƯỚC animator (cả 2 dùng PS.ArpAnimCompression lúc export). -->
+<script src="js/rig/arp-anim-compression.js"></script>
 <script src="js/rig/arp-qr3-advik.js"></script>
 <script src="js/rig/arp-qr3-gizmo.js"></script>
 <script src="js/rig/arp-qr3-face.js"></script>
@@ -584,6 +622,12 @@
      plugin 'mixamo-rig' vào ArpPlugins (tab riêng). Load SAU
      arp-autofix.js và SAU arp-qr3-advik.js (dùng lại blendIKFK). -->
 <script src="js/rig/arp-plugin-mixamorig.js"></script>
+<!-- ARP Rig Layers + Validation (Nhóm 5, vòng Rig mở rộng): tách rig
+     thành Deform/Control/Mechanism + kiểm chứng rig tự động (9 rule).
+     Load SAU arp-quickrig.js (dùng BONE_DEFS khi có) và SAU
+     arp-panel.js (đăng ký 2 tab 'riglayers' + 'validation'). -->
+<script src="js/rig/arp-riglayers.js"></script>
+<script src="js/rig/arp-validate.js"></script>
 <script src="js/rigging/meshy-rigging.js"></script>
 <script src="js/rigging/character-controller.js"></script>
 <script src="js/animation/presets.js"></script>
@@ -608,6 +652,12 @@
 <!-- ARP Animator (tab Animator): load sau arp-vp-toolbar để dùng lại các
      module hiển thị viewport (skeleton/IK/trails). -->
 <script src="js/rig/arp-animator.js"></script>
+<!-- ARP Mirror thật + Bone Roll Editor (Nhóm 4, vòng Rig mở rộng):
+     load SAU arp-animator.js (mirrorCurrentAnimatorClip tra Animator
+     lúc chạy; mirror/roll đều đăng ký section vào tab Quick Rig qua
+     ArpQuickRig.registerSection — Quick Rig load trước đó). -->
+<script src="js/rig/arp-mirror.js"></script>
+<script src="js/rig/arp-roll.js"></script>
 <!-- ARP Sync Quick Rig ↔ Animator (vòng đồng bộ): load SAU animator.js
      (và sau keyframe/pose/liveretarget/remap/mixamorig/vp-*). Thứ tự:
      clips → control → history → viewport (control bọc tick trước,
@@ -616,9 +666,30 @@
 <script src="js/rig/arp-sync-control.js"></script>
 <script src="js/rig/arp-sync-history.js"></script>
 <script src="js/rig/arp-sync-viewport.js"></script>
+<!-- ARP Video → Animation (nhóm E, stretch goal): load SAU sync-viewport
+     (dùng Keyframe.importClip + Animator.registerClip khi có). Nạp
+     MediaPipe bằng dynamic import() trong module (tasks-vision chỉ có
+     bản ESM, không có UMD) — không thêm <script src> CDN ở đây. -->
+<script src="js/rig/arp-anim-video.js"></script>
 <script src="js/animation/anim-auto-gen.js"></script>
 <script src="js/animation/ik-solver.js"></script>
 <script src="js/animation/anim-blender.js"></script>
+<!-- Animation Layers + Curve Editor (nhóm A, vòng Animation mở rộng):
+     load SAU anim-blender.js (dùng AnimBlender) và TRƯỚC blendtree
+     (blendtree dùng Animator API, không đụng 2 module này). -->
+<script src="js/animation/anim-layers.js"></script>
+<script src="js/animation/anim-curves.js"></script>
+<!-- Anim Graph: Blend Tree + State Machine + visual editor (vòng Anim Graph).
+     Load SAU anim-blender.js (dùng AnimBlender) và SAU arp-sync-clips.js
+     (clipList/resolveClip) + arp-animator.js (bus/tích hợp phát). -->
+<script src="js/animation/anim-blendtree.js"></script>
+<script src="js/animation/anim-statemachine.js"></script>
+<!-- Anim Graph store đa-graph + preview thumbnail (SM2, vòng Animation
+     mở rộng): store TRƯỚC editor (editor dùng Store()), preview SAU
+     editor (dùng Editor + AssetLibrary). -->
+<script src="js/animation/anim-graph-store.js"></script>
+<script src="js/animation/anim-graph-editor.js"></script>
+<script src="js/animation/anim-graph-asset-preview.js"></script>
 <script src="js/animation/pose-library.js"></script>
 <script src="js/animation/anim-queue.js"></script>
 <script src="js/animation/anim-prompt.js"></script>
@@ -632,10 +703,24 @@
 <script src="js/materials/material-manager.js"></script>
 <script src="js/textures/texture-manager.js"></script>
 <script src="js/scene/scene-manager.js"></script>
+<script src="js/scene/scene-prefab.js"></script>
+<script src="js/scene/scene-templates.js"></script>
+<script src="js/scene/scene-lightbake.js"></script>
+<script src="js/scene/scene-culling.js"></script>
 <script src="js/scene/scene-director.js"></script>
+<!-- Scene Streaming + Diff/Merge + Validation (vòng Prefab + Scene System):
+     load SAU scene-manager.js (dùng Scene.registry/serializeObjects) và
+     SAU scene-director.js. Không sửa core scene-manager.js. -->
+<script src="js/scene/scene-streaming.js"></script>
+<script src="js/scene/scene-diff.js"></script>
+<script src="js/scene/scene-validate.js"></script>
+<script src="js/physics/physics-engine.js"></script>
+<script src="js/physics/physics-ragdoll.js"></script>
 <script src="js/physics/physics-manager.js"></script>
+<script src="js/physics/physics-panel.js"></script>
 
 <!-- ============ AI ============ -->
+<script src="js/ai/local-autogen.js"></script>
 <script src="js/ai/tripo-adapter.js"></script>
 <script src="js/ai/meshy-adapter.js"></script>
 <script src="js/ai/ai-panel.js"></script>
@@ -655,6 +740,7 @@
 <script src="js/exporter/mixamo-safe-export.js"></script>
 <script src="js/exporter/glb-writer.js"></script>
 <script src="js/exporter/zip-writer.js"></script>
+<script src="js/workers/worker-bridge.js"></script>
 <script src="js/exporter/save-manager.js"></script>
 <script src="js/exporter/export-presets.js"></script>
 <script src="js/performance/monitor.js"></script>
@@ -665,6 +751,7 @@
 <script src="js/ui/toolbar.js"></script>
 <script src="js/ui/smart-panel.js"></script>
 <script src="js/ui/topbar.js"></script>
+<script src="js/ui/history-panel.js"></script>
 <script src="js/ui/panels.js"></script>
 <script src="js/ui/shortcuts.js"></script>
 

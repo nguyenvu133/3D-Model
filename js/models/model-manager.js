@@ -179,17 +179,75 @@
      Sửa 2026-11-26: import .fbx từng bị importers.js chặn cứng ("FBX import chưa
      khả dụng") dù fflate + FBXLoader đã load sẵn ở index.html:494-497. File
      thieulam-Rigged-FixedAxes.fbx (Binary 7300, 46.847 tris, 41 bones mixamorig,
-     1 clip Walk 5.958s) parse OK bằng chính loader này — chỉ thiếu đường dây. */
-  Manager.loadFBXFromBuffer = function (arrayBuffer, name, fileSize) {
+     1 clip Walk 5.958s) parse OK bằng chính loader này — chỉ thiếu đường dây.
+     Sửa 2026-11-27 (nhóm 1 — FBX import hoàn chỉnh): đi qua
+     PixiStudio.FbxImport.parseDetailed — detect version trước khi parse
+     (binary 6100/7300/7400/7500/7700 + ASCII 7.x, lỗi có mã + gợi ý sửa),
+     progress theo giai đoạn, chuẩn hóa tên xương mixamorig:, validate
+     skeleton/skin/morph/texture, liệt kê mọi take, báo cáo đầy đủ gắn vào
+     entry.fbxReport. opts = { batch, canonicalize, onProgress }.
+     Fallback parse trực tiếp nếu module fbx-import.js chưa load. */
+  Manager.loadFBXFromBuffer = function (arrayBuffer, name, fileSize, opts) {
+    opts = opts || {};
+    if (!window.THREE || !THREE.FBXLoader) {
+      return Promise.reject(new Error('FBXLoader chưa sẵn sàng (CDN lỗi?). Kiểm tra kết nối mạng.'));
+    }
+    if (typeof fflate === 'undefined') {
+      return Promise.reject(new Error('fflate chưa sẵn sàng (CDN lỗi?). Kiểm tra kết nối mạng.'));
+    }
+    /* --- Đường dây mới: FbxImport.parseDetailed --- */
+    if (PixiStudio.FbxImport && PixiStudio.FbxImport.parseDetailed) {
+      var FI = PixiStudio.FbxImport;
+      PixiStudio.Notifications.showLoading('Đang parse ' + (name || 'model') + '…');
+      return FI.parseDetailed(arrayBuffer, {
+        name: name || 'model.fbx',
+        batch: opts.batch || null,
+        canonicalize: opts.canonicalize,
+        onProgress: function (stage, pct, msg) {
+          if (PixiStudio.Notifications.updateLoading) {
+            PixiStudio.Notifications.updateLoading(pct, msg || ('Đang parse ' + (name || 'model') + '…'));
+          }
+          if (typeof opts.onProgress === 'function') { try { opts.onProgress(stage, pct, msg); } catch (e) {} }
+        }
+      }).then(function (result) {
+        PixiStudio.Notifications.hideLoading();
+        var object = result.object;
+        var report = result.report;
+        Manager.normalize(object);
+        object.traverse(function (o) {
+          if (o.isMesh) { o.castShadow = true; o.receiveShadow = false; }
+        });
+        /* FIX IAB BLOCK: downscale texture display — như GLB */
+        if (PixiStudio.Textures) PixiStudio.Textures.optimizeDisplay(object, (PixiStudio.State.settings && PixiStudio.State.settings.displayTextureMax) || 512);
+        var entry = registerModel(object, {
+          name: name || 'FBX Model',
+          isGLB: false,
+          isFBX: true,
+          fileSize: fileSize || 0,
+          clips: object.animations || []   // AnimationClip từ FBX (mọi take)
+        });
+        entry.fbxReport = report;
+        entry.fbxTakes = report.clips;
+        bus.emit('fbx:imported', {
+          id: entry.id, name: entry.name, report: report,
+          fileSize: fileSize || 0
+        });
+        if (report.warnings && report.warnings.length) {
+          bus.emit('notify', {
+            type: 'warning', title: 'FBX import xong — ' + report.warnings.length + ' cảnh báo',
+            message: report.warnings[0].message + (report.warnings[0].hint ? ' ' + report.warnings[0].hint : '')
+          });
+        }
+        return entry;
+      }).catch(function (err) {
+        PixiStudio.Notifications.hideLoading();
+        console.error('[ModelManager] FBX parse lỗi:', err);
+        var fmt = FI.formatError(err);
+        return Promise.reject(new Error(fmt.message));
+      });
+    }
+    /* --- Fallback: parse trực tiếp (fbx-import.js chưa load) --- */
     return new Promise(function (resolve, reject) {
-      if (!window.THREE || !THREE.FBXLoader) {
-        reject(new Error('FBXLoader chưa sẵn sàng (CDN lỗi?). Kiểm tra kết nối mạng.'));
-        return;
-      }
-      if (typeof fflate === 'undefined') {
-        reject(new Error('fflate chưa sẵn sàng (CDN lỗi?). Kiểm tra kết nối mạng.'));
-        return;
-      }
       PixiStudio.Notifications.showLoading('Đang parse ' + (name || 'model') + '…');
       var object;
       try {

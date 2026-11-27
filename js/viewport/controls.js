@@ -38,7 +38,27 @@
   };
 
   /* ---------- Pointer handling ---------- */
+  /* FIX pointer-capture (2026-11-27): chỉ coi pointerdown là thao tác
+   * viewport khi nó rơi TRỰC TIẾP lên bề mặt viewport — chính wrap hoặc
+   * 1 trong 2 canvas render (#three-canvas, #pixi-overlay). Trước đây
+   * MỌI pointerdown bubbling từ con cháu trong wrap (vd nút toolbar ARP
+   * View) cũng bị setPointerCapture + bắt đầu drag, nên pointerup/click
+   * bị retarget về wrap DIV và handler của nút không chạy (đo thật trên
+   * chuột: pointerdown target=BUTTON, pointerup/click target=DIV,
+   * handler 0 lần; tap cảm ứng cũng bị retarget pointerup). Nút/input/
+   * panel/HUD trong wrap được bỏ qua hoàn toàn: không capture, không
+   * drag, không track pointer — sự kiện cứ bubble bình thường tới nút. */
+  Controls._isViewportTarget = function (target) {
+    if (!target) return false;
+    if (target === Controls._dom) return true;
+    /* Canvas không có con hiển thị được nên target là CANVAS chắc chắn
+     * là 1 trong 2 canvas render trong wrap; mọi phần tử DOM khác
+     * (toolbar, HUD, panel, nút...) đều là UI. */
+    return target.tagName === 'CANVAS';
+  };
+
   Controls._onPointerDown = function (e) {
+    if (!Controls._isViewportTarget(e.target)) return;
     Controls._dom.setPointerCapture && Controls._dom.setPointerCapture(e.pointerId);
     Controls._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
@@ -122,6 +142,9 @@
   };
 
   Controls._onContextMenu = function (e) {
+    /* Cùng nguyên nhân pointer-capture: chuột phải lên nút/panel trong
+     * wrap không được mở menu context của viewport. */
+    if (!Controls._isViewportTarget(e.target)) return;
     e.preventDefault();
     /* Chọn object dưới chuột trước khi mở menu */
     const hit = Controls.raycastAt(e.clientX, e.clientY);
@@ -133,6 +156,8 @@
   };
 
   Controls._onDblClick = function (e) {
+    /* Double-click lên nút/panel trong wrap không phải focus viewport. */
+    if (!Controls._isViewportTarget(e.target)) return;
     /* Double click → focus object dưới chuột */
     const hit = Controls.raycastAt(e.clientX, e.clientY);
     if (hit) {

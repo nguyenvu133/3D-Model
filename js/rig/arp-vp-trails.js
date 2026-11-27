@@ -41,6 +41,15 @@
  *     RightWrist, LeftAnkle/RightAnkle nếu rig dùng tên đó.
  *   • Mỗi khớp 1 THREE.Line, N điểm gần nhất (mặc định 30, chỉnh
  *     được 2..120 — MAX_TRAIL_LENGTH=120, cap cứng chống nặng máy).
+ *   • VIEW2 — vệt DÀY mặc định: ngoài line 1px còn có 1 dải ribbon
+ *     (triangle strip quay về camera, rộng 0.02m) vẽ cùng dữ liệu
+ *     điểm, cùng màu/độ mờ/fade với line — vì WebGL bỏ qua
+ *     LineBasicMaterial.linewidth (>1px không có tác dụng). Đổi về
+ *     line 1px bằng setTrailStyle('line').
+ *   • VIEW2 — đường root motion: ghi vị trí Hips (world) trong lúc
+ *     phát clip, vẽ thành ribbon màu hổ phách rộng 0.025m (tối đa
+ *     240 điểm); giữ lại sau khi dừng để xem lại, xóa khi phát clip
+ *     mới hoặc gọi clearRootMotion(). Layer riêng 'rootmotion'.
  *   • Màu theo chi, thống nhất màu gizmo (arp-qr3-gizmo.js):
  *     trái = Gizmo.COLORS.left (0x3388ff xanh dương), phải =
  *     Gizmo.COLORS.right (0xff3344 đỏ), giữa = COLORS.center
@@ -85,7 +94,13 @@
  *   • Onion với clip THREE chỉ sample được track xương có tên map
  *     được về rig; track morph / tên lạ bị bỏ qua.
  *   • Ghost là bóng 17 khớp, không phải mesh nhân vật mờ; trail là
- *     THREE.Line (độ dày 1px, WebGL không hỗ trợ lineWidth > 1).
+ *     THREE.Line (độ dày 1px, WebGL không hỗ trợ lineWidth > 1) +
+ *     ribbon dày đi kèm (xem TRAILS); tắt ribbon bằng
+ *     setTrailStyle('line') thì chỉ còn line 1px.
+ *   • Đường root motion ghi vị trí Hips theo WORLD (scene gốc) —
+ *     model lồng dưới group có transform khác identity thì đường
+ *     vẫn đúng theo world, nhưng ribbon gắn vào scene nên model
+ *     di chuyển cả group sẽ không kéo đường theo.
  *   • Màu gradient đuôi vệt là độ sáng vertex color, không phải
  *     alpha từng điểm (LineBasicMaterial không có alpha/điểm).
  * ============================================================ */
@@ -138,7 +153,13 @@
     fadePhase: 'none',      /* 'none'|'hold'|'fading' */
     fadeT: 0,
     registered: false,
-    registerError: ''
+    registerError: '',
+    /* VIEW2 — ribbon dày + đường root motion */
+    trailStyle: 'ribbon',   /* 'line' (1px cũ) | 'ribbon' (dải dày mặc định) */
+    ribbonWidth: 0.02,      /* bề rộng dải vệt, mét */
+    rootMotionEnabled: false,
+    rootMotionColor: 0xffd166,
+    rootMotionWidth: 0.025   /* bề rộng đường root motion, mét */
   };
 
   /* buffers + THREE objects (tạo lười khi có THREE + rig) */
@@ -146,6 +167,13 @@
   var trailLines = {};     /* joint -> {line, geometry, positions, colors, material, color} */
   var trailGroup = null;   /* THREE.Group chứa các line, gắn vào scene */
   var trailParent = null;  /* parent hiện tại của trailGroup */
+  /* VIEW2 — ribbon dày + đường root motion */
+  var ribbonMeshes = {};   /* joint -> {mesh, geometry, positions, material} */
+  var rootMotionPoints = []; /* [[x,y,z],...] vị trí Hips (world) */
+  var rootMotionRibbon = null; /* {mesh, geometry, positions, material} */
+  var rootMotionGroup = null;  /* THREE.Group chứa ribbon root motion, gắn vào scene */
+  var MAX_ROOT_POINTS = 240;
+  var ROOT_DEDUP_EPS = 0.001; /* <1mm so với điểm cuối → bỏ qua */
   var ghostPrev = null;    /* {group, meshes:{joint:mesh}, material, joints} */
   var ghostNext = null;
   var ghostTarget = null;  /* rig target mà ghost đang gắn vào */
@@ -373,6 +401,95 @@
     trailLines[joint] = { line: line, geometry: geo, positions: positions, colors: colors, material: mat, hex: hex };
     return trailLines[joint];
   }
+  /* ---------- VIEW2: ribbon dày (vượt giới hạn line 1px) ---------- */
+  /* Dải ribbon = triangle strip quay về camera: mỗi điểm 2 đỉnh lệch
+     ±width/2 theo hướng vuông góc với (hướng đoạn × hướng nhìn).
+     Geometry tiền cấp phát (2*maxPoints đỉnh, index cố định), mỗi
+     frame chỉ ghi lại positions — rẻ như line nhưng thấy rõ hơn
+     nhiều trên màn hình. */
+  function makeRibbon(maxPoints, colorHex, opacity) {
+    var T = window.THREE;
+    var geo = new T.BufferGeometry();
+    var positions = new Float32Array(maxPoints * 2 * 3);
+    var idx = new Uint16Array(Math.max(0, (maxPoints - 1)) * 6);
+    for (var i = 0; i < maxPoints - 1; i++) {
+      var a = i * 2, b = i * 2 + 1, c = i * 2 + 2, d = i * 2 + 3;
+      var o = i * 6;
+      idx[o] = a; idx[o + 1] = b; idx[o + 2] = c;
+      idx[o + 3] = b; idx[o + 4] = d; idx[o + 5] = c;
+    }
+    geo.setAttribute('position', new T.BufferAttribute(positions, 3));
+    geo.setIndex(new T.BufferAttribute(idx, 1));
+    geo.setDrawRange(0, 0);
+    var mat = new T.MeshBasicMaterial({
+      color: colorHex, transparent: true, opacity: opacity,
+      depthTest: false, side: T.DoubleSide
+    });
+    var mesh = new T.Mesh(geo, mat);
+    mesh.userData.isBoneVisual = true; /* không nướng vào FBX/GLB export */
+    mesh.visible = false;
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 996;
+    return { mesh: mesh, geometry: geo, positions: positions, material: mat, maxPoints: maxPoints };
+  }
+  /* Hướng nhìn của camera chính (để ribbon quay về camera). */
+  function getViewDir() {
+    try {
+      var cam = PS.Viewport && PS.Viewport.orbit && PS.Viewport.orbit.camera;
+      if (cam && typeof cam.getWorldDirection === 'function') {
+        var d = new window.THREE.Vector3();
+        cam.getWorldDirection(d);
+        return d;
+      }
+    } catch (e) {}
+    return null;
+  }
+  function ensureTrailRibbon(joint) {
+    if (!window.THREE) return null;
+    if (ribbonMeshes[joint]) return ribbonMeshes[joint];
+    var g = ensureTrailGroup();
+    if (!g) return null;
+    var rb = makeRibbon(MAX_TRAIL_LENGTH, colorForJoint(joint), state.trailOpacity);
+    rb.mesh.name = '__arp_vp_ribbon_' + joint;
+    try { g.add(rb.mesh); } catch (e) { return null; }
+    ribbonMeshes[joint] = rb;
+    return rb;
+  }
+  /* Điền dải ribbon dọc theo pts (mảng [x,y,z]). viewDir là Vector3
+     hướng nhìn (null → dùng -Z). Trả số chỉ số tam giác vẽ được. */
+  function updateRibbon(rb, pts, width, viewDir) {
+    if (!rb || !pts) return 0;
+    var n = pts.length;
+    var pos = rb.positions;
+    var half = width / 2;
+    var vd = viewDir || { x: 0, y: 0, z: -1 };
+    for (var i = 0; i < n; i++) {
+      var p = pts[i];
+      var pn = pts[Math.min(i + 1, n - 1)];
+      var pp = pts[Math.max(i - 1, 0)];
+      var dx = pn[0] - pp[0], dy = pn[1] - pp[1], dz = pn[2] - pp[2];
+      var dl = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+      dx /= dl; dy /= dl; dz /= dl;
+      /* side = normalize(cross(dir, viewDir)); song song thì dùng up */
+      var sx = dy * vd.z - dz * vd.y;
+      var sy = dz * vd.x - dx * vd.z;
+      var sz = dx * vd.y - dy * vd.x;
+      var sl = Math.sqrt(sx * sx + sy * sy + sz * sz);
+      if (sl < 1e-6) {
+        sx = -dz; sy = 0; sz = dx;
+        sl = Math.sqrt(sx * sx + sz * sz) || 1;
+      }
+      sx /= sl; sy /= sl; sz /= sl;
+      var o = i * 6;
+      pos[o] = p[0] + sx * half; pos[o + 1] = p[1] + sy * half; pos[o + 2] = p[2] + sz * half;
+      pos[o + 3] = p[0] - sx * half; pos[o + 4] = p[1] - sy * half; pos[o + 5] = p[2] - sz * half;
+    }
+    rb.geometry.attributes.position.needsUpdate = true;
+    rb.geometry.setDrawRange(0, n >= 2 ? (n - 1) * 6 : 0);
+    rb.geometry.computeBoundingSphere();
+    return n >= 2 ? (n - 1) * 6 : 0;
+  }
+
   function updateTrailLine(joint) {
     var tl = ensureTrailLine(joint);
     if (!tl) return;
@@ -392,6 +509,18 @@
     tl.geometry.computeBoundingSphere();
     tl.line.visible = state.trailsEnabled && n >= 2 && (state.playing || state.fadePhase !== 'none');
     tl.material.opacity = state.trailOpacity * fadeOpacityFactor();
+    /* VIEW2 — ribbon dày: cùng dữ liệu điểm, cùng độ mờ/fade với
+       line; line 1px vẫn giữ (harness cũ + fallback khi tắt ribbon). */
+    if (state.trailStyle === 'ribbon') {
+      var rb = ensureTrailRibbon(joint);
+      if (rb) {
+        updateRibbon(rb, pts, state.ribbonWidth, getViewDir());
+        rb.mesh.visible = tl.line.visible;
+        rb.material.opacity = tl.material.opacity;
+      }
+    } else if (ribbonMeshes[joint]) {
+      ribbonMeshes[joint].mesh.visible = false;
+    }
   }
   function fadeOpacityFactor() {
     if (state.fadePhase === 'fading' && state.fadeDuration > 0) {
@@ -406,8 +535,74 @@
     TRAIL_JOINTS.forEach(function (j) {
       var tl = ensureTrailLine(j);
       if (tl && tl.line.parent !== g) { try { g.add(tl.line); } catch (e) {} }
+      var rb = ribbonMeshes[j];
+      if (rb && rb.mesh.parent !== g) { try { g.add(rb.mesh); } catch (e) {} }
     });
     return true;
+  }
+
+  /* ---------- VIEW2: đường root motion (vị trí Hips) ---------- */
+  function ensureRootMotionGroup() {
+    if (!window.THREE) return null;
+    var parent = getScene();
+    if (!parent) {
+      var t = getTarget();
+      parent = (t && t.parent) || t || null;
+    }
+    if (!parent) return null;
+    if (!rootMotionGroup) {
+      rootMotionGroup = new window.THREE.Group();
+      rootMotionGroup.name = '__arp_vp_rootmotion__';
+    }
+    if (rootMotionGroup.parent !== parent) {
+      try { if (rootMotionGroup.parent) rootMotionGroup.parent.remove(rootMotionGroup); } catch (e) {}
+      try { parent.add(rootMotionGroup); } catch (e) { return null; }
+    }
+    return rootMotionGroup;
+  }
+  /* Ghi 1 điểm Hips (world) vào đường root motion + vẽ lại ribbon.
+     Gọi mỗi frame khi đang phát và rootMotionEnabled. */
+  function sampleRootMotion() {
+    if (!state.rootMotionEnabled) return { ok: false, reason: 'rootmotion tắt' };
+    if (!window.THREE) return { ok: false, reason: 'THREE chưa sẵn sàng.' };
+    var bm = buildBoneMap();
+    var hips = bm.map['hips'];
+    if (!hips) return { ok: false, reason: 'không tìm được Hips' };
+    var g = ensureRootMotionGroup();
+    if (!g) return { ok: false, reason: 'không gắn được root-motion group vào scene' };
+    if (!rootMotionRibbon) {
+      rootMotionRibbon = makeRibbon(MAX_ROOT_POINTS, state.rootMotionColor, 0.9);
+      rootMotionRibbon.mesh.name = '__arp_vp_rootmotion_path__';
+      try { g.add(rootMotionRibbon.mesh); } catch (e) { return { ok: false, reason: 'không gắn được ribbon root motion' }; }
+    }
+    var tgt = bm.target || getTarget();
+    try { if (tgt) tgt.updateMatrixWorld(true); } catch (e) {}
+    var wp = worldPosOf(hips);
+    var last = rootMotionPoints.length ? rootMotionPoints[rootMotionPoints.length - 1] : null;
+    if (last) {
+      var dx = wp.x - last[0], dy = wp.y - last[1], dz = wp.z - last[2];
+      if (dx * dx + dy * dy + dz * dz >= ROOT_DEDUP_EPS * ROOT_DEDUP_EPS) {
+        rootMotionPoints.push([round4(wp.x), round4(wp.y), round4(wp.z)]);
+      }
+    } else {
+      rootMotionPoints.push([round4(wp.x), round4(wp.y), round4(wp.z)]);
+    }
+    while (rootMotionPoints.length > MAX_ROOT_POINTS) rootMotionPoints.shift();
+    updateRibbon(rootMotionRibbon, rootMotionPoints, state.rootMotionWidth, getViewDir());
+    rootMotionRibbon.mesh.visible = rootMotionPoints.length >= 2;
+    rootMotionRibbon.material.opacity = 0.9;
+    return { ok: true, points: rootMotionPoints.length };
+  }
+  function clearRootMotion() {
+    rootMotionPoints = [];
+    if (rootMotionRibbon) {
+      rootMotionRibbon.geometry.setDrawRange(0, 0);
+      rootMotionRibbon.mesh.visible = false;
+    }
+    return { ok: true, cleared: true };
+  }
+  function getRootMotionPoints() {
+    return rootMotionPoints.map(function (p) { return [p[0], p[1], p[2]]; });
   }
 
   /* ---------- ghost THREE objects ---------- */
@@ -805,6 +1000,11 @@
         tl.geometry.setDrawRange(0, 0);
         tl.line.visible = false;
       }
+      var rb = ribbonMeshes[j];
+      if (rb) {
+        rb.geometry.setDrawRange(0, 0);
+        rb.mesh.visible = false;
+      }
     });
     state.fadePhase = 'none';
     state.fadeT = 0;
@@ -907,6 +1107,9 @@
     if (!prevPlaying && nowPlaying) {
       /* phát mới: vệt cũ (nếu keepOnStop giữ lại) xóa để vệt mới sạch */
       if (state.fadePhase !== 'none' || state.keepOnStop) clearTrails();
+      /* VIEW2: đường root motion cũng xóa để vẽ lại từ đầu clip mới;
+         đường cũ giữ lại sau khi DỪNG (xem lại) cho tới lần phát sau. */
+      if (state.rootMotionEnabled) clearRootMotion();
       state.fadePhase = 'none';
       state.fadeT = 0;
       lastGhostKey = '';
@@ -941,6 +1144,8 @@
 
     var sampled = null;
     if (state.trailsEnabled) sampled = sampleTrails();
+    var rootRes = null;
+    if (state.rootMotionEnabled) rootRes = sampleRootMotion();
     var onionRes = updateOnion(info);
     return {
       ok: true, playing: true, source: info.source, time: info.time,
@@ -948,6 +1153,7 @@
       fading: 'none', trailCounts: trailCounts(),
       trailSampled: sampled ? sampled.ok : false,
       trailError: sampled && !sampled.ok ? sampled.error : '',
+      rootMotion: { enabled: state.rootMotionEnabled, points: rootMotionPoints.length, sampled: !!(rootRes && rootRes.ok) },
       onion: { prev: !!(onionRes && onionRes.prev), next: !!(onionRes && onionRes.next), cached: !!(onionRes && onionRes.cached) }
     };
   }
@@ -961,7 +1167,10 @@
   function setTrailsEnabled(v) {
     state.trailsEnabled = !!v;
     if (!state.trailsEnabled) {
-      TRAIL_JOINTS.forEach(function (j) { var tl = trailLines[j]; if (tl) tl.line.visible = false; });
+      TRAIL_JOINTS.forEach(function (j) {
+        var tl = trailLines[j]; if (tl) tl.line.visible = false;
+        var rb = ribbonMeshes[j]; if (rb) rb.mesh.visible = false;
+      });
     } else {
       TRAIL_JOINTS.forEach(function (j) { updateTrailLine(j); });
     }
@@ -1034,6 +1243,36 @@
     return { ok: true, keepOnStop: state.keepOnStop };
   }
 
+  /* ---------- VIEW2: setters kiểu trail + root motion ---------- */
+  function setTrailStyle(s) {
+    if (s !== 'line' && s !== 'ribbon') return { ok: false, error: 'Kiểu trail phải là "line" (1px) hoặc "ribbon" (dải dày).' };
+    state.trailStyle = s;
+    TRAIL_JOINTS.forEach(function (j) { updateTrailLine(j); });
+    return { ok: true, trailStyle: s };
+  }
+  function setRibbonWidth(w) {
+    w = Number(w);
+    if (!isFinite(w)) return { ok: false, error: 'Bề rộng ribbon phải là số (mét).' };
+    state.ribbonWidth = clamp(w, 0.005, 0.1);
+    TRAIL_JOINTS.forEach(function (j) { updateTrailLine(j); });
+    return { ok: true, ribbonWidth: state.ribbonWidth };
+  }
+  function setRootMotionEnabled(v) {
+    state.rootMotionEnabled = !!v;
+    if (!state.rootMotionEnabled && rootMotionRibbon) rootMotionRibbon.mesh.visible = false;
+    tryRegisterLayers();
+    return { ok: true, rootMotionEnabled: state.rootMotionEnabled };
+  }
+  function setRootMotionWidth(w) {
+    w = Number(w);
+    if (!isFinite(w)) return { ok: false, error: 'Bề rộng đường root motion phải là số (mét).' };
+    state.rootMotionWidth = clamp(w, 0.005, 0.1);
+    if (rootMotionRibbon && rootMotionPoints.length >= 2) {
+      updateRibbon(rootMotionRibbon, rootMotionPoints, state.rootMotionWidth, getViewDir());
+    }
+    return { ok: true, rootMotionWidth: state.rootMotionWidth };
+  }
+
   /* ---------- điều khiển thủ công (host/toolbar) ---------- */
   function notePlay(opts) {
     opts = opts || {};
@@ -1064,8 +1303,12 @@
     if (!s.ok) return s;
     var info = detectPlayback();
     var o = { ok: false, reason: 'không phát' };
-    if (info.playing) o = updateOnion(info);
-    return { ok: true, trailCounts: trailCounts(), onion: o };
+    var rm = null;
+    if (info.playing) {
+      o = updateOnion(info);
+      if (state.rootMotionEnabled) rm = sampleRootMotion();
+    }
+    return { ok: true, trailCounts: trailCounts(), onion: o, rootMotion: rm ? { ok: rm.ok, points: rootMotionPoints.length } : null };
   }
   function getState() {
     return {
@@ -1095,7 +1338,14 @@
       registered: state.registered,
       registerError: state.registerError,
       trailGroupAttached: !!(trailGroup && trailGroup.parent),
-      ghostAttached: !!(ghostTarget && ghostPrev && ghostPrev.group.parent)
+      ghostAttached: !!(ghostTarget && ghostPrev && ghostPrev.group.parent),
+      /* VIEW2 */
+      trailStyle: state.trailStyle,
+      ribbonWidth: state.ribbonWidth,
+      rootMotionEnabled: state.rootMotionEnabled,
+      rootMotionWidth: state.rootMotionWidth,
+      rootMotionPoints: rootMotionPoints.length,
+      rootMotionAttached: !!(rootMotionGroup && rootMotionGroup.parent)
     };
   }
   function getTrailPoints(joint) {
@@ -1128,9 +1378,16 @@
     try {
       AV.registerLayer('trails', layerObject('trails'));
       AV.registerLayer('onion', layerObject('onion'));
+      /* VIEW2 — đường root motion là 1 layer riêng. */
+      AV.registerLayer('rootmotion', {
+        show: function () { return setRootMotionEnabled(true); },
+        hide: function () { return setRootMotionEnabled(false); },
+        isVisible: function () { return state.rootMotionEnabled; },
+        label: 'Root motion'
+      });
       state.registered = true;
       state.registerError = '';
-      return { ok: true, registered: true, layers: ['trails', 'onion'] };
+      return { ok: true, registered: true, layers: ['trails', 'onion', 'rootmotion'] };
     } catch (e) {
       state.registered = false;
       state.registerError = e && e.message ? e.message : String(e);
@@ -1176,6 +1433,23 @@
     row1.appendChild(el('button', { class: 'btn sm', text: 'Xóa vệt', onclick: function () { clearTrails(); } }));
     wrap.appendChild(row1);
 
+    /* VIEW2: đường root motion + kiểu vệt dày/mỏng. */
+    var row2 = el('div', { style: { display: 'flex', gap: '10px', alignItems: 'center', margin: '6px 0', flexWrap: 'wrap' } });
+    var rmChk = el('input', { type: 'checkbox' });
+    rmChk.checked = state.rootMotionEnabled;
+    rmChk.addEventListener('change', function () { setRootMotionEnabled(rmChk.checked); });
+    row2.appendChild(el('label', { style: { display: 'flex', gap: '4px', alignItems: 'center' } }, [rmChk, el('span', { text: 'Đường root motion (Hips)' })]));
+    var styleSel = el('select', {});
+    [['ribbon', 'Vệt dày (ribbon)'], ['line', 'Vệt 1px (line)']].forEach(function (o) {
+      var opt = el('option', { value: o[0], text: o[1] });
+      if (state.trailStyle === o[0]) opt.selected = true;
+      styleSel.appendChild(opt);
+    });
+    styleSel.addEventListener('change', function () { setTrailStyle(styleSel.value); });
+    row2.appendChild(styleSel);
+    row2.appendChild(el('button', { class: 'btn sm', text: 'Xóa đường root', onclick: function () { clearRootMotion(); } }));
+    wrap.appendChild(row2);
+
     var mkSlider = function (label, min, max, step, val, oninput) {
       var row = el('div', { style: { display: 'flex', gap: '6px', alignItems: 'center', margin: '4px 0' } });
       row.appendChild(el('span', { text: label, style: { width: '130px', fontSize: '13px' } }));
@@ -1220,6 +1494,17 @@
     setFadeHold: setFadeHold,
     setFadeDuration: setFadeDuration,
     setKeepOnStop: setKeepOnStop,
+    /* VIEW2 */
+    setTrailStyle: setTrailStyle,
+    getTrailStyle: function () { return state.trailStyle; },
+    setRibbonWidth: setRibbonWidth,
+    setRootMotionEnabled: setRootMotionEnabled,
+    isRootMotionEnabled: function () { return state.rootMotionEnabled; },
+    showRootMotion: function () { return setRootMotionEnabled(true); },
+    hideRootMotion: function () { return setRootMotionEnabled(false); },
+    setRootMotionWidth: setRootMotionWidth,
+    clearRootMotion: clearRootMotion,
+    getRootMotionPoints: getRootMotionPoints,
     clearTrails: clearTrails,
     hideGhosts: hideGhosts,
     clearGhosts: hideGhosts,
@@ -1242,7 +1527,14 @@
       trailCounts: trailCounts,
       getGizmoColors: getGizmoColors,
       colorForJoint: colorForJoint,
-      buildBoneMap: buildBoneMap
+      buildBoneMap: buildBoneMap,
+      updateRibbon: updateRibbon,
+      makeRibbon: makeRibbon,
+      getViewDir: getViewDir,
+      sampleRootMotion: sampleRootMotion,
+      getRibbonMeshes: function () { return ribbonMeshes; },
+      getRootMotionRibbon: function () { return rootMotionRibbon; },
+      MAX_ROOT_POINTS: MAX_ROOT_POINTS
     }
   };
 

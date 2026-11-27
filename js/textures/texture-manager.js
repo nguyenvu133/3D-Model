@@ -163,6 +163,9 @@
       select.addEventListener('change', function () {
         if (select.value) Textures.assign(slot.id, select.value);
         else Textures.clearSlot(slot.id);
+        /* Undo/Redo toàn diện (v2): snapshot giữ ref map cũ nên undo
+           khôi phục đúng texture slot trước đó. */
+        if (PixiStudio.History) PixiStudio.History.push('Texture: ' + slot.name + ' → ' + (select.value || 'none'));
       });
       selectWrap.appendChild(select);
       row.appendChild(selectWrap);

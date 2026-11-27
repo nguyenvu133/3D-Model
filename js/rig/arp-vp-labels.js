@@ -112,6 +112,15 @@
   }
   function emitChanged() {
     try { bus.emit('arp-vp-labels:changed', ArpVpLabels.getStatus()); } catch (e) {}
+    /* Như skeleton._syncUI: toolbar ARP View chỉ tự refresh khi layer đổi
+       QUA registry; auto-show/show()/hide() trực tiếp bypass registry nên
+       nút "Nhãn xương" kẹt ở "off" dù nhãn đang hiện. Refresh kèm ở đây —
+       core.isLayerVisible() đọc live layer.isVisible() nên chỉ cần gọi
+       refresh. Guarded: toolbar có thể chưa load. */
+    try {
+      var T = window.PixiStudio && window.PixiStudio.ArpVpToolbar;
+      if (T && typeof T.refresh === 'function') T.refresh();
+    } catch (e) {}
   }
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
@@ -264,9 +273,13 @@
      khớp cầu đội đỉnh bbox lên ~1cm → H nhãn phình ~5–7cm so với
      mesh thật, và lệch với số "Cao" của ArpVpMeasure (vốn đã loại
      isBoneVisual trong collectMeshes). Sau sửa, H nhãn = chiều cao
-     bbox mesh thật; phần chênh còn lại với measure (≈2cm) là khác
-     biệt ĐỊNH NGHĨA thật: nhãn dùng đỉnh mesh (tóc/mũ), measure
-     dùng xương HeadTop_End − mặt đất — không phải bug. */
+     bbox mesh thật (đo thật Thiếu Lâm: 2.00m, khớp 2 cách đo).
+     Phần chênh còn lại với measure (2.404m) là khác biệt ĐỊNH NGHĨA
+     thật, không phải bug: nhãn dùng đỉnh mesh, measure dùng xương
+     HeadTop_End − mặt đất — và trên model này HeadTop_End nằm
+     0.40m TRÊN đỉnh mesh (2.404 so với 2.00), nên hai số không thể
+     trùng nhau; H nhãn chỉ dùng để scale nhãn, không hiển thị
+     số "Cao" cho user. */
   function measureHeight(target) {
     var H = 1.8;
     try {

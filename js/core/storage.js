@@ -32,9 +32,21 @@
       ai: PixiStudio.AI && PixiStudio.AI.Tripo ? PixiStudio.AI.Tripo.serialize() : null
     };
 
-    /* Scene objects (transforms) */
+    /* Scene objects (transforms) — giữ field objects cũ (scene active)
+       để project cũ vẫn đọc được; thêm scenes để lưu NHIỀU scene. */
     if (PixiStudio.Scene) {
       project.objects = PixiStudio.Scene.serializeObjects();
+      if (PixiStudio.Scene.serializeAllScenes) {
+        const multi = PixiStudio.Scene.serializeAllScenes();
+        project.scenes = multi.scenes;
+        project.activeSceneId = multi.activeSceneId;
+        project.additiveSceneIds = multi.additiveSceneIds;
+      }
+    }
+
+    /* Lightmap metadata (NHẸ — pixel lưu IndexedDB, xem scene-lightbake.js) */
+    if (PixiStudio.LightBake) {
+      try { project.lightmaps = PixiStudio.LightBake.serializeMeta(); } catch (e) { /* bake chưa sẵn: bỏ qua */ }
     }
 
     /* Timeline keyframes */
@@ -57,8 +69,18 @@
       if (data.ai && PixiStudio.AI && PixiStudio.AI.Tripo) {
         PixiStudio.AI.Tripo.deserialize(data.ai);
       }
-      if (data.objects && PixiStudio.Scene) {
+      /* MULTI-SCENE: project mới có data.scenes → khôi phục đủ các scene.
+         Project cũ (chỉ có data.objects) → đường cũ: apply vào scene
+         active (migrate ngầm — lần save sau sẽ lưu thành 1 scene
+         tên "Main Scene"). */
+      if (data.scenes && PixiStudio.Scene && PixiStudio.Scene.loadSerializedScenes) {
+        PixiStudio.Scene.loadSerializedScenes(data);
+      } else if (data.objects && PixiStudio.Scene) {
         PixiStudio.Scene.applySerializedObjects(data.objects);
+      }
+      /* Lightmap: khôi phục async từ IndexedDB (không chặn load project) */
+      if (data.lightmaps && PixiStudio.LightBake) {
+        PixiStudio.LightBake.restoreFromProject(data.lightmaps).catch(function () { /* IndexedDB trống/lỗi: bỏ qua */ });
       }
       if (data.timeline && PixiStudio.Timeline && PixiStudio.Timeline.keys) {
         PixiStudio.Timeline.keys.deserialize(data.timeline);

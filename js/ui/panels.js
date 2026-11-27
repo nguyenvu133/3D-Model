@@ -169,6 +169,7 @@
           items.push({ label: 'Duplicate', icon: 'duplicate', kbd: 'Ctrl+D', onClick: function () { PixiStudio.Scene.duplicate(sel); } });
           items.push({ label: 'Rename…', icon: 'edit', onClick: function () { PixiStudio.Modals.prompt({ title: 'Rename', label: 'Tên mới:', value: sel.name || '', onOk: function (v) { if (v.trim()) { PixiStudio.Scene.rename(sel, v.trim()); PixiStudio.Inspector.render(); } } }); } });
           items.push({ label: 'Auto Rig', icon: 'rig', onClick: function () { PixiStudio.Rig.autoRig(sel); } });
+          if (PixiStudio.Prefab) items.push({ label: 'Save as Prefab…', icon: 'cube', onClick: function () { PixiStudio.Prefab.createFromObjectInteractive(sel); } });
           items.push({ sep: true });
           items.push({ label: 'Delete', icon: 'trash', kbd: 'Del', onClick: function () { PixiStudio.Scene.deleteObject(sel); } });
         } else {
@@ -182,16 +183,25 @@
           items.push({ label: 'Select', icon: 'cursor', onClick: function () { PixiStudio.State.select(t); } });
           items.push({ label: 'Rename…', icon: 'edit', onClick: function () { PixiStudio.Modals.prompt({ title: 'Rename', label: 'Tên mới:', value: t.name || '', onOk: function (v) { if (v.trim()) PixiStudio.Scene.rename(t, v.trim()); PixiStudio.Scene.renderTree(); } }); } });
           items.push({ label: 'Duplicate', icon: 'duplicate', onClick: function () { PixiStudio.Scene.duplicate(t); } });
-          items.push({ label: 'Lock / Unlock', icon: 'lock', onClick: function () { PixiStudio.Scene.toggleLock(t); PixiStudio.Scene.renderTree(); } });
-          items.push({ label: 'Hide / Show', icon: 'eye', onClick: function () { PixiStudio.Scene.toggleVisible(t); PixiStudio.Scene.renderTree(); } });
+          if (PixiStudio.Prefab) items.push({ label: 'Save as Prefab…', icon: 'cube', onClick: function () { PixiStudio.Prefab.createFromObjectInteractive(t); } });
+          items.push({ label: 'Lock / Unlock', icon: 'lock', onClick: function () { PixiStudio.Scene.toggleLock(t); PixiStudio.Scene.renderTree(); } });          items.push({ label: 'Hide / Show', icon: 'eye', onClick: function () { PixiStudio.Scene.toggleVisible(t); PixiStudio.Scene.renderTree(); } });
           items.push({ sep: true });
           items.push({ label: 'Delete', icon: 'trash', onClick: function () { PixiStudio.Scene.deleteObject(t); } });
         }
       } else if (data.zone === 'asset') {
         const a = data.asset;
         if (a) {
+          const AL = PixiStudio.AssetLibrary;
           items.push({ label: 'Load "' + a.name + '"', icon: 'import', onClick: function () { PixiStudio.AssetLibrary.selectAsset(a.id); } });
           items.push({ label: 'Preview thumbnail', icon: 'image', onClick: function () { PixiStudio.Modals.open({ title: a.name, body: (function () { const img = U.el('img', { src: PixiStudio.AssetLibrary.generateThumbnail(a) || '', style: 'width:100%;border-radius:10px;' }); return img; })(), buttons: [{ label: 'Close', class: 'btn' }] }); } });
+          items.push({ sep: true });
+          items.push({ label: 'Rename…', icon: 'edit', onClick: function () { if (AL && typeof AL.renameAsset === 'function') AL.renameAsset(a.id); } });
+          items.push({ label: 'Duplicate', icon: 'duplicate', onClick: function () { if (AL && typeof AL.duplicateAsset === 'function') AL.duplicateAsset(a.id); } });
+          items.push({ label: (a.favorite ? '★ Bỏ favorite' : '☆ Favorite'), icon: 'star', onClick: function () { if (AL && typeof AL.toggleFavorite === 'function') AL.toggleFavorite(a.id); } });
+          items.push({ label: 'Add tag…', icon: 'tag', onClick: function () { if (AL && typeof AL.addTag === 'function') AL.addTag(a.id); } });
+          items.push({ label: 'Details…', icon: 'info', onClick: function () { if (AL && typeof AL.showDetails === 'function') AL.showDetails(a.id); } });
+          items.push({ sep: true });
+          items.push({ label: 'Delete', icon: 'trash', onClick: function () { if (AL && typeof AL.deleteAsset === 'function') AL.deleteAsset(a.id); } });
         }
       } else if (data.zone === 'keyframe') {
         items.push({ label: 'Copy keyframe', icon: 'copy', kbd: 'Ctrl+C', onClick: function () { PixiStudio.Timeline.keys.copySelected(); } });
@@ -368,12 +378,18 @@
         else bus.emit('notify', { type: 'error', title: 'GLB → FBX Mixamo', message: 'SaveManager chưa sẵn sàng.' });
       });
     }
-    /* Topbar "Tối ưu FBX <1MB" → tối ưu model đang ở trong scene
-       (giảm tris giữ rig + thu nhỏ texture) đến khi file < 1MB rồi tải về. */
+    /* Topbar "Tối ưu FBX" → tối ưu model đang ở trong scene
+       (giảm tris giữ rig + thu nhỏ texture) đến khi file dưới mức
+       dung lượng đã chọn ở select cạnh nút (mặc định <1MB) rồi tải về. */
     const topOpt = document.getElementById('btn-optimize-fbx');
     if (topOpt) {
       topOpt.addEventListener('click', function () {
-        if (PixiStudio.SaveManager && PixiStudio.SaveManager.optimizeFBXUnder1MB) PixiStudio.SaveManager.optimizeFBXUnder1MB();
+        if (PixiStudio.SaveManager && PixiStudio.SaveManager.optimizeFBXUnder1MB) {
+          var targetBytes;
+          var sel = document.getElementById('opt-target-size');
+          if (sel && sel.value) { var v = parseInt(sel.value, 10); if (isFinite(v) && v > 0) targetBytes = v; }
+          PixiStudio.SaveManager.optimizeFBXUnder1MB(targetBytes);
+        }
         else bus.emit('notify', { type: 'error', title: 'Tối ưu FBX', message: 'SaveManager chưa sẵn sàng.' });
       });
     }

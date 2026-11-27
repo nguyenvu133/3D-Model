@@ -25,16 +25,52 @@
  * CHỈNH SỬA CLIP (thuần, làm trên THREE.AnimationClip):
  *   trim (cắt + nội suy biên), retime (đổi tốc độ, giữ số key),
  *   reverse (đảo thời gian), mirror (đổi cặp Left/Right + lật dấu
- *   quay x,z / vị trí x — mirror gần đúng qua mặt phẳng dọc).
+ *   quay y,z / vị trí x — mirror đúng qua mặt phẳng dọc YZ;
+ *   keyframe cũng mirror được qua editCurrentClip).
  *   Lưu thành clip MỚI, không ghi đè clip gốc.
  *
- * LAYERS: lớp Base = clip đang phát. Lớp Additive = 1 clip cộng
- *   thêm rotation (delta quaternion so với frame đầu của clip
- *   additive, nhân trọng số) — KHÔNG cộng position root.
+ * LAYERS (v2 — Animation Layers, js/animation/anim-layers.js):
+ *   Base = clip đang phát + N layer (Animator.layers), mỗi layer có
+ *   clip riêng, weight 0–1, mask nhóm xương, mode override/additive.
+ *   Phát qua mixer hiện có: layer override = maskedClip phát song
+ *   song (action riêng, weight của layer); additive = maskedClip →
+ *   makeAdditive + AdditiveAnimationBlendMode. Scrub (setTime) áp
+ *   pose layer bằng sampling trực tiếp (applyLayerPoseAtTime) vì
+ *   applyPoseAtTime ghi đè quaternion xương.
+ *   Lớp Additive cũ (Animator.additive, 1 clip) vẫn giữ nguyên để
+ *   tương thích — layer mới là hệ riêng, chạy sau additive.
+ *   Lưu: format 'pixistudio-animator-clips-2' (exportLayersJSON /
+ *   importLayersJSON), đọc được cả format v1 (không có layers).
  *
- * ROOT MOTION: bật = Hips.position từ clip áp bình thường; tắt =
- *   sau mỗi mixer.update, Hips.position trả về vị trí bind đã chụp
- *   lúc bắt đầu phát. Đường root = mẫu Hips.position dọc clip.
+ * CURVE EDITOR (v2 — js/animation/anim-curves.js): chỉnh
+ *   interpolation từng đoạn key (linear/bezier/ease-in/ease-out/
+ *   ease-in-out/step), preview canvas, áp thành clip mới bằng cách
+ *   bake easing thành key dày (THREE track không lưu interp/key).
+ *   Mở từ clip đang chọn (Animator.openCurveEditor) hoặc từ clip
+ *   keyframe (AnimCurves.fromKeyframeClip).
+ *
+ * ROOT MOTION (THẬT — di chuyển model trong world):
+ *   bật = sau mỗi mixer.update, lấy delta XZ của track Hips giữa
+ *   2 frame (sampling track, xoay theo hướng mặt của model), cộng
+ *   dồn vào vị trí model root (target.position) rồi khóa Hips XZ
+ *   về bind (giữ Y của clip để nhân vật vẫn nhún); nhân vật ĐI
+ *   trong scene thay vì chạy tại chỗ. Tắt = Hips khóa hoàn toàn ở
+ *   bind, model đứng yên (hành vi cũ).
+ *   Loop: qua vòng mới thì đồng bộ lại baseline, không nhảy về.
+ *   Đổi clip: giữ vị trí hiện tại. Reset vị trí: về điểm bắt đầu
+ *   phiên phát (hoặc gốc tuyệt đối với {absolute:true}).
+ *   ĐO THẬT trên clip Thiếu Lâm (Idle/Run/Attack/Punch): track
+ *   Hips.position CHỈ đổi Y, X/Z hằng số → clip tại chỗ, model
+ *   root dịch 0.000m là ĐÚNG (không có root motion ngang trong
+ *   dữ liệu). Muốn nhân vật đi tới cần clip có Hips XZ di chuyển
+ *   thật (vd Mixamo xuất KHÔNG tick "in place").
+ *
+ * EVENT CÓ ACTION: marker gắn action thật — sound (WebAudio beep
+ *   hoặc file mp3/wav), damage (trừ HP demo + bus animator:event
+ *   kèm damage/target), effect (flash 3D tại xương + burst 2D qua
+ *   PixiEffects nếu có), custom (ArpAnimator.onEvent(name, fn)).
+ *   Event CHỈ kích hoạt khi PHÁT qua frame đó; scrub/step không
+ *   kích hoạt (hành vi đã chọn, ghi rõ).
  *
  * HIỂN THỊ VIEWPORT (dùng lại module arp-vp-* qua try/catch):
  *   skeleton → ArpVpSkeleton, IK overlay → ArpVpIk,
@@ -53,8 +89,13 @@
  *   • Crossfade = THREE crossFadeTo giữa 2 AnimationAction; blend
  *     2 clip = đặt trọng số 2 action cùng chạy — không phải blend
  *     theo trọng số từng xương.
- *   • Mirror là gần đúng hình học (đổi cặp L/R + lật dấu), không
- *     phải mirror xương thật theo bind pose.
+ *   • Mirror ĐÚNG qua mặt phẳng dọc YZ (Nhóm B, arp-restpose.js):
+ *     đổi cặp L/R + quaternion (x,−y,−z,w) / vị trí (−x,y,z);
+ *     xương chỉ có 1 bên được tạo track bên kia; mirror 2 lần =
+ *     clip gốc. Áp được cho clip THREE (Mixamo/studio/retarget/
+ *     bake) + clip keyframe (keys Euler + FK). Clip AnimAutoGen
+ *     chỉ có định nghĩa (không có clip THREE) thì vẫn không
+ *     mirror được.
  *   • FBX export dùng writer tự viết của studio (FBXBinary.write);
  *     file ra cần kiểm chứng lại bằng FBXLoader/fbx2gltf, và writer
  *     yêu cầu model có mesh (ném lỗi nếu không có mesh).
@@ -71,6 +112,16 @@
  *   • Additive cộng rotation lên pose sau mixer.update; nếu clip
  *     base là keyframe thì additive không áp được (Keyframe ghi đè
  *     rotation trực tiếp mỗi tick) — trả lỗi rõ.
+ *   • Root motion thật chỉ trích được từ clip THREE có track
+ *     Hips.position với XZ di chuyển (clip tại chỗ như Thiếu Lâm
+ *     Idle/Run/Attack/Punch cho 0.000m là ĐÚNG); clip keyframe/
+ *     autogen không trích root motion. Delta lấy theo world nên
+ *     đúng cả khi model đã xoay hướng.
+ *   • Sound event: trình duyệt thật cần user gesture (bấm Play)
+ *     mới mở được AudioContext; file âm thanh dùng object URL nên
+ *     tải lại trang phải chọn lại (chỉ beep + tham số lưu trong
+ *     JSON). Event chỉ kích hoạt khi phát qua frame — scrub/step
+ *     không kích hoạt (hành vi đã chọn).
  * ============================================================ */
 (function () {
   'use strict';
@@ -138,11 +189,20 @@
     rootMotion: true,
     blend: { clipBId: null, weight: 0 },
     additive: { clipId: null, weight: 0.5, enabled: false },
+    layers: [],                /* [{id, clipId, weight, mask, mode, enabled}] — Base + N layer */
+    _layerSeq: 0,
+    _layerActions: {},         /* layerId -> {action, clipKey, effClip} */
+    _curveEdit: null,          /* edit đang mở trong Curve Editor */
+    FORMAT2: 'pixistudio-animator-clips-2',
     display: { skeleton: false, ik: false, trails: false, onion: false, readout: true, boneAngles: true, rootPath: false },
-    events: {},                /* clipId -> [{id, t, name}] */
-    firedLog: [],              /* [{name, t, at}] trong lần phát này */
+    events: {},                /* clipId -> [{id, t, name, action, params, bone}] */
+    firedLog: [],              /* [{name, t, at, action, result}] trong lần phát này */
     topBones: [],              /* [{bone, deg}] 3 xương chuyển động mạnh nhất */
-    rootPos: { x: 0, y: 0, z: 0 },
+    rootPos: { x: 0, y: 0, z: 0 },   /* Hips local (giữ nguyên ngữ nghĩa cũ) */
+    modelRootPos: { x: 0, y: 0, z: 0 }, /* vị trí WORLD của model root */
+    rootMotionTravelled: 0,    /* quãng đường XZ model root đã đi (m) */
+    demoHp: 100,               /* HP demo cho action damage */
+    demoHpMax: 100,
     rootPath: [],              /* [{t, x, y, z}] */
     _clips: [],                /* registry đã chuẩn hóa (không gồm user) */
     _userClips: [],            /* clip do user tạo bằng chỉnh sửa — xóa được */
@@ -157,7 +217,18 @@
     _firedIds: {},
     _addLastKey: null,         /* guard chống additive cộng dồn */
     _evSeq: 0,
-    _rootPathLine: null
+    _rootPathLine: null,
+    _rootMarker: null,         /* sphere đánh dấu vị trí model root hiện tại */
+    /* --- root motion thật --- */
+    _rmPrevWorld: null,        /* {x,y,z} world của Hips sau tick trước (đã khóa XZ) */
+    _rmOrigin: null,           /* {x,y,z} vị trí model root lúc bắt đầu phiên phát */
+    _rmHasTrack: false,        /* clip hiện tại có track Hips.position không */
+    _rmNeedResync: true,       /* tick tới phải đồng bộ lại baseline trước */
+    /* --- event action --- */
+    _customHandlers: {},       /* name -> [fn] (onEvent) */
+    _activeEffects: [],        /* [{mesh, age, ttl}] flash 3D đang chạy */
+    _soundCache: {},           /* url -> AudioBuffer đã decode */
+    _audioCtx: null
   };
 
   /* ---------- truy cập module khác (defensive) ---------- */
@@ -195,6 +266,43 @@
   function findHipsBone() {
     var map = getBoneMap();
     return map.Hips || map.hips || null;
+  }
+  /* Model root = object mà mixer phát lên (Anim.targetObject, con
+     trực tiếp của Viewport.modelRoot 'Models'). Di chuyển
+     target.position là di chuyển cả nhân vật trong world. */
+  function getModelRoot() { return getTarget(); }
+  /* Vị trí world hiện tại của model root ({x,y,z} hoặc null). */
+  function modelRootWorldPos() {
+    var root = getModelRoot();
+    if (!root) return null;
+    try {
+      if (root.parent) root.updateWorldMatrix(true, false);
+      var v = new window.THREE.Vector3();
+      root.getWorldPosition(v);
+      return { x: round4(v.x), y: round4(v.y), z: round4(v.z) };
+    } catch (e) { return { x: round4(root.position.x), y: round4(root.position.y), z: round4(root.position.z) }; }
+  }
+  /* Vị trí world hiện tại của Hips (cần updateWorldMatrix vì mixer
+     vừa đổi pose nhưng matrixWorld chưa kịp cập nhật tới lúc render). */
+  function hipsWorldPos() {
+    var hips = findHipsBone();
+    if (!hips || !window.THREE) return null;
+    try {
+      hips.updateWorldMatrix(true, false);
+      var v = new window.THREE.Vector3();
+      hips.getWorldPosition(v);
+      return { x: v.x, y: v.y, z: v.z };
+    } catch (e) { return null; }
+  }
+  /* Đồng bộ baseline root motion với pose hiện tại (không di chuyển
+     model). Gọi khi bắt đầu phát / đổi clip / scrub / toggle. */
+  function syncRmBaseline() {
+    var p = hipsWorldPos();
+    Animator._rmPrevWorld = p ? { x: p.x, y: p.y, z: p.z } : null;
+    Animator._rmNeedResync = false;
+    var entry = Animator.currentId ? getClip(Animator.currentId) : null;
+    Animator._rmHasTrack = !!(entry && entry.clip && findHipsTrack(entry.clip));
+    return Animator._rmPrevWorld;
   }
 
   /* ============================================================
@@ -456,7 +564,19 @@
 
   function captureBindHips() {
     var hips = findHipsBone();
-    if (hips) Animator._bindHips = { x: hips.position.x, y: hips.position.y, z: hips.position.z };
+    var entry0 = Animator.currentId ? getClip(Animator.currentId) : null;
+    var ht0 = (entry0 && entry0.clip) ? findHipsTrack(entry0.clip) : null;
+    if (hips) {
+      /* "Bind" cho root motion = mẫu Hips tại t=0 của clip (pose mà
+         clip quay về mỗi vòng loop), KHÔNG phải pose hiện tại lúc
+         bấm Play — nếu không, phát lại clip đang dở (Hips XZ đã
+         lệch) sẽ khóa nhầm Hips ở vị trí lệch đó. Không có track
+         Hips thì giữ hành vi cũ (pose hiện tại). */
+      if (ht0) {
+        var b0 = sampleVecTrack(ht0, 0);
+        Animator._bindHips = { x: b0.x, y: b0.y, z: b0.z };
+      } else Animator._bindHips = { x: hips.position.x, y: hips.position.y, z: hips.position.z };
+    }
     else Animator._bindHips = null;
     var entry = Animator.currentId ? getClip(Animator.currentId) : null;
     if (entry && entry.clip) {
@@ -464,24 +584,173 @@
       var p0 = rootPosAt(entry.clip, Animator.time);
       if (p0) Animator.rootPos = { x: round4(p0.x), y: round4(p0.y), z: round4(p0.z) };
     } else Animator.rootPath = [];
+    /* Root motion: ghi điểm bắt đầu phiên phát (chỉ lần đầu — đổi
+       clip giữ vị trí, Reset mới về đây) + đồng bộ baseline. */
+    var root = getModelRoot();
+    if (root && !Animator._rmOrigin) {
+      Animator._rmOrigin = { x: root.position.x, y: root.position.y, z: root.position.z };
+    }
+    var mp = modelRootWorldPos();
+    if (mp) Animator.modelRootPos = mp;
+    Animator._rmNeedResync = true;
+    syncRmBaseline();
+  }
+
+  /* Khóa Hips XZ về bind, GIỮ Y của clip (nhân vật vẫn nhún theo
+     clip, không trượt ngang trong model space). Dùng chung cho cả
+     root motion BẬT (sau khi đã trích delta XZ ra model root) và
+     chế độ scrub (pose hiển thị nhất quán với lúc phát). */
+  function lockHipsXZ() {
+    var hips = findHipsBone();
+    if (hips && Animator._bindHips) {
+      hips.position.x = Animator._bindHips.x;
+      hips.position.z = Animator._bindHips.z;
+      return true;
+    }
+    return false;
+  }
+
+  /* Trích root motion THẬT sau 1 mixer.update (chỉ gọi từ tick):
+     delta XZ world của Hips giữa 2 frame → cộng vào model root,
+     rồi khóa Hips XZ về bind. Y KHÔNG đụng (model đi trên mặt đất,
+     feet vẫn chạm grid). Qua biên loop: tính delta qua biên bằng
+     sampling track để nhân vật đi tiếp, không nhảy về. */
+  function applyRootMotionTick(prevTime, newTime, wrapped) {
+    var hips = findHipsBone();
+    if (!Animator.rootMotion) return applyRootMotion();
+    var entry = Animator.currentId ? getClip(Animator.currentId) : null;
+    if (!entry || !entry.clip || !hips) {
+      return { ok: false, error: 'Không có clip THREE / xương Hips để trích root motion.' };
+    }
+    if (!findHipsTrack(entry.clip)) {
+      Animator._rmHasTrack = false;
+      return { ok: false, error: 'Clip "' + entry.name + '" không có track Hips.position — không trích được root motion, nhân vật phát tại chỗ.', reason: 'no-hips-track' };
+    }
+    Animator._rmHasTrack = true;
+    var hipsTrack = findHipsTrack(entry.clip);
+    if (wrapped) {
+      /* Clip vừa loop: Hips nhảy từ cuối clip về đầu — KHÔNG lấy
+         delta world trực tiếp (sẽ giật lùi). Tính đúng quãng đường
+         qua biên bằng sampling track: (cuối − prevTime) + (newTime
+         − đầu), xoay theo hướng mặt của model. Hỏng sampling thì
+         chỉ đồng bộ baseline (mất tối đa 1 bước tick/vòng). */
+      var movedWrap = 0;
+      try {
+        var rootW = getModelRoot();
+        if (rootW && window.THREE) {
+          var sEnd = sampleVecTrack(hipsTrack, entry.duration);
+          var sPrev = sampleVecTrack(hipsTrack, prevTime);
+          var sNew = sampleVecTrack(hipsTrack, newTime);
+          var s0 = sampleVecTrack(hipsTrack, 0);
+          var lx = (sEnd.x - sPrev.x) + (sNew.x - s0.x);
+          var lz = (sEnd.z - sPrev.z) + (sNew.z - s0.z);
+          var q = new window.THREE.Quaternion();
+          rootW.getWorldQuaternion(q);
+          var wv = new window.THREE.Vector3(lx, 0, lz).applyQuaternion(q);
+          if (Math.abs(wv.x) > 1e-9 || Math.abs(wv.z) > 1e-9) {
+            rootW.position.x += wv.x;
+            rootW.position.z += wv.z;
+            movedWrap = Math.sqrt(wv.x * wv.x + wv.z * wv.z);
+            Animator.rootMotionTravelled += movedWrap;
+          }
+        }
+      } catch (e) {}
+      lockHipsXZ();
+      syncRmBaseline();
+      var mpW = modelRootWorldPos();
+      if (mpW) Animator.modelRootPos = mpW;
+      return { ok: true, applied: true, wrapped: true, moved: round4(movedWrap) };
+    }
+    if (!Animator._rmPrevWorld) { syncRmBaseline(); lockHipsXZ(); return { ok: true, applied: true, wrapped: false, moved: 0 }; }
+    /* Delta XZ lấy bằng SAMPLING track Hips (prevTime → newTime),
+       xoay theo hướng mặt của model rồi cộng vào model root.
+       (Không đo bằng world pos live: sau tick trước Hips đã bị
+       khóa XZ về bind nên world pos live tại prevTime không còn
+       là pose clip — đo live sẽ cộng dồn sai thành Σ pose tuyệt
+       đối, đã bắt được bằng harness: 15.25m thay vì 0.5m.)
+       Giới hạn: khi blend/crossfade 2 clip, delta lấy theo clip
+       Base (clip đang chọn), không theo pose blend. */
+    var sPrev = sampleVecTrack(hipsTrack, prevTime);
+    var sNew = sampleVecTrack(hipsTrack, newTime);
+    var lx = sNew.x - sPrev.x;
+    var lz = sNew.z - sPrev.z;
+    var moved = 0;
+    var root = getModelRoot();
+    if (root && window.THREE && (Math.abs(lx) > 1e-9 || Math.abs(lz) > 1e-9)) {
+      var q2 = new window.THREE.Quaternion();
+      try { root.getWorldQuaternion(q2); } catch (e) {}
+      var wv2 = new window.THREE.Vector3(lx, 0, lz).applyQuaternion(q2);
+      wv2.y = 0;
+      root.position.x += wv2.x;
+      root.position.z += wv2.z;
+      moved = Math.sqrt(wv2.x * wv2.x + wv2.z * wv2.z);
+      Animator.rootMotionTravelled += moved;
+    }
+    lockHipsXZ();
+    syncRmBaseline();
+    var p = rootPosAt(entry.clip, newTime);
+    if (p) Animator.rootPos = { x: round4(p.x), y: round4(p.y), z: round4(p.z) };
+    var mp = modelRootWorldPos();
+    if (mp) Animator.modelRootPos = mp;
+    return { ok: true, applied: true, moved: round4(moved), dx: round4(sNew.x - sPrev.x), dz: round4(sNew.z - sPrev.z) };
   }
 
   function applyRootMotion() {
+    var entry = Animator.currentId ? getClip(Animator.currentId) : null;
     if (Animator.rootMotion) {
-      var entry = Animator.currentId ? getClip(Animator.currentId) : null;
       if (entry && entry.clip) {
         var p = rootPosAt(entry.clip, Animator.time);
         if (p) Animator.rootPos = { x: round4(p.x), y: round4(p.y), z: round4(p.z) };
       }
+      /* BẬT (scrub/toggle — KHÔNG di chuyển model): khóa Hips XZ về
+         bind để pose hiển thị khớp lúc phát, giữ Y clip. */
+      if (entry && entry.clip && findHipsTrack(entry.clip)) lockHipsXZ();
+      syncRmBaseline();
+      var mp = modelRootWorldPos();
+      if (mp) Animator.modelRootPos = mp;
       return { ok: true, applied: true };
     }
     var hips = findHipsBone();
     if (hips && Animator._bindHips) {
       hips.position.set(Animator._bindHips.x, Animator._bindHips.y, Animator._bindHips.z);
       Animator.rootPos = { x: round4(Animator._bindHips.x), y: round4(Animator._bindHips.y), z: round4(Animator._bindHips.z) };
+      syncRmBaseline();
+      var mp2 = modelRootWorldPos();
+      if (mp2) Animator.modelRootPos = mp2;
       return { ok: true, applied: false };
     }
     return { ok: false, error: 'Không tìm thấy xương Hips để khóa root.' };
+  }
+
+  /* Đưa nhân vật về điểm bắt đầu phiên phát (mặc định) hoặc gốc
+     tuyệt đối (0,0,0) với {absolute:true}. Không đụng pose/clip. */
+  function resetRootPosition(opts) {
+    opts = opts || {};
+    var root = getModelRoot();
+    if (!root) return { ok: false, error: 'Chưa có model.' };
+    var dest = opts.absolute ? { x: 0, y: 0, z: 0 }
+      : (Animator._rmOrigin || { x: 0, y: 0, z: 0 });
+    root.position.set(dest.x, dest.y, dest.z);
+    Animator.rootMotionTravelled = 0;
+    if (opts.absolute) Animator._rmOrigin = { x: 0, y: 0, z: 0 };
+    syncRmBaseline();
+    Animator.modelRootPos = { x: round4(dest.x), y: round4(dest.y), z: round4(dest.z) };
+    if (Animator.display.rootPath) drawRootPath();
+    return { ok: true, position: Animator.modelRootPos, absolute: !!opts.absolute };
+  }
+
+  /* Thông tin root motion cho UI/harness. */
+  function getRootMotionInfo() {
+    var entry = Animator.currentId ? getClip(Animator.currentId) : null;
+    return {
+      enabled: Animator.rootMotion,
+      hasTrack: Animator._rmHasTrack,
+      clip: entry ? entry.name : null,
+      modelRootPos: { x: Animator.modelRootPos.x, y: Animator.modelRootPos.y, z: Animator.modelRootPos.z },
+      hipsLocal: { x: Animator.rootPos.x, y: Animator.rootPos.y, z: Animator.rootPos.z },
+      travelled: round4(Animator.rootMotionTravelled),
+      origin: Animator._rmOrigin ? { x: Animator._rmOrigin.x, y: Animator._rmOrigin.y, z: Animator._rmOrigin.z } : null
+    };
   }
 
   /* Cộng rotation additive lên pose hiện tại (sau mixer.update).
@@ -518,6 +787,213 @@
     return { ok: true, applied: n, clipId: ad.clipId, weight: ad.weight };
   }
 
+  /* ============================================================
+     2b. ANIMATION LAYERS — Base + N layer (vòng Animation mở rộng)
+     Logic mask/additive thuần nằm ở PixiStudio.AnimLayers
+     (js/animation/anim-layers.js); đây chỉ quản lý layer + action
+     trên mixer hiện có của Animator.
+     ============================================================ */
+  function getAnimLayers() { return PS.AnimLayers || null; }
+
+  function listLayers() {
+    return Animator.layers.map(function (l) {
+      return { id: l.id, clipId: l.clipId, weight: l.weight, mask: l.mask, mode: l.mode, enabled: l.enabled };
+    });
+  }
+
+  function addLayer(clipId, opts) {
+    opts = opts || {};
+    var entry = getClip(clipId);
+    if (!entry) return { ok: false, error: 'Không tìm thấy clip "' + clipId + '".' };
+    if (!entry.clip) return { ok: false, error: 'Layer chỉ dùng clip THREE (autogen/keyframe không làm layer được).' };
+    var AL = getAnimLayers();
+    var layer;
+    if (AL && typeof AL.createLayer === 'function') {
+      var c = AL.createLayer({ clipId: clipId, weight: opts.weight, mask: opts.mask, mode: opts.mode, enabled: opts.enabled });
+      if (!c.ok) return c;
+      layer = c.layer;
+    } else {
+      layer = {
+        id: 'layer_' + (++Animator._layerSeq),
+        clipId: clipId, weight: clamp(opts.weight === undefined ? 1 : parseFloat(opts.weight) || 0, 0, 1),
+        mask: opts.mask || 'ALL', mode: opts.mode || 'override', enabled: opts.enabled !== false
+      };
+    }
+    Animator.layers.push(layer);
+    syncLayerActions();
+    try { bus.emit('animator:layers-changed', { layers: listLayers() }); } catch (e) {}
+    return { ok: true, layer: { id: layer.id, clipId: layer.clipId, weight: layer.weight, mask: layer.mask, mode: layer.mode, enabled: layer.enabled }, count: Animator.layers.length };
+  }
+
+  function removeLayer(id) {
+    var idx = -1;
+    Animator.layers.forEach(function (l, i) { if (l.id === id) idx = i; });
+    if (idx < 0) return { ok: false, error: 'Không tìm thấy layer "' + id + '".' };
+    var rec = Animator._layerActions[id];
+    if (rec && rec.action) { try { rec.action.stop(); } catch (e) {} }
+    delete Animator._layerActions[id];
+    var removed = Animator.layers.splice(idx, 1)[0];
+    try { bus.emit('animator:layers-changed', { layers: listLayers() }); } catch (e) {}
+    return { ok: true, id: id, clipId: removed.clipId, count: Animator.layers.length };
+  }
+
+  function updateLayer(id, patch) {
+    patch = patch || {};
+    var layer = null;
+    Animator.layers.forEach(function (l) { if (l.id === id) layer = l; });
+    if (!layer) return { ok: false, error: 'Không tìm thấy layer "' + id + '".' };
+    if (patch.clipId !== undefined) {
+      var entry = getClip(patch.clipId);
+      if (!entry) return { ok: false, error: 'Không tìm thấy clip "' + patch.clipId + '".' };
+      if (!entry.clip) return { ok: false, error: 'Layer chỉ dùng clip THREE.' };
+      layer.clipId = patch.clipId;
+    }
+    if (patch.weight !== undefined) layer.weight = clamp(parseFloat(patch.weight) || 0, 0, 1);
+    if (patch.mask !== undefined) layer.mask = patch.mask;
+    if (patch.mode !== undefined) {
+      if (patch.mode !== 'override' && patch.mode !== 'additive') return { ok: false, error: 'mode phải là "override" hoặc "additive".' };
+      layer.mode = patch.mode;
+    }
+    if (patch.enabled !== undefined) layer.enabled = !!patch.enabled;
+    syncLayerActions();
+    try { bus.emit('animator:layers-changed', { layers: listLayers() }); } catch (e) {}
+    return { ok: true, layer: { id: layer.id, clipId: layer.clipId, weight: layer.weight, mask: layer.mask, mode: layer.mode, enabled: layer.enabled } };
+  }
+
+  function moveLayer(id, dir) {
+    var idx = -1;
+    Animator.layers.forEach(function (l, i) { if (l.id === id) idx = i; });
+    if (idx < 0) return { ok: false, error: 'Không tìm thấy layer "' + id + '".' };
+    var to = idx + (dir >= 0 ? 1 : -1);
+    if (to < 0 || to >= Animator.layers.length) return { ok: false, error: 'Layer đã ở đầu/cuối.' };
+    var tmp = Animator.layers[idx];
+    Animator.layers[idx] = Animator.layers[to];
+    Animator.layers[to] = tmp;
+    try { bus.emit('animator:layers-changed', { layers: listLayers() }); } catch (e) {}
+    return { ok: true, id: id, index: to };
+  }
+
+  function clearLayers() {
+    Object.keys(Animator._layerActions).forEach(function (id) {
+      var rec = Animator._layerActions[id];
+      if (rec && rec.action) { try { rec.action.stop(); } catch (e) {} }
+    });
+    Animator._layerActions = {};
+    Animator.layers = [];
+    return { ok: true, count: 0 };
+  }
+
+  /* Clip hiệu dụng của layer (mask → additive), dùng AnimLayers khi
+     có, fallback lọc tay khi chưa load module. */
+  function effectiveLayerClip(layer, entry) {
+    var AL = getAnimLayers();
+    if (AL && typeof AL.layerClipFor === 'function') return AL.layerClipFor(layer, entry.clip);
+    var clip = entry.clip;
+    /* Fallback khi AnimLayers chưa load: không lọc mask (ghi rõ ở
+       kết quả) — index.html load anim-layers.js trước blendtree nên
+       trường hợp này chỉ xảy ra ở trang cũ cache. */
+    return { ok: true, clip: clip, kept: clip.tracks.length, removed: 0, masked: false, mode: layer.mode || 'override' };
+  }
+
+  /* Tạo/cập nhật action cho mọi layer trên mixer hiện có. Layer tắt
+     hoặc weight 0 vẫn giữ action với weight 0 (đổi lại không cần
+     tạo mới). Đổi clip/mask/mode → dừng action cũ, tạo clip mới. */
+  function syncLayerActions() {
+    if (!Animator._mixer || !window.THREE) return { ok: false, reason: 'no-mixer' };
+    var synced = 0, skipped = [];
+    Animator.layers.forEach(function (layer) {
+      var entry = getClip(layer.clipId);
+      if (!entry || !entry.clip) { skipped.push(layer.id + ':no-clip'); return; }
+      var clipKey = layer.clipId + '|' + (layer.mask || 'ALL') + '|' + (layer.mode || 'override');
+      var rec = Animator._layerActions[layer.id];
+      if (!rec || rec.clipKey !== clipKey) {
+        if (rec && rec.action) { try { rec.action.stop(); } catch (e) {} }
+        var eff = effectiveLayerClip(layer, entry);
+        if (!eff.ok) { skipped.push(layer.id + ':' + (eff.error || 'eff-fail')); return; }
+        var action;
+        try {
+          action = Animator._mixer.clipAction(eff.clip);
+          action.reset();
+          action.setLoop(window.THREE.LoopRepeat);
+          action.setEffectiveTimeScale(1);
+          if (layer.mode === 'additive' && 'blendMode' in action) {
+            action.blendMode = window.THREE.AdditiveAnimationBlendMode;
+          }
+          action.time = Animator.time % entry.clip.duration;
+          action.play();
+        } catch (e) { skipped.push(layer.id + ':' + (e && e.message)); return; }
+        Animator._layerActions[layer.id] = { action: action, clipKey: clipKey, effClip: eff.clip };
+        rec = Animator._layerActions[layer.id];
+      }
+      try {
+        rec.action.setEffectiveWeight(layer.enabled ? clamp(layer.weight, 0, 1) : 0);
+        if (layer.enabled && Animator.playing && !Animator.paused) rec.action.paused = false;
+        synced++;
+      } catch (e) { skipped.push(layer.id + ':' + (e && e.message)); }
+    });
+    return { ok: true, synced: synced, skipped: skipped };
+  }
+
+  /* Nhẹ cho tick(): chỉ cập nhật weight/paused của action layer đã
+     có (không resolve clip lại, không tạo action mới). */
+  function syncLayerWeights() {
+    var n = 0;
+    Object.keys(Animator._layerActions).forEach(function (id) {
+      var rec = Animator._layerActions[id];
+      var layer = null;
+      Animator.layers.forEach(function (l) { if (l.id === id) layer = l; });
+      if (!rec || !rec.action || !layer) return;
+      try {
+        rec.action.setEffectiveWeight(layer.enabled ? clamp(layer.weight, 0, 1) : 0);
+        rec.action.paused = !(Animator.playing && !Animator.paused);
+        n++;
+      } catch (e) {}
+    });
+    return { ok: true, synced: n };
+  }
+
+  /* Áp pose layer tại thời điểm t (dùng khi scrub — mixer không áp
+     lại pose khi setTime ghi đè trực tiếp). Override: slerp xương
+     mask từ pose base về pose layer theo weight. Additive: cộng
+     delta quaternion (pose layer − pose frame đầu) nhân weight. */
+  function applyLayerPoseAtTime(t) {
+    if (!Animator.layers.length || !window.THREE) return { ok: true, applied: 0 };
+    var map = getBoneMap();
+    var ident = new window.THREE.Quaternion();
+    var applied = 0;
+    Animator.layers.forEach(function (layer) {
+      if (!layer.enabled || !(layer.weight > 0)) return;
+      var entry = getClip(layer.clipId);
+      if (!entry || !entry.clip) return;
+      var AL = getAnimLayers();
+      var bones = null;
+      if (AL && typeof AL.maskBones === 'function') bones = AL.maskBones(layer.mask);
+      var tL = entry.clip.duration > 0 ? (t % entry.clip.duration) : 0;
+      var poseNow = sampleClipPose(entry.clip, tL);
+      var poseBase = sampleClipPose(entry.clip, 0);
+      Object.keys(poseNow).forEach(function (bone) {
+        if (bones && bones.indexOf(bone) < 0) {
+          /* Xương ngón tay theo tiền tố tay (LEFT_ARM/RIGHT_ARM). */
+          if (layer.mask === 'LEFT_ARM' && !/^LeftHand/.test(bone)) return;
+          if (layer.mask === 'RIGHT_ARM' && !/^RightHand/.test(bone)) return;
+          if (layer.mask !== 'LEFT_ARM' && layer.mask !== 'RIGHT_ARM') return;
+        }
+        var b = map[bone];
+        if (!b) return;
+        if ((layer.mode || 'override') === 'additive') {
+          var q0 = poseBase[bone] || ident;
+          var delta = poseNow[bone].clone().multiply(q0.clone().invert());
+          var wDelta = ident.clone().slerp(delta, clamp(layer.weight, 0, 1));
+          b.quaternion.multiply(wDelta);
+        } else {
+          b.quaternion.slerp(poseNow[bone], clamp(layer.weight, 0, 1));
+        }
+        applied++;
+      });
+    });
+    return { ok: true, applied: applied };
+  }
+
   function updateTopBones() {
     Animator.topBones = [];
     if (!Animator.display.boneAngles) return Animator.topBones;
@@ -539,17 +1015,246 @@
     return Animator.topBones;
   }
 
+  /* ============================================================
+     EVENT ACTION (nhóm C)
+     action: 'none' | 'sound' | 'damage' | 'effect' | 'custom'.
+     Event file cũ (chỉ {id,t,name}) → action 'none' (notify + log +
+     bus như trước). Sound cần user gesture trên trình duyệt thật
+     (AudioContext có thể suspended tới lần bấm Play đầu tiên);
+     trong jsdom (không có AudioContext) thì ghi skipped, không lỗi.
+     ============================================================ */
+  var EVENT_ACTIONS = ['none', 'sound', 'damage', 'effect', 'custom'];
+  function normalizeEvent(ev) {
+    if (!ev) return null;
+    var action = EVENT_ACTIONS.indexOf(ev.action) >= 0 ? ev.action : 'none';
+    var params = (ev.params && typeof ev.params === 'object') ? ev.params : {};
+    return {
+      id: ev.id, t: ev.t, name: ev.name, action: action,
+      params: params, bone: ev.bone || params.bone || null
+    };
+  }
+  function onEvent(name, fn) {
+    if (typeof fn !== 'function') return { ok: false, error: 'Callback phải là function.' };
+    name = String(name || '').trim();
+    if (!name) return { ok: false, error: 'Cần tên event để đăng ký.' };
+    if (!Animator._customHandlers[name]) Animator._customHandlers[name] = [];
+    if (Animator._customHandlers[name].indexOf(fn) < 0) Animator._customHandlers[name].push(fn);
+    return { ok: true, name: name, count: Animator._customHandlers[name].length };
+  }
+  function offEvent(name, fn) {
+    name = String(name || '').trim();
+    var list = Animator._customHandlers[name];
+    if (!list) return { ok: false, error: 'Không có handler cho "' + name + '".' };
+    if (typeof fn === 'function') {
+      var i = list.indexOf(fn);
+      if (i >= 0) list.splice(i, 1);
+    } else Animator._customHandlers[name] = [];
+    return { ok: true, name: name, count: (Animator._customHandlers[name] || []).length };
+  }
+  function setDemoHp(v) {
+    Animator.demoHp = clamp(Math.round(parseFloat(v) || 0), 0, Animator.demoHpMax);
+    updateDemoHpUI();
+    return { ok: true, hp: Animator.demoHp };
+  }
+  function resetDemoHp() {
+    Animator.demoHp = Animator.demoHpMax;
+    updateDemoHpUI();
+    return { ok: true, hp: Animator.demoHp };
+  }
+  function updateDemoHpUI() {
+    if (typeof document === 'undefined') return;
+    try {
+      var s = document.getElementById('arp-anim-demo-hp');
+      if (s) s.textContent = 'HP demo: ' + Animator.demoHp + '/' + Animator.demoHpMax;
+    } catch (e) {}
+  }
+  function getAudioCtx() {
+    if (Animator._audioCtx) return Animator._audioCtx;
+    try {
+      var AC = (typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext)) || null;
+      if (!AC) return null;
+      Animator._audioCtx = new AC();
+    } catch (e) { return null; }
+    return Animator._audioCtx;
+  }
+  function playBeep(ctx, freq, dur, volume) {
+    try {
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq || 880, ctx.currentTime);
+      gain.gain.setValueAtTime(volume || 0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + (dur || 0.15));
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + (dur || 0.15));
+      return true;
+    } catch (e) { return false; }
+  }
+  /* Phát sound cho event: file url (mp3/wav, đã decode thì phát ngay,
+     chưa thì tải async rồi phát) hoặc beep mặc định. Trả result đồng
+     bộ; trường hợp async thì cập nhật lại rec.result khi xong. */
+  function playEventSound(ev, rec) {
+    var params = ev.params || {};
+    var ctx = getAudioCtx();
+    if (!ctx) return { via: 'skipped-no-audio', note: 'Không có AudioContext (jsdom / trình duyệt chặn) — event vẫn log + bus.' };
+    try { if (ctx.state === 'suspended' && typeof ctx.resume === 'function') ctx.resume(); } catch (e) {}
+    if (params.url) {
+      var cached = Animator._soundCache[params.url];
+      if (cached) {
+        try {
+          var src = ctx.createBufferSource();
+          src.buffer = cached;
+          var g = ctx.createGain();
+          g.gain.setValueAtTime(params.volume || 0.5, ctx.currentTime);
+          src.connect(g); g.connect(ctx.destination);
+          src.start();
+          return { via: 'file', url: params.url };
+        } catch (e) { return { via: 'file-error', error: e && e.message }; }
+      }
+      /* Tải async: beep KHÔNG phát kèm (tránh 2 tiếng chồng nhau). */
+      try {
+        fetch(params.url).then(function (r) { return r.arrayBuffer(); }).then(function (ab) {
+          return ctx.decodeAudioData(ab);
+        }).then(function (buf) {
+          Animator._soundCache[params.url] = buf;
+          var s2 = ctx.createBufferSource(); s2.buffer = buf;
+          var g2 = ctx.createGain(); g2.gain.setValueAtTime(params.volume || 0.5, ctx.currentTime);
+          s2.connect(g2); g2.connect(ctx.destination); s2.start();
+          if (rec) rec.result = { via: 'file', url: params.url, status: 'played-after-load' };
+        }).catch(function (err) {
+          playBeep(ctx, params.freq || 880, params.dur || 0.15, params.volume || 0.2);
+          if (rec) rec.result = { via: 'beep-fallback', error: 'Không tải được file âm thanh: ' + (err && err.message) };
+        });
+      } catch (e) { playBeep(ctx, params.freq || 880, params.dur || 0.15, params.volume || 0.2); return { via: 'beep-fallback', error: e && e.message }; }
+      return { via: 'file', url: params.url, status: 'loading' };
+    }
+    var ok = playBeep(ctx, params.freq || 880, params.dur || 0.15, params.volume || 0.2);
+    return { via: ok ? 'beep' : 'beep-failed', freq: params.freq || 880, dur: params.dur || 0.15 };
+  }
+  /* Flash 3D tại vị trí world của xương (SphereGeometry, mờ + nở
+     trong ~0.5s, tự gỡ). Nếu PixiEffects + camera có sẵn thì bắn
+     thêm burst 2D tại vị trí chiếu lên màn hình (guarded). */
+  function spawnFlash(pos, opts) {
+    opts = opts || {};
+    if (!window.THREE || !pos) return { ok: false, error: 'Không có THREE / vị trí.' };
+    var scene = getScene();
+    if (!scene) return { ok: false, error: 'Không tìm thấy scene viewport.' };
+    try {
+      var size = parseFloat(opts.size) || 0.08;
+      var color = (opts.color !== undefined && opts.color !== null) ? opts.color : 0xffd23e;
+      var mesh = new window.THREE.Mesh(
+        new window.THREE.SphereGeometry(size, 12, 8),
+        new window.THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.95 })
+      );
+      mesh.name = '__arp_anim_event_flash__';
+      mesh.userData.isBoneVisual = true; /* không nướng vào FBX xuất */
+      mesh.position.set(pos.x, pos.y, pos.z);
+      scene.add(mesh);
+      var ttl = parseFloat(opts.ttl) || 0.5;
+      Animator._activeEffects.push({ mesh: mesh, age: 0, ttl: ttl });
+      /* Burst 2D phụ qua PixiEffects (nếu studio đã init Pixi app). */
+      var via2d = false;
+      try {
+        var PE = PS.PixiEffects;
+        var cam = (PS.Viewport && PS.Viewport.camera) || null;
+        if (PE && typeof PE.emit === 'function' && PE.app && cam && typeof cam.project === 'function') {
+          var v = new window.THREE.Vector3(pos.x, pos.y, pos.z).project(cam);
+          var w = (typeof window !== 'undefined' && window.innerWidth) || 800;
+          var h = (typeof window !== 'undefined' && window.innerHeight) || 600;
+          PE.emit(opts.kind === 'smoke' ? 'smoke' : 'burst', (v.x * 0.5 + 0.5) * w, (-v.y * 0.5 + 0.5) * h, {});
+          via2d = true;
+        }
+      } catch (e) {}
+      return { ok: true, position: { x: round4(pos.x), y: round4(pos.y), z: round4(pos.z) }, ttl: ttl, via2d: via2d };
+    } catch (e) {
+      return { ok: false, error: 'Spawn flash lỗi: ' + (e && e.message) };
+    }
+  }
+  function updateEffects(dt) {
+    if (!Animator._activeEffects.length) return;
+    var keep = [];
+    Animator._activeEffects.forEach(function (fx) {
+      fx.age += dt || 0;
+      var k = fx.ttl > 0 ? Math.min(1, fx.age / fx.ttl) : 1;
+      try {
+        var s = 1 + k * 2;
+        fx.mesh.scale.set(s, s, s);
+        if (fx.mesh.material) fx.mesh.material.opacity = Math.max(0, 0.95 * (1 - k));
+      } catch (e) {}
+      if (k < 1) keep.push(fx);
+      else { try { if (fx.mesh.parent) fx.mesh.parent.remove(fx.mesh); } catch (e) {} try { if (fx.mesh.geometry) fx.mesh.geometry.dispose(); } catch (e) {} try { if (fx.mesh.material) fx.mesh.material.dispose(); } catch (e) {} }
+    });
+    Animator._activeEffects = keep;
+  }
+  function clearEffects() {
+    Animator._activeEffects.forEach(function (fx) {
+      try { if (fx.mesh.parent) fx.mesh.parent.remove(fx.mesh); } catch (e) {}
+    });
+    Animator._activeEffects = [];
+  }
+  function boneWorldPos(boneName) {
+    var map = getBoneMap();
+    var b = (boneName && (map[boneName] || map[String(boneName).replace(/^mixamorig:?/i, '')])) || findHipsBone();
+    if (!b || !window.THREE) return null;
+    try {
+      b.updateWorldMatrix(true, false);
+      var v = new window.THREE.Vector3();
+      b.getWorldPosition(v);
+      return { x: v.x, y: v.y, z: v.z };
+    } catch (e) { return null; }
+  }
+  function executeEventAction(ev, rec) {
+    ev = normalizeEvent(ev);
+    if (ev.action === 'sound') {
+      return playEventSound(ev, rec);
+    }
+    if (ev.action === 'damage') {
+      var amount = Math.max(0, parseFloat((ev.params || {}).amount) || 0);
+      var target = (ev.params || {}).target || 'enemy';
+      Animator.demoHp = Math.max(0, Animator.demoHp - amount);
+      rec.damage = amount;
+      rec.target = target;
+      rec.hpAfter = Animator.demoHp;
+      updateDemoHpUI();
+      return { via: 'damage', applied: amount, target: target, hpAfter: Animator.demoHp };
+    }
+    if (ev.action === 'effect') {
+      var bone = ev.bone || (ev.params || {}).bone || 'Hips';
+      var pos = boneWorldPos(bone) || modelRootWorldPos();
+      var r = spawnFlash(pos, {
+        kind: (ev.params || {}).kind || 'flash',
+        color: (ev.params || {}).color, size: (ev.params || {}).size
+      });
+      return { via: r.ok ? 'flash-3d' : 'effect-failed', bone: bone, position: r.position || null, via2d: !!r.via2d, error: r.error || null };
+    }
+    if (ev.action === 'custom') {
+      var handlers = [];
+      (Animator._customHandlers[ev.name] || []).forEach(function (fn) { handlers.push(fn); });
+      (Animator._customHandlers['*'] || []).forEach(function (fn) { handlers.push(fn); });
+      var called = 0, errors = [], returns = [];
+      handlers.forEach(function (fn) {
+        try { returns.push(fn(rec, ev)); called++; } catch (e) { errors.push(e && e.message || String(e)); }
+      });
+      return { via: 'custom', called: called, errors: errors, returns: returns };
+    }
+    return { via: 'none' };
+  }
+
   function fireEventsInRange(from, to) {
     var fired = [];
     if (!Animator.currentId) return fired;
     var list = Animator.events[Animator.currentId] || [];
-    list.forEach(function (ev) {
+    list.forEach(function (evRaw) {
+      var ev = normalizeEvent(evRaw);
       if (ev.t > from && ev.t <= to && !Animator._firedIds[ev.id]) {
         Animator._firedIds[ev.id] = true;
-        var rec = { id: ev.id, name: ev.name, t: round3(ev.t), at: round3(Animator.time) };
+        var rec = { id: ev.id, name: ev.name, t: round3(ev.t), at: round3(Animator.time), action: ev.action };
+        rec.result = executeEventAction(ev, rec);
         Animator.firedLog.push(rec);
         fired.push(rec);
-        notify('info', 'Animator event', '"' + ev.name + '" @ ' + ev.t.toFixed(2) + 's');
+        notify('info', 'Animator event', '"' + ev.name + '" @ ' + ev.t.toFixed(2) + 's' + (ev.action !== 'none' ? ' [' + ev.action + ']' : ''));
         try { bus.emit('animator:event', rec); } catch (e) {}
       }
     });
@@ -631,6 +1336,7 @@
     Animator.paused = false;
     captureBindHips();
     if (Animator.blend.clipBId) syncBlendAction();
+    syncLayerActions();
     applyDisplayOnPlay();
     updateTopBones();
     return { ok: true, id: entry.id, name: entry.name, via: 'mixer', crossfadeFrom: prevAction && prevAction !== action ? true : false };
@@ -669,6 +1375,12 @@
     Animator._currentAction = null;
     Animator._blendAction = null;
     Animator.blend = { clipBId: null, weight: 0 };
+    Object.keys(Animator._layerActions).forEach(function (id) {
+      var rec = Animator._layerActions[id];
+      if (rec && rec.action) { try { rec.action.stop(); } catch (e) {} }
+    });
+    Animator._layerActions = {};
+    clearEffects();
     if (!opts.silent) { Animator.firedLog = []; Animator._firedIds = {}; }
     return { ok: true, time: 0 };
   }
@@ -748,9 +1460,23 @@
          setValue khi scrub cùng 1 thời điểm 2 lần (accu0 == accu1). */
       applyPoseAtTime(entry, t);
     }
-    fireEventsInRange(Math.min(prev, t), Math.max(prev, t));
+    /* Scrub/step KHÔNG kích hoạt event (hành vi đã chọn): event chỉ
+       kích hoạt khi PHÁT qua frame đó (tick). Kéo timeline qua nhanh
+       không bắn sound/damage/effect. */
     applyRootMotion();
     applyAdditive();
+    applyLayerPoseAtTime(t);
+    /* Đồng bộ thời gian action layer để tick tiếp theo chạy đúng. */
+    Object.keys(Animator._layerActions).forEach(function (id) {
+      var rec = Animator._layerActions[id];
+      var layer = null;
+      Animator.layers.forEach(function (l) { if (l.id === id) layer = l; });
+      if (!rec || !rec.action || !layer) return;
+      var le = getClip(layer.clipId);
+      if (le && le.clip && le.clip.duration > 0) {
+        try { rec.action.time = t % le.clip.duration; } catch (e) {}
+      }
+    });
     updateTopBones();
     updateReadout();
     return { ok: true, time: round3(t), frame: getFrameInfo() };
@@ -834,6 +1560,10 @@
         }
       }
       Animator._addLastKey = null; /* mixer sắp viết lại pose base */
+      /* Root motion thật: đồng bộ baseline với pose tại prevTime
+         TRƯỚC khi mixer nhảy tới frame mới (pose lúc này vẫn là
+         pose sau tick trước, đã khóa XZ). */
+      if (Animator._rmNeedResync || !Animator._rmPrevWorld) syncRmBaseline();
       try { Animator._mixer.update(dtEff); } catch (e) {}
       /* Mixer tự loop action; đồng bộ Animator.time theo action */
       if (Animator._currentAction) {
@@ -850,9 +1580,15 @@
       } else {
         fired = fireEventsInRange(prevTime, Animator.time);
       }
-      applyRootMotion();
+      applyRootMotionTick(prevTime, Animator.time, wrapped);
       applyAdditive();
+      updateEffects(dtEff);
+      if (Animator.display.rootPath) drawRootPath();
+      syncLayerWeights();
     }
+    /* Base keyframe không qua mixer: layer áp bằng sampling trực
+       tiếp sau KF.tick (scrub đã làm tương tự trong setTime). */
+    if (entry.source === 'keyframe') applyLayerPoseAtTime(Animator.time);
     updateTopBones();
     updateReadout();
     return { ok: true, time: round3(Animator.time), playing: Animator.playing, frame: getFrameInfo(), fired: fired };
@@ -1017,8 +1753,22 @@
     return { ok: true, clip: out, duration: round3(D) };
   }
 
+  /* Mirror clip qua mặt phẳng dọc YZ — LUẬT ĐÚNG (Nhóm B,
+     js/rig/arp-restpose.js, ArpAnimMirror): đổi cặp Left/Right +
+     quaternion (x,−y,−z,w) / vị trí (−x,y,z). Luật cũ (−x,y,−z,w)
+     là mirror qua mặt phẳng NGANG XZ — SAI (quay quanh Y không bị
+     mirror, quay quanh X bị đảo). Delegate cho ArpAnimMirror khi
+     module đã load; fallback inline dưới đây dùng ĐÚNG luật mới
+     (kèm tạo track bên kia khi clip chỉ có 1 bên). */
   function mirrorClip(clip) {
     if (!clip || !clip.tracks) return { ok: false, error: 'Clip không có tracks.' };
+    var AM = (typeof window !== 'undefined' && window.PixiStudio && window.PixiStudio.ArpAnimMirror) || null;
+    if (AM && typeof AM.mirrorClip === 'function') {
+      try {
+        var r = AM.mirrorClip(clip);
+        if (r && r.ok) return r;
+      } catch (e) {}
+    }
     function counterpart(bone) {
       if (/^Left/i.test(bone)) return bone.replace(/^Left/i, 'Right');
       if (/^Right/i.test(bone)) return bone.replace(/^Right/i, 'Left');
@@ -1031,8 +1781,32 @@
     clip.tracks.forEach(function (tr) {
       byBone[stripBoneName(tr.name) + '|' + (isQuatTrack(tr) ? 'q' : 'v')] = tr;
     });
+    function mirrorTrackName(name) {
+      var dot = name.lastIndexOf('.');
+      if (dot <= 0) return name;
+      var bonePart = name.slice(0, dot);
+      var prop = name.slice(dot);
+      var m = bonePart.match(/^(mixamorig:?|model:?)(.*)$/i);
+      var core = m ? m[2] : bonePart;
+      return (m ? m[1] : '') + counterpart(core) + prop;
+    }
+    function mirrorValues(src, isQuat) {
+      var values = [];
+      var n = src.times.length;
+      for (var i = 0; i < n; i++) {
+        if (isQuat) {
+          /* Luật đúng: (x,−y,−z,w) — xem header § Mirror. */
+          values.push(src.values[i * 4], -src.values[i * 4 + 1], -src.values[i * 4 + 2], src.values[i * 4 + 3]);
+        } else {
+          /* Vị trí: lật dấu x */
+          values.push(-src.values[i * 3], src.values[i * 3 + 1], src.values[i * 3 + 2]);
+        }
+      }
+      return values;
+    }
     var done = {};
     var tracks = [];
+    var synthesized = [];
     clip.tracks.forEach(function (tr) {
       var bone = stripBoneName(tr.name);
       var kind = isQuatTrack(tr) ? 'q' : 'v';
@@ -1043,32 +1817,21 @@
       var src = byBone[twinKey] || tr;
       done[key] = true;
       done[twinKey] = true;
-      var values = [];
-      var n = src.times.length;
-      for (var i = 0; i < n; i++) {
-        if (isQuatTrack(src)) {
-          /* Mirror qua mặt phẳng dọc YZ: lật dấu x,z của quaternion */
-          values.push(-src.values[i * 4], src.values[i * 4 + 1], -src.values[i * 4 + 2], src.values[i * 4 + 3]);
-        } else {
-          /* Vị trí: lật dấu x */
-          values.push(-src.values[i * 3], src.values[i * 3 + 1], src.values[i * 3 + 2]);
-        }
-      }
-      tracks.push(cloneTrackOfType(tr, Array.prototype.slice.call(src.times), values));
-      /* Nếu cặp L/R có 2 track khác tên gốc, track twin giữ nguyên tên
-         của nó nhưng lấy giá trị từ track này (đã lật dấu). */
-      if (twin !== bone && byBone[twinKey]) {
+      tracks.push(cloneTrackOfType(tr, Array.prototype.slice.call(src.times), mirrorValues(src, isQuatTrack(src))));
+      /* Track twin: giữ tên gốc nếu có, lấy giá trị từ track này
+         (đã lật dấu); nếu clip chỉ có 1 bên thì TẠO track bên kia. */
+      if (twin !== bone) {
         var twinTr = byBone[twinKey];
-        var values2 = [];
-        for (var j = 0; j < tr.times.length; j++) {
-          if (isQuatTrack(tr)) values2.push(-tr.values[j * 4], tr.values[j * 4 + 1], -tr.values[j * 4 + 2], tr.values[j * 4 + 3]);
-          else values2.push(-tr.values[j * 3], tr.values[j * 3 + 1], tr.values[j * 3 + 2]);
+        if (twinTr) tracks.push(cloneTrackOfType(twinTr, Array.prototype.slice.call(tr.times), mirrorValues(tr, isQuatTrack(tr))));
+        else {
+          tracks.push(cloneTrackOfType(tr, Array.prototype.slice.call(tr.times), mirrorValues(tr, isQuatTrack(tr))));
+          tracks[tracks.length - 1].name = mirrorTrackName(tr.name);
+          synthesized.push(mirrorTrackName(tr.name));
         }
-        tracks.push(cloneTrackOfType(twinTr, Array.prototype.slice.call(tr.times), values2));
       }
     });
     var out = buildClip((clip.name || 'clip') + '_mirror', clip.duration, tracks);
-    return { ok: true, clip: out, duration: round3(clip.duration), trackCount: tracks.length, note: 'Mirror gần đúng: đổi cặp Left/Right + lật dấu quay x,z / vị trí x.' };
+    return { ok: true, clip: out, duration: round3(clip.duration), trackCount: tracks.length, synthesizedTwins: synthesized, note: 'Mirror đúng qua YZ: đổi cặp Left/Right + quat (x,−y,−z,w) / vị trí (−x,y,z).' + (synthesized.length ? ' Tạo thêm ' + synthesized.length + ' track bên kia.' : '') };
   }
 
   /* Áp 1 phép chỉnh sửa lên clip đang chọn, lưu thành clip MỚI. */
@@ -1076,6 +1839,33 @@
     opts = opts || {};
     var entry = Animator.currentId ? getClip(Animator.currentId) : null;
     if (!entry) return { ok: false, error: 'Chưa chọn clip.' };
+    /* [NHÓM B] Mirror clip keyframe (keys Euler + FK): ArpSyncClips
+       đã xử lý mirror keyframe qua editClip — dùng nó khi có; nếu
+       chưa load sync thì dùng ArpAnimMirror.mirrorKeys trực tiếp và
+       đăng ký keys đã mirror (phát được qua Keyframe.tick). Các phép
+       khác trên keyframe vẫn từ chối như cũ. */
+    if (op === 'mirror' && (entry.source === 'keyframe' || (entry.keys && entry.keys.length))) {
+      var SC = (window.PixiStudio && window.PixiStudio.ArpSyncClips) || null;
+      if (SC && typeof SC.editClip === 'function') {
+        try {
+          var sr = SC.editClip(entry.id, 'mirror', { name: (opts.name || (entry.name + '_mirror')).trim() });
+          if (sr && sr.ok) return { ok: true, id: sr.id, name: sr.name, duration: sr.duration, op: op, note: 'Mirror keyframe (Euler + FK giữ nguyên).', via: 'sync' };
+        } catch (e) {}
+      }
+      var AM2 = (typeof window !== 'undefined' && window.PixiStudio && window.PixiStudio.ArpAnimMirror) || null;
+      var keys = entry.keys || (getKeyframe() && getKeyframe().clip && getKeyframe().clip.keys) || null;
+      if (AM2 && keys) {
+        var kr = AM2.mirrorKeyframeClip({ name: entry.name, duration: entry.duration, fps: entry.fps || DEFAULT_FPS, loop: entry.loop, keys: keys });
+        if (kr.ok) {
+          var kname = (opts.name || (entry.name + '_mirror')).trim();
+          var ksaved = registerClip({ name: kname, keys: kr.clip.keys, duration: kr.clip.duration, fps: kr.clip.fps, loop: kr.clip.loop, source: 'user', userCreated: true });
+          if (!ksaved.ok) return ksaved;
+          return { ok: true, id: ksaved.id, name: kname, duration: ksaved.duration, op: op, note: 'Mirror keyframe (Euler + FK giữ nguyên).', via: 'anim-mirror' };
+        }
+        return kr;
+      }
+      return { ok: false, error: 'Clip keyframe chưa mirror được — cần ArpSyncClips hoặc ArpAnimMirror.' };
+    }
     if (!entry.clip) return { ok: false, error: 'Clip "' + entry.name + '" không có THREE.AnimationClip — autogen/keyframe không chỉnh sửa được ở đây.' };
     var r;
     if (op === 'trim') r = trimClip(entry.clip, opts.start, opts.end);
@@ -1111,7 +1901,7 @@
   /* ============================================================
      7. EVENT MARKERS
      ============================================================ */
-  function addEvent(name, t, clipId) {
+  function addEvent(name, t, clipId, opts) {
     clipId = clipId || Animator.currentId;
     if (!clipId) return { ok: false, error: 'Chưa chọn clip.' };
     name = String(name || '').trim();
@@ -1120,11 +1910,49 @@
     if (!entry) return { ok: false, error: 'Không tìm thấy clip.' };
     if (t === undefined || t === null) t = Animator.time;
     t = clamp(parseFloat(t) || 0, 0, entry.duration);
+    opts = opts || {};
+    var action = EVENT_ACTIONS.indexOf(opts.action) >= 0 ? opts.action : 'none';
+    var params = (opts.params && typeof opts.params === 'object') ? opts.params : {};
+    if (action === 'damage' && !(parseFloat(params.amount) > 0)) params = Object.assign({}, params, { amount: 10 });
+    if (action === 'sound' && !params.url && !(parseFloat(params.freq) > 0)) params = Object.assign({}, params, { freq: 880, dur: 0.15 });
     if (!Animator.events[clipId]) Animator.events[clipId] = [];
-    var ev = { id: 'ev_' + (++Animator._evSeq), t: round3(t), name: name };
+    var ev = { id: 'ev_' + (++Animator._evSeq), t: round3(t), name: name, action: action, params: params, bone: opts.bone || params.bone || null };
     Animator.events[clipId].push(ev);
     Animator.events[clipId].sort(function (a, b) { return a.t - b.t; });
     return { ok: true, event: ev, clipId: clipId };
+  }
+  /* Sửa event đã có (đổi tên/thời gian/action/tham số). patch.params
+     được merge vào params cũ (không ghi đè hẳn). */
+  function updateEvent(clipId, eventId, patch) {
+    var list = Animator.events[clipId] || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].id === eventId) {
+        var ev = normalizeEvent(list[i]);
+        patch = patch || {};
+        if (patch.name !== undefined) {
+          var nm = String(patch.name || '').trim();
+          if (!nm) return { ok: false, error: 'Tên event không được rỗng.' };
+          ev.name = nm;
+        }
+        if (patch.t !== undefined) {
+          var entry = getClip(clipId);
+          ev.t = clamp(parseFloat(patch.t) || 0, 0, entry ? entry.duration : ev.t);
+          ev.t = round3(ev.t);
+        }
+        if (patch.action !== undefined) {
+          if (EVENT_ACTIONS.indexOf(patch.action) < 0) return { ok: false, error: 'Action không biết: ' + patch.action };
+          ev.action = patch.action;
+        }
+        if (patch.params && typeof patch.params === 'object') {
+          ev.params = Object.assign({}, ev.params, patch.params);
+        }
+        if (patch.bone !== undefined) ev.bone = patch.bone || null;
+        list[i] = ev;
+        list.sort(function (a, b) { return a.t - b.t; });
+        return { ok: true, event: ev, clipId: clipId };
+      }
+    }
+    return { ok: false, error: 'Không tìm thấy event.' };
   }
   function deleteEvent(clipId, eventId) {
     var list = Animator.events[clipId] || [];
@@ -1138,7 +1966,7 @@
     return { ok: false, error: 'Không tìm thấy event.' };
   }
   function listEvents(clipId) {
-    return (Animator.events[clipId || Animator.currentId] || []).slice();
+    return (Animator.events[clipId || Animator.currentId] || []).map(function (ev) { return normalizeEvent(ev); });
   }
   function clearFiredLog() {
     Animator.firedLog = [];
@@ -1164,11 +1992,12 @@
     opts = opts || {};
     var entry = getClip(id || Animator.currentId);
     if (!entry) return { ok: false, error: 'Chưa chọn clip.' };
-    /* Clip keyframe: dùng exporter có sẵn của Keyframe (đúng format) */
+    /* Clip keyframe: dùng exporter có sẵn của Keyframe (đúng format).
+       Chuyển tiếp tuỳ chọn nén từ UI Animator (checkbox nén). */
     if (entry.source === 'keyframe') {
       var KF = getKeyframe();
       if (!KF || typeof KF.exportClip !== 'function') return { ok: false, error: 'Keyframe chưa load.' };
-      var kr = KF.exportClip({ download: false });
+      var kr = KF.exportClip({ download: false, compress: opts.compress, posEpsMm: opts.posEpsMm, rotEpsDeg: opts.rotEpsDeg, quantize: opts.quantize });
       if (kr && kr.ok && opts.download !== false && U && typeof U.downloadText === 'function') {
         try { U.downloadText(kr.text, kr.filename, 'application/json'); } catch (e) {}
       }
@@ -1185,21 +2014,248 @@
       if (bad2.length) bad = bad.concat(bad2);
     }
     if (bad.length) return { ok: false, error: 'Clip lỗi track, không xuất: ' + bad[0] };
+    /* NÉN (nhóm D — arp-anim-compression.js): chỉ khi opts.compress
+       === true (UI Animator truyền rõ từ checkbox, mặc định BẬT;
+       gọi API không truyền gì thì KHÔNG nén để file cũ byte-identical).
+       Format JSON giữ nguyên v1 + cờ compressed + khối compression
+       (không dùng '-2' — đã bị Animation Layers chiếm cho layers). */
+    var compStats = null, bytesBefore = null, bytesAfter = null;
+    if (opts.compress === true) {
+      var AC = PS.ArpAnimCompression;
+      if (AC && typeof AC.compressPlainTracks === 'function') {
+        var cOpts = { posEpsMm: opts.posEpsMm, rotEpsDeg: opts.rotEpsDeg, posEps: opts.posEps, quantize: opts.quantize };
+        var origTracks = tracks;
+        bytesBefore = AC.bytesOfJSON(origTracks);
+        var c = AC.compressPlainTracks(tracks, cOpts);
+        bytesAfter = AC.bytesOfJSON(c.tracks);
+        var dev = AC.measureDeviation({ duration: entry.duration, tracks: origTracks }, { duration: entry.duration, tracks: c.tracks }, cOpts);
+        tracks = c.tracks;
+        compStats = {
+          keysBefore: c.keysBefore, keysAfter: c.keysAfter, dropped: c.dropped,
+          keySavedPct: c.keysBefore ? Math.round((1 - c.keysAfter / c.keysBefore) * 1000) / 10 : 0,
+          bytesBefore: bytesBefore, bytesAfter: bytesAfter,
+          savedPct: bytesBefore ? Math.round((1 - bytesAfter / bytesBefore) * 1000) / 10 : 0,
+          maxPosMm: dev.maxPosMm, maxRotDeg: dev.maxRotDeg, samples: dev.samples,
+          eps: { posEpsMm: (cOpts.posEpsMm !== undefined ? cOpts.posEpsMm : null), rotEpsDeg: cOpts.rotEpsDeg }
+        };
+        try { console.info('[Animator] Nén JSON: ' + AC.formatStats(compStats)); } catch (e) {}
+      }
+    }
     var data = {
       format: FORMAT, character: 'animator',
       skeleton: { boneNames: Object.keys(getBoneMap()), boneCount: Object.keys(getBoneMap()).length },
       clips: [{
         id: slug(entry.name), name: entry.name, duration: entry.duration,
         loop: !!entry.loop, source: 'animator-' + entry.source, fps: entry.fps || DEFAULT_FPS,
-        tracks: tracks
+        tracks: tracks,
+        /* Event markers kèm action (nhóm C): file cũ không có key này
+           vẫn đọc được (import coi như không có event). */
+        events: listEvents(entry.id)
       }]
     };
+    if (compStats) {
+      data.compressed = true;
+      data.compression = compStats;
+      data.clips[0].compressed = true;
+      data.clips[0].compression = compStats;
+    }
     var text = JSON.stringify(data, null, 1);
     var filename = 'animator_' + slug(entry.name) + '_clips.json';
     if (opts.download !== false && U && typeof U.downloadText === 'function') {
       try { U.downloadText(text, filename, 'application/json'); } catch (e) {}
     }
-    return { ok: true, json: data, text: text, filename: filename, format: FORMAT, trackCount: tracks.length, keyCount: tracks.length ? tracks[0].times.length : 0 };
+    return { ok: true, json: data, text: text, filename: filename, format: FORMAT, trackCount: tracks.length, keyCount: tracks.length ? tracks[0].times.length : 0, compression: compStats, bytesBefore: bytesBefore, bytesAfter: bytesAfter, savedPct: compStats ? compStats.savedPct : null };
+  }
+
+  /* Nén thử clip đang chọn (chỉ tính toán, không ghi đè clip gốc):
+     dùng cho nút "Nén thử" ở mục Xuất + harness đo độ lệch. */
+  function compressCurrentClip(opts) {
+    opts = opts || {};
+    var entry = getClip(Animator.currentId);
+    if (!entry) return { ok: false, error: 'Chưa chọn clip.' };
+    var AC = PS.ArpAnimCompression;
+    if (!AC) return { ok: false, error: 'Module nén chưa load (js/rig/arp-anim-compression.js).' };
+    if (entry.source === 'keyframe') {
+      var KF = getKeyframe();
+      if (!KF || typeof KF.exportClip !== 'function') return { ok: false, error: 'Keyframe chưa load.' };
+      var kr = KF.exportClip({ download: false, compress: true, posEpsMm: opts.posEpsMm, rotEpsDeg: opts.rotEpsDeg, quantize: opts.quantize });
+      if (kr && kr.ok) Animator._lastCompression = kr.compression || null;
+      return kr || { ok: false, error: 'Keyframe.exportClip không trả kết quả.' };
+    }
+    if (!entry.clip) return { ok: false, error: 'Clip "' + entry.name + '" không có THREE.AnimationClip để nén.' };
+    var r = AC.compressClip(entry.clip, { posEpsMm: opts.posEpsMm, rotEpsDeg: opts.rotEpsDeg, posEps: opts.posEps, quantize: opts.quantize });
+    if (r.ok) Animator._lastCompression = r.stats;
+    return r.ok ? { ok: true, name: entry.name, stats: r.stats, clip: r.clip } : r;
+  }
+
+  /* ---------- Xuất / nhập Animation Layers (format v2) ----------
+     v2 = v1 + trường layers[] + version:2. Đọc được file v1 cũ
+     (không có layers → layers=[]). Clip trong file chỉ là tham
+     chiếu theo tên/id — import không tự tạo clip, chỉ khôi phục
+     layer nào trỏ tới clip đã có trong Animator. */
+  function exportLayersJSON(opts) {
+    opts = opts || {};
+    var base = exportClipJSON(Animator.currentId, { download: false });
+    if (!base.ok) return base;
+    var AL = getAnimLayers();
+    var layers = AL && typeof AL.serializeLayers === 'function'
+      ? AL.serializeLayers(Animator.layers)
+      : Animator.layers.map(function (l) {
+          return { id: l.id, clipId: l.clipId, weight: l.weight, mask: l.mask, mode: l.mode, enabled: l.enabled };
+        });
+    var data = base.json;
+    data.format = Animator.FORMAT2;
+    data.version = 2;
+    data.baseClipId = Animator.currentId;
+    data.layers = layers;
+    var text = JSON.stringify(data, null, 1);
+    var filename = 'animator_' + slug((Animator.currentId && getClip(Animator.currentId) || {}).name || 'layers') + '_layers.json';
+    if (opts.download !== false && U && typeof U.downloadText === 'function') {
+      try { U.downloadText(text, filename, 'application/json'); } catch (e) {}
+    }
+    return { ok: true, json: data, text: text, filename: filename, format: Animator.FORMAT2, version: 2, layerCount: layers.length, trackCount: base.trackCount };
+  }
+
+  function importLayersJSON(textOrObj) {
+    var data = textOrObj;
+    if (typeof data === 'string') {
+      try { data = JSON.parse(data); } catch (e) { return { ok: false, error: 'JSON không parse được: ' + (e && e.message) }; }
+    }
+    if (!data || typeof data !== 'object') return { ok: false, error: 'Dữ liệu import không phải object JSON.' };
+    if (data.format === FORMAT) {
+      /* Format cũ v1: không có layers — tương thích ngược. */
+      return { ok: true, format: FORMAT, version: 1, layers: [], count: 0, note: 'File format v1 cũ (không có layers) — giữ nguyên layers hiện tại.' };
+    }
+    if (data.format !== Animator.FORMAT2) {
+      return { ok: false, error: 'Format không nhận: ' + (data.format || '(trống)') + ' — cần ' + Animator.FORMAT2 + ' hoặc ' + FORMAT + '.' };
+    }
+    var AL = getAnimLayers();
+    var parsed = AL && typeof AL.parseLayers === 'function'
+      ? AL.parseLayers(data.layers || [])
+      : { ok: true, layers: (data.layers || []).filter(function (l) { return l && l.clipId; }), skipped: [] };
+    if (!parsed.ok) return parsed;
+    var kept = [], dropped = [];
+    parsed.layers.forEach(function (l) {
+      var entry = getClip(l.clipId);
+      if (!entry || !entry.clip) { dropped.push(l.clipId); return; }
+      kept.push(l);
+    });
+    clearLayers();
+    kept.forEach(function (l) { Animator.layers.push(l); });
+    syncLayerActions();
+    return { ok: true, format: Animator.FORMAT2, version: 2, layers: listLayers(), count: kept.length,
+      dropped: dropped, note: dropped.length ? ('Bỏ ' + dropped.length + ' layer vì clip không có trong Animator: ' + dropped.join(', ')) : '' };
+  }
+
+  /* ---------- Curve Editor: mở từ clip đang chọn ---------- */
+  function openCurveEditor(container, opts) {
+    opts = opts || {};
+    var AC = PS.AnimCurves;
+    if (!AC || typeof AC.openEditor !== 'function') {
+      return { ok: false, error: 'AnimCurves chưa load (js/animation/anim-curves.js).' };
+    }
+    var entry = Animator.currentId ? getClip(Animator.currentId) : null;
+    if (!entry) return { ok: false, error: 'Chưa chọn clip.' };
+    if (!entry.clip) return { ok: false, error: 'Clip "' + entry.name + '" không có THREE.AnimationClip — autogen/keyframe mở bằng AnimCurves.fromKeyframeClip trước.' };
+    var target = container || Animator._bodyEl;
+    if (!target) return { ok: false, error: 'Không có container để mở Curve Editor.' };
+    var box = document.createElement('div');
+    box.className = 'arp-anim-sec arp-curve-box';
+    target.appendChild(box);
+    var r = AC.openEditor(box, {
+      clip: entry.clip,
+      trackName: opts.trackName, axis: opts.axis,
+      onApply: function (applied) {
+        var saved = registerClip({ name: (entry.name || 'clip') + '_curve', clip: applied.clip, loop: entry.loop, source: 'user', userCreated: true });
+        Animator._curveEdit = null;
+        if (opts.onApply) opts.onApply(applied, saved);
+        return saved;
+      },
+      onError: opts.onError
+    });
+    if (!r.ok) return r;
+    Animator._curveEdit = r.edit;
+    return { ok: true, clip: entry.name, trackCount: entry.clip.tracks.length, edit: r.edit };
+  }
+
+  /* Mở Curve Editor từ clip keyframe đã ghi: đổi sang THREE clip
+     rồi chỉnh curve như clip thường (clip gốc keyframe không đổi). */
+  function openCurveEditorFromKeyframe(opts) {
+    opts = opts || {};
+    var AC = PS.AnimCurves;
+    if (!AC || typeof AC.fromKeyframeClip !== 'function') {
+      return { ok: false, error: 'AnimCurves chưa load (js/animation/anim-curves.js).' };
+    }
+    var KF = getKeyframe();
+    var kfClip = (KF && typeof KF.getClip === 'function') ? KF.getClip() : null;
+    if (!kfClip || !kfClip.keys || !kfClip.keys.length) {
+      return { ok: false, error: 'Chưa có clip keyframe nào được ghi.' };
+    }
+    var conv = AC.fromKeyframeClip(kfClip);
+    if (!conv.ok) return conv;
+    var saved = registerClip({ name: (kfClip.name || 'keyframe') + '_curve_src', clip: conv.clip, loop: !!kfClip.loop, source: 'user', userCreated: true });
+    if (!saved.ok) return saved;
+    Animator.currentId = saved.id;
+    return openCurveEditor(opts.container, opts);
+  }
+
+  /* Nhập clip từ JSON do exportClipJSON xuất (nhóm C): đọc được file
+     cũ (không có events, không có layers) — event thiếu action thì
+     coi là 'none'. Track nén (compressed) thì giải nén trước khi
+     dựng clip (qua ArpAnimCompression nếu có). */
+  function importClipJSON(text, opts) {
+    opts = opts || {};
+    if (!window.THREE) return { ok: false, error: 'THREE chưa sẵn sàng.' };
+    var data;
+    try { data = typeof text === 'string' ? JSON.parse(text) : text; }
+    catch (e) { return { ok: false, error: 'JSON không parse được: ' + (e && e.message) }; }
+    if (!data || typeof data.format !== 'string' || data.format.indexOf('pixistudio-animator-clips-') !== 0) {
+      return { ok: false, error: 'Không phải file clip Animator (format pixistudio-animator-clips-*).' };
+    }
+    if (!Array.isArray(data.clips) || !data.clips.length) return { ok: false, error: 'File không có clip nào.' };
+    var imported = [];
+    for (var ci = 0; ci < data.clips.length; ci++) {
+      var c = data.clips[ci];
+      if (!c || !Array.isArray(c.tracks) || !c.tracks.length) continue;
+      var plainTracks = c.tracks;
+      if (c.compressed && PS.ArpAnimCompression && typeof PS.ArpAnimCompression.decompressPlainTracks === 'function') {
+        try { plainTracks = PS.ArpAnimCompression.decompressPlainTracks(c.tracks, c.compression); } catch (e) {}
+      }
+      var tracks = [];
+      var bad = false;
+      for (var ti = 0; ti < plainTracks.length; ti++) {
+        var t = plainTracks[ti];
+        if (!t || !t.name || !Array.isArray(t.times) || !Array.isArray(t.values)) { bad = true; break; }
+        try {
+          if (/\.quaternion$/i.test(t.name)) tracks.push(new window.THREE.QuaternionKeyframeTrack(t.name, t.times, t.values));
+          else tracks.push(new window.THREE.VectorKeyframeTrack(t.name, t.times, t.values));
+        } catch (e) { bad = true; break; }
+      }
+      if (bad || !tracks.length) continue;
+      var clip = new window.THREE.AnimationClip(c.name || ('imported_' + ci), c.duration || 0, tracks);
+      var saved = registerClip({ name: clip.name, clip: clip, fps: c.fps || DEFAULT_FPS, loop: c.loop !== false, source: 'user', userCreated: true });
+      if (!saved.ok) continue;
+      /* Nhập lại cùng clip thì events cũ bị thay bằng events trong
+         file (không cộng dồn với lần nhập trước). */
+      Animator.events[saved.id] = [];
+      var nEv = 0;
+      (c.events || []).forEach(function (evRaw) {
+        if (!evRaw || !evRaw.name) return;
+        var r = addEvent(evRaw.name, evRaw.t || 0, saved.id, { action: evRaw.action, params: evRaw.params, bone: evRaw.bone });
+        if (r.ok) {
+          nEv++;
+          if (evRaw.id) { /* giữ id gốc để file export lại ổn định */
+            var list = Animator.events[saved.id];
+            for (var k = 0; k < list.length; k++) if (list[k].id === r.event.id) list[k].id = evRaw.id;
+            var m = /^ev_(\d+)$/.exec(evRaw.id);
+            if (m) Animator._evSeq = Math.max(Animator._evSeq, parseInt(m[1], 10));
+          }
+        }
+      });
+      imported.push({ id: saved.id, name: clip.name, duration: round3(clip.duration), events: nEv });
+    }
+    if (!imported.length) return { ok: false, error: 'Không nhập được clip nào (track lỗi?).' };
+    return { ok: true, imported: imported, count: imported.length, format: data.format };
   }
 
   function exportClipFBX(id, opts) {
@@ -1233,18 +2289,48 @@
   /* ============================================================
      9. HIỂN THỊ VIEWPORT
      ============================================================ */
+  /* Đường root motion WORLD (nhóm C): toàn bộ quỹ đạo XZ của clip
+     (65 mẫu), bắt đầu tại vị trí model root HIỆN TẠI, delta Hips
+     xoay theo hướng mặt hiện tại của model. Vẽ lại mỗi tick khi
+     đang phát để đường đi theo nhân vật. + marker vàng = vị trí
+     model root hiện tại. Clip không có track Hips → báo rõ. */
   function drawRootPath() {
     var line = Animator._rootPathLine;
-    if (!Animator.display.rootPath || !Animator.rootPath.length) {
+    var marker = Animator._rootMarker;
+    function removeAll() {
       if (line && line.parent) { try { line.parent.remove(line); } catch (e) {} }
+      if (marker && marker.parent) { try { marker.parent.remove(marker); } catch (e) {} }
       Animator._rootPathLine = null;
-      return { ok: true, shown: false };
+      Animator._rootMarker = null;
     }
+    if (!Animator.display.rootPath) { removeAll(); return { ok: true, shown: false }; }
     if (!window.THREE) return { ok: false, error: 'THREE chưa sẵn sàng.' };
     var scene = getScene();
     if (!scene) return { ok: false, error: 'Không tìm thấy scene viewport.' };
+    var entry = Animator.currentId ? getClip(Animator.currentId) : null;
+    if (!entry || !entry.clip || !findHipsTrack(entry.clip)) {
+      removeAll();
+      return { ok: false, error: 'Clip hiện tại không có track Hips.position — không vẽ được đường root.' };
+    }
     try {
-      var pts = Animator.rootPath.map(function (p) { return new window.THREE.Vector3(p.x, p.y, p.z); });
+      var root = getModelRoot();
+      var origin = modelRootWorldPos() || { x: 0, y: 0, z: 0 };
+      /* Hướng mặt của model (yaw world) để xoay delta Hips. */
+      var yawQ = new window.THREE.Quaternion();
+      if (root) { try { root.getWorldQuaternion(yawQ); } catch (e) {} }
+      var full = rootPathFor(entry.clip, 65);
+      var pts = [];
+      var px = 0, pz = 0;
+      var p0 = full.length ? full[0] : { x: 0, z: 0 };
+      full.forEach(function (p, i) {
+        var dx = p.x - p0.x, dz = p.z - p0.z;
+        if (i === 0) { px = 0; pz = 0; }
+        else {
+          var v = new window.THREE.Vector3(dx, 0, dz).applyQuaternion(yawQ);
+          px = v.x; pz = v.z;
+        }
+        pts.push(new window.THREE.Vector3(origin.x + px, origin.y, origin.z + pz));
+      });
       var geo = new window.THREE.BufferGeometry().setFromPoints(pts);
       if (!line) {
         line = new window.THREE.Line(geo, new window.THREE.LineBasicMaterial({ color: 0x00e5ff }));
@@ -1256,6 +2342,18 @@
         line.geometry = geo;
       }
       if (!line.parent) scene.add(line);
+      /* Marker vị trí hiện tại (cập nhật mỗi lần vẽ). */
+      if (!marker) {
+        marker = new window.THREE.Mesh(
+          new window.THREE.SphereGeometry(0.05, 12, 8),
+          new window.THREE.MeshBasicMaterial({ color: 0xffd23e })
+        );
+        marker.name = '__arp_anim_rootmarker__';
+        marker.userData.isBoneVisual = true;
+        Animator._rootMarker = marker;
+      }
+      marker.position.set(origin.x, origin.y + 0.05, origin.z);
+      if (!marker.parent) scene.add(marker);
       return { ok: true, shown: true, points: pts.length };
     } catch (e) {
       return { ok: false, error: 'Vẽ đường root lỗi: ' + (e && e.message) };
@@ -1361,6 +2459,10 @@
         if (panelSpan) panelSpan.textContent = text;
         var rootSpan = document.getElementById('arp-anim-rootpos');
         if (rootSpan) rootSpan.textContent = 'Root: (' + Animator.rootPos.x.toFixed(3) + ', ' + Animator.rootPos.y.toFixed(3) + ', ' + Animator.rootPos.z.toFixed(3) + ')';
+        /* Nhóm C: vị trí world của model root + quãng đường đã đi. */
+        var mrSpan = document.getElementById('arp-anim-modelroot-pos');
+        if (mrSpan) mrSpan.textContent = 'Model root (world): (' + Animator.modelRootPos.x.toFixed(3) + ', ' + Animator.modelRootPos.y.toFixed(3) + ', ' + Animator.modelRootPos.z.toFixed(3) + ') · đã đi ' + Animator.rootMotionTravelled.toFixed(3) + 'm';
+        updateDemoHpUI();
       } catch (e) {}
     }
     return text;
@@ -1533,22 +2635,38 @@
         editBtn('🪞 Mirror L↔R', 'mirror'),
         delBtn
       ]),
-      el('div', { class: 'arp-note', text: 'Retiming giữ nguyên số key gốc. Mirror là gần đúng (đổi cặp Left/Right + lật dấu).' })
+      el('div', { class: 'arp-note', text: 'Retiming giữ nguyên số key gốc. Mirror đúng qua YZ: đổi cặp Left/Right + quat (x,−y,−z,w) / vị trí (−x,y,z); clip keyframe cũng mirror được.' })
     ]));
 
-    /* --- 5. Root motion --- */
+    /* --- 5. Root motion (THẬT — di chuyển model trong world) --- */
     var rmChk = el('input', { type: 'checkbox' });
     rmChk.checked = Animator.rootMotion;
     rmChk.addEventListener('change', function () {
       setRootMotion(rmChk.checked);
-      say(rmChk.checked ? 'Root motion BẬT — Hips.position từ clip áp bình thường.' : 'Root motion TẮT — Hips khóa ở vị trí bind.');
+      say(rmChk.checked ? 'Root motion BẬT — nhân vật ĐI trong scene theo Hips XZ của clip (Hips XZ khóa về bind, Y giữ theo clip).' : 'Root motion TẮT — Hips khóa ở vị trí bind, nhân vật chạy tại chỗ.');
+      updateReadout();
     });
     var rootPosSpan = el('span', { id: 'arp-anim-rootpos', text: 'Root: (0, 0, 0)' });
+    var modelRootSpan = el('span', { id: 'arp-anim-modelroot-pos', text: 'Model root (world): (0, 0, 0) · đã đi 0.000m' });
+    var rmResetBtn = el('button', { class: 'arp-btn arp-btn-sm', text: '↺ Reset vị trí' });
+    rmResetBtn.addEventListener('click', function () {
+      var r = resetRootPosition();
+      say(r.ok ? ('Đã đưa nhân vật về điểm bắt đầu phiên phát (' + r.position.x.toFixed(2) + ', ' + r.position.y.toFixed(2) + ', ' + r.position.z.toFixed(2) + ').') : ('Lỗi: ' + r.error), r.ok);
+      updateReadout();
+    });
+    var rmResetAbsBtn = el('button', { class: 'arp-btn arp-btn-sm', text: '⌂ Về gốc (0,0,0)' });
+    rmResetAbsBtn.addEventListener('click', function () {
+      var r = resetRootPosition({ absolute: true });
+      say(r.ok ? 'Đã đưa nhân vật về gốc tuyệt đối (0, 0, 0).' : ('Lỗi: ' + r.error), r.ok);
+      updateReadout();
+    });
     container.appendChild(el('div', { class: 'arp-anim-sec' }, [
       el('div', { class: 'arp-sec-title', text: '5 · Root motion' }),
-      el('div', { class: 'arp-row' }, [rmChk, el('span', { text: 'Áp Hips.position của clip vào model' })]),
+      el('div', { class: 'arp-row' }, [rmChk, el('span', { text: 'Di chuyển nhân vật trong world theo Hips của clip' })]),
       el('div', { class: 'arp-row' }, [rootPosSpan]),
-      el('div', { class: 'arp-note', text: 'Đường root motion: bật "Đường root" ở mục 9 để vẽ quỹ đạo Hips trong viewport.' })
+      el('div', { class: 'arp-row' }, [modelRootSpan]),
+      el('div', { class: 'arp-row' }, [rmResetBtn, rmResetAbsBtn]),
+      el('div', { class: 'arp-note', text: 'BẬT: delta XZ của Hips cộng dồn vào model root, loop tiếp tục đi, đổi clip giữ vị trí. TẮT: chạy tại chỗ. Đường root: bật "Đường root" ở mục 9 (vẽ toàn bộ quỹ đạo từ vị trí hiện tại + marker vàng). Lưu ý: clip Thiếu Lâm (Idle/Run/Attack/Punch) là clip tại chỗ — Hips XZ không đổi nên model đứng yên là đúng; cần clip có Hips XZ di chuyển thật mới thấy nhân vật đi tới.' })
     ]));
 
     /* --- 6. Layers --- */
@@ -1576,17 +2694,217 @@
       el('div', { class: 'arp-note', text: 'Additive chỉ cộng rotation (không cộng position root). Không áp được khi clip Base là keyframe.' })
     ]));
 
-    /* --- 7. Event markers --- */
+    /* --- 6b. Animation Layers (Base + N layer) --- */
+    var AL = (window.PixiStudio && window.PixiStudio.AnimLayers) || null;
+    var maskNames = (AL && AL.MASK_NAMES) || ['ALL', 'UPPER_BODY', 'LOWER_BODY', 'LEFT_ARM', 'RIGHT_ARM', 'TORSO', 'LEGS', 'HEAD'];
+    var maskLabels = (AL && AL.MASK_LABELS) || {};
+    var layersBox = el('div', { class: 'arp-anim-layers' });
+    var layerClipSel = el('select', { class: 'arp-select' });
+    var layerMaskSel = el('select', { class: 'arp-select' });
+    maskNames.forEach(function (m) {
+      layerMaskSel.appendChild(el('option', { value: m, text: (maskLabels[m] || m) }));
+    });
+    layerMaskSel.value = 'RIGHT_ARM';
+    var layerModeSel = el('select', { class: 'arp-select' });
+    layerModeSel.appendChild(el('option', { value: 'override', text: 'Override (ghi đè mask)' }));
+    layerModeSel.appendChild(el('option', { value: 'additive', text: 'Additive (cộng thêm)' }));
+    listClips().forEach(function (c) {
+      if (c.clip) layerClipSel.appendChild(el('option', { value: c.id, text: c.name }));
+    });
+    function renderLayers() {
+      layersBox.innerHTML = '';
+      var layers = listLayers();
+      if (!layers.length) {
+        layersBox.appendChild(el('div', { class: 'arp-note', text: 'Chưa có layer — thêm layer để phát nhiều clip cùng lúc (vd Base Run + layer Attack mask tay phải).' }));
+        return;
+      }
+      layers.forEach(function (l, idx) {
+        var clipName = (getClip(l.clipId) || {}).name || l.clipId;
+        var row = el('div', { class: 'arp-anim-layer' });
+        var chk = el('input', { type: 'checkbox' });
+        chk.checked = l.enabled !== false;
+        chk.addEventListener('change', function () { updateLayer(l.id, { enabled: chk.checked }); render(container); });
+        var wSlider = el('input', { type: 'range', min: '0', max: '100', step: '1', value: String(Math.round(l.weight * 100)), style: { flex: '1' } });
+        var wVal = el('span', { text: Math.round(l.weight * 100) + '%' });
+        wSlider.addEventListener('input', function () {
+          wVal.textContent = wSlider.value + '%';
+          updateLayer(l.id, { weight: parseInt(wSlider.value, 10) / 100 });
+        });
+        var mSel = el('select', { class: 'arp-select' });
+        maskNames.forEach(function (m) { mSel.appendChild(el('option', { value: m, text: (maskLabels[m] || m) })); });
+        mSel.value = l.mask;
+        mSel.addEventListener('change', function () { updateLayer(l.id, { mask: mSel.value }); });
+        var modeSel = el('select', { class: 'arp-select' });
+        modeSel.appendChild(el('option', { value: 'override', text: 'Override' }));
+        modeSel.appendChild(el('option', { value: 'additive', text: 'Additive' }));
+        modeSel.value = l.mode;
+        modeSel.addEventListener('change', function () { updateLayer(l.id, { mode: modeSel.value }); });
+        var upBtn = el('button', { class: 'arp-btn arp-btn-sm', text: '↑' });
+        upBtn.addEventListener('click', function () { moveLayer(l.id, -1); render(container); });
+        var dnBtn = el('button', { class: 'arp-btn arp-btn-sm', text: '↓' });
+        dnBtn.addEventListener('click', function () { moveLayer(l.id, 1); render(container); });
+        var delL = el('button', { class: 'arp-btn arp-btn-sm', text: '✕' });
+        delL.addEventListener('click', function () { removeLayer(l.id); render(container); });
+        row.appendChild(chk);
+        row.appendChild(el('b', { text: (idx + 1) + '. ' + clipName }));
+        row.appendChild(mSel);
+        row.appendChild(modeSel);
+        row.appendChild(wSlider);
+        row.appendChild(wVal);
+        row.appendChild(upBtn);
+        row.appendChild(dnBtn);
+        row.appendChild(delL);
+        layersBox.appendChild(row);
+      });
+    }
+    var addLayerBtn = el('button', { class: 'arp-btn', text: '+ Thêm layer' });
+    addLayerBtn.addEventListener('click', function () {
+      var r = addLayer(layerClipSel.value, { mask: layerMaskSel.value, mode: layerModeSel.value, weight: 1 });
+      say(r.ok ? ('Đã thêm layer "' + (getClip(layerClipSel.value) || {}).name + '" mask ' + layerMaskSel.value + ' (' + layerModeSel.value + ').') : ('Lỗi: ' + r.error), r.ok);
+      render(container);
+    });
+    var expLayersBtn = el('button', { class: 'arp-btn', text: '⬇ Xuất layers JSON (v2)' });
+    expLayersBtn.addEventListener('click', function () {
+      var r = exportLayersJSON();
+      say(r.ok ? ('Đã xuất layers JSON v2: ' + r.filename + ' (' + r.layerCount + ' layer).') : ('Lỗi: ' + r.error), r.ok);
+    });
+    var impLayersInput = el('input', { type: 'file', accept: '.json,application/json', style: { display: 'none' } });
+    impLayersInput.addEventListener('change', function () {
+      var f = impLayersInput.files && impLayersInput.files[0];
+      if (!f) return;
+      var rd = new FileReader();
+      rd.onload = function () {
+        var r = importLayersJSON(String(rd.result || ''));
+        say(r.ok ? ('Đã nhập ' + r.count + ' layer (format ' + r.format + ').' + (r.note ? ' ' + r.note : '')) : ('Lỗi: ' + r.error), r.ok);
+        render(container);
+      };
+      rd.readAsText(f);
+    });
+    var impLayersBtn = el('button', { class: 'arp-btn', text: '⬆ Nhập layers JSON' });
+    impLayersBtn.addEventListener('click', function () { impLayersInput.click(); });
+    container.appendChild(el('div', { class: 'arp-anim-sec' }, [
+      el('div', { class: 'arp-sec-title', text: '6b · Animation Layers — Base + N layer' }),
+      el('div', { class: 'arp-row' }, [el('span', { text: 'Base: ' }), el('b', { text: (Animator.currentId && getClip(Animator.currentId) ? getClip(Animator.currentId).name : '—') })]),
+      layersBox,
+      el('div', { class: 'arp-row' }, [layerClipSel, layerMaskSel, layerModeSel, addLayerBtn]),
+      el('div', { class: 'arp-row' }, [expLayersBtn, impLayersBtn, impLayersInput]),
+      el('div', { class: 'arp-note', text: 'Override: layer ghi đè xương trong mask (vd Run + Attack mask tay phải = vừa chạy vừa vung tay). Additive: cộng delta rotation. Weight 0 = layer không ảnh hưởng. Đọc được cả file JSON v1 cũ.' })
+    ]));
+    renderLayers();
+
+    /* --- 6c. Curve Editor --- */
+    var curveBox = el('div', { class: 'arp-anim-curvebox' });
+    var curveOpenBtn = el('button', { class: 'arp-btn', text: '📈 Mở Curve Editor cho clip đang chọn' });
+    curveOpenBtn.addEventListener('click', function () {
+      var r = openCurveEditor(curveBox);
+      say(r.ok ? ('Curve Editor đã mở cho "' + r.clip + '" (' + r.trackCount + ' tracks) — chọn track/trục, đổi interp từng đoạn, bấm Áp dụng để lưu clip mới.') : ('Lỗi: ' + r.error), r.ok);
+    });
+    var curveKfBtn = el('button', { class: 'arp-btn', text: '📈 Curve Editor từ clip keyframe' });
+    curveKfBtn.addEventListener('click', function () {
+      var r = openCurveEditorFromKeyframe({ container: curveBox });
+      say(r.ok ? ('Curve Editor đã mở từ clip keyframe ("' + r.clip + '").') : ('Lỗi: ' + r.error), r.ok);
+    });
+    container.appendChild(el('div', { class: 'arp-anim-sec' }, [
+      el('div', { class: 'arp-sec-title', text: '6c · Curve Editor (đường cong keyframe)' }),
+      el('div', { class: 'arp-row' }, [curveOpenBtn, curveKfBtn]),
+      curveBox,
+      el('div', { class: 'arp-note', text: 'Mỗi đoạn key có interpolation riêng: linear / bezier (handle kéo được) / ease-in / ease-out / ease-in-out / step. Áp dụng bake easing thành clip mới — clip gốc không đổi.' })
+    ]));
+
+    /* --- 7. Event markers (CÓ ACTION THẬT) --- */
     var evName = el('input', { type: 'text', class: 'arp-input', placeholder: 'Tên event, vd "bước chân", "đánh"' });
+    var evTime = el('input', { type: 'number', class: 'arp-input', min: '0', step: '0.05', value: Animator.time.toFixed(2), style: { width: '80px' } });
+    var evActionSel = el('select', { class: 'arp-select' });
+    [['none', 'Chỉ báo (notify + log)'], ['sound', '🔊 Phát sound'], ['damage', '💥 Gây damage'], ['effect', '✨ Hiệu ứng tại xương'], ['custom', '⚙ Custom callback']].forEach(function (pair) {
+      evActionSel.appendChild(el('option', { value: pair[0], text: pair[1] }));
+    });
+    /* Tham số theo từng loại action. */
+    var evParamBox = el('div', { class: 'arp-row' });
+    var evSoundFile = el('input', { type: 'file', accept: 'audio/*', class: 'arp-input', style: { flex: '1' } });
+    var evSoundFreq = el('input', { type: 'number', class: 'arp-input', min: '100', max: '4000', step: '10', value: '880', style: { width: '80px' } });
+    var evSoundDur = el('input', { type: 'number', class: 'arp-input', min: '0.05', max: '2', step: '0.05', value: '0.15', style: { width: '70px' } });
+    var evSoundUrl = null; /* object URL của file user chọn (không lưu qua lần tải trang) */
+    evSoundFile.addEventListener('change', function () {
+      var f = evSoundFile.files && evSoundFile.files[0];
+      if (f && typeof URL !== 'undefined' && URL.createObjectURL) {
+        try { if (evSoundUrl) URL.revokeObjectURL(evSoundUrl); } catch (e) {}
+        evSoundUrl = URL.createObjectURL(f);
+        say('Đã chọn file âm thanh "' + f.name + '" — sẽ phát khi event kích hoạt.');
+      }
+    });
+    var evDmgAmount = el('input', { type: 'number', class: 'arp-input', min: '1', max: '999', step: '1', value: '10', style: { width: '70px' } });
+    var evDmgTarget = el('input', { type: 'text', class: 'arp-input', placeholder: 'Mục tiêu, vd "enemy"', value: 'enemy', style: { width: '110px' } });
+    var evFxBone = el('input', { type: 'text', class: 'arp-input', placeholder: 'Xương, vd RightHand', value: 'RightHand', style: { width: '110px' } });
+    var evFxColor = el('input', { type: 'color', class: 'arp-input', value: '#ffd23e', style: { width: '50px' } });
+    var evFxKind = el('select', { class: 'arp-select' });
+    [['flash', 'Flash (chớp sáng)'], ['burst', 'Burst (nổ hạt 2D nếu có)']].forEach(function (pair) {
+      evFxKind.appendChild(el('option', { value: pair[0], text: pair[1] }));
+    });
+    function renderEvParams() {
+      evParamBox.innerHTML = '';
+      var a = evActionSel.value;
+      if (a === 'sound') {
+        evParamBox.appendChild(el('span', { text: 'File mp3/wav (không chọn = beep):' }));
+        evParamBox.appendChild(evSoundFile);
+        evParamBox.appendChild(el('span', { text: 'Beep Hz:' }));
+        evParamBox.appendChild(evSoundFreq);
+        evParamBox.appendChild(el('span', { text: 'giây:' }));
+        evParamBox.appendChild(evSoundDur);
+      } else if (a === 'damage') {
+        evParamBox.appendChild(el('span', { text: 'Damage:' }));
+        evParamBox.appendChild(evDmgAmount);
+        evParamBox.appendChild(el('span', { text: 'Mục tiêu:' }));
+        evParamBox.appendChild(evDmgTarget);
+      } else if (a === 'effect') {
+        evParamBox.appendChild(el('span', { text: 'Xương:' }));
+        evParamBox.appendChild(evFxBone);
+        evParamBox.appendChild(evFxKind);
+        evParamBox.appendChild(evFxColor);
+      } else if (a === 'custom') {
+        evParamBox.appendChild(el('div', { class: 'arp-note', text: 'Đăng ký hàm bằng API: ArpAnimator.onEvent("tên event", function (rec, ev) { … }) — gọi khi event kích hoạt.' }));
+      } else {
+        evParamBox.appendChild(el('div', { class: 'arp-note', text: 'Chỉ notify + ghi log + phát bus animator:event (hành vi cũ).' }));
+      }
+    }
+    evActionSel.addEventListener('change', renderEvParams);
+    renderEvParams();
     var evList = el('div', { class: 'arp-anim-evlist' });
     var firedList = el('div', { class: 'arp-anim-evlist' });
+    var hpSpan = el('span', { id: 'arp-anim-demo-hp', text: 'HP demo: ' + Animator.demoHp + '/' + Animator.demoHpMax });
+    var evEditingId = null;
+    function evParamsFromForm() {
+      var a = evActionSel.value;
+      if (a === 'sound') return { url: evSoundUrl || undefined, freq: parseFloat(evSoundFreq.value) || 880, dur: parseFloat(evSoundDur.value) || 0.15 };
+      if (a === 'damage') return { amount: parseFloat(evDmgAmount.value) || 10, target: evDmgTarget.value || 'enemy' };
+      if (a === 'effect') return { bone: evFxBone.value || 'Hips', kind: evFxKind.value, color: parseInt(String(evFxColor.value || '#ffd23e').replace('#', ''), 16) };
+      return {};
+    }
+    function evActionLabel(ev) {
+      if (ev.action === 'sound') return '🔊 ' + (ev.params.url ? 'file' : 'beep ' + (ev.params.freq || 880) + 'Hz');
+      if (ev.action === 'damage') return '💥 −' + (ev.params.amount || 0) + ' → ' + (ev.params.target || 'enemy');
+      if (ev.action === 'effect') return '✨ ' + (ev.params.kind || 'flash') + ' @ ' + (ev.bone || ev.params.bone || 'Hips');
+      if (ev.action === 'custom') return '⚙ onEvent("' + ev.name + '")';
+      return '· notify';
+    }
     function renderEvents() {
       evList.innerHTML = '';
       var evs = listEvents();
       if (!evs.length) evList.appendChild(el('div', { class: 'arp-note', text: 'Chưa có event cho clip này.' }));
       evs.forEach(function (ev) {
         var row = el('div', { class: 'arp-row' }, [
-          el('span', { text: '● ' + ev.t.toFixed(2) + 's — ' + ev.name }),
+          el('span', { text: '● ' + ev.t.toFixed(2) + 's — ' + ev.name + '  [' + evActionLabel(ev) + ']' }),
+          el('button', { class: 'arp-btn arp-btn-sm', text: '✎', onclick: function () {
+            evEditingId = ev.id;
+            evName.value = ev.name;
+            evTime.value = String(ev.t);
+            evActionSel.value = ev.action || 'none';
+            if (ev.action === 'damage') { evDmgAmount.value = String((ev.params || {}).amount || 10); evDmgTarget.value = (ev.params || {}).target || 'enemy'; }
+            if (ev.action === 'effect') { evFxBone.value = ev.bone || (ev.params || {}).bone || 'Hips'; }
+            if (ev.action === 'sound') { evSoundFreq.value = String((ev.params || {}).freq || 880); evSoundDur.value = String((ev.params || {}).dur || 0.15); }
+            renderEvParams();
+            evAddBtn.textContent = '💾 Lưu thay đổi';
+            say('Đang sửa event "' + ev.name + '" — đổi xong bấm "Lưu thay đổi".');
+          } }),
           el('button', { class: 'arp-btn arp-btn-sm', text: '✕', onclick: function () { deleteEvent(Animator.currentId, ev.id); renderEvents(); } })
         ]);
         evList.appendChild(row);
@@ -1594,32 +2912,79 @@
       firedList.innerHTML = '';
       if (!Animator.firedLog.length) firedList.appendChild(el('div', { class: 'arp-note', text: 'Chưa event nào kích hoạt trong lần phát này.' }));
       Animator.firedLog.forEach(function (f) {
-        firedList.appendChild(el('div', { text: '✓ "' + f.name + '" @ ' + f.t.toFixed(2) + 's (phát tới ' + f.at.toFixed(2) + 's)' }));
+        var res = '';
+        if (f.result) {
+          if (f.action === 'damage') res = ' → HP ' + f.hpAfter;
+          else if (f.action === 'sound') res = ' → ' + (f.result.via || '');
+          else if (f.action === 'effect') res = ' → ' + (f.result.via || '') + (f.result.via2d ? ' +2D' : '');
+          else if (f.action === 'custom') res = ' → ' + (f.result.called || 0) + ' handler' + ((f.result.errors || []).length ? ' (' + f.result.errors.length + ' lỗi)' : '');
+        }
+        firedList.appendChild(el('div', { text: '✓ "' + f.name + '" @ ' + f.t.toFixed(2) + 's (phát tới ' + f.at.toFixed(2) + 's) [' + (f.action || 'none') + ']' + res }));
       });
+      updateDemoHpUI();
     }
-    var evAddBtn = el('button', { class: 'arp-btn', text: '+ Thêm event tại thời điểm hiện tại' });
+    var evAddBtn = el('button', { class: 'arp-btn', text: '+ Thêm event' });
     evAddBtn.addEventListener('click', function () {
-      var r = addEvent(evName.value, Animator.time);
-      say(r.ok ? ('Đã thêm event "' + r.event.name + '" @ ' + r.event.t.toFixed(2) + 's.') : ('Lỗi: ' + r.error), r.ok);
-      if (r.ok) evName.value = '';
+      var t = parseFloat(evTime.value);
+      if (isNaN(t)) t = Animator.time;
+      if (evEditingId) {
+        var r = updateEvent(Animator.currentId, evEditingId, { name: evName.value, t: t, action: evActionSel.value, params: evParamsFromForm() });
+        say(r.ok ? ('Đã sửa event "' + r.event.name + '" @ ' + r.event.t.toFixed(2) + 's [' + r.event.action + '].') : ('Lỗi: ' + r.error), r.ok);
+        if (r.ok) { evEditingId = null; evAddBtn.textContent = '+ Thêm event'; evName.value = ''; }
+      } else {
+        var r2 = addEvent(evName.value, t, undefined, { action: evActionSel.value, params: evParamsFromForm() });
+        say(r2.ok ? ('Đã thêm event "' + r2.event.name + '" @ ' + r2.event.t.toFixed(2) + 's [' + r2.event.action + '].') : ('Lỗi: ' + r2.error), r2.ok);
+        if (r2.ok) evName.value = '';
+      }
       renderEvents();
     });
     var evClearBtn = el('button', { class: 'arp-btn', text: 'Xóa log đã kích hoạt' });
     evClearBtn.addEventListener('click', function () { clearFiredLog(); renderEvents(); });
+    var hpResetBtn = el('button', { class: 'arp-btn arp-btn-sm', text: '↺ Reset HP' });
+    hpResetBtn.addEventListener('click', function () { resetDemoHp(); renderEvents(); say('HP demo đã về ' + Animator.demoHpMax + '.'); });
     container.appendChild(el('div', { class: 'arp-anim-sec' }, [
-      el('div', { class: 'arp-sec-title', text: '7 · Event markers' }),
-      el('div', { class: 'arp-row' }, [evName, evAddBtn]),
+      el('div', { class: 'arp-sec-title', text: '7 · Event markers (có action thật)' }),
+      el('div', { class: 'arp-row' }, [evName, evTime, el('span', { text: 'giây' })]),
+      el('div', { class: 'arp-row' }, [el('span', { text: 'Action:' }), evActionSel]),
+      evParamBox,
+      el('div', { class: 'arp-row' }, [evAddBtn]),
       evList,
+      el('div', { class: 'arp-row' }, [hpSpan, hpResetBtn]),
+      el('div', { class: 'arp-note', text: 'Event chỉ kích hoạt khi PHÁT qua frame đó — kéo scrub/step qua nhanh không kích hoạt. Damage trừ HP demo + phát bus animator:event {damage, target} để game logic bắt. Sound cần bấm Play 1 lần trên trình duyệt (user gesture) mới nghe được; file âm thanh chọn bằng object URL, tải lại trang thì phải chọn lại. Event lưu cùng clip khi xuất JSON (mục 8).' }),
       el('div', { class: 'arp-sec-title', text: 'Đã kích hoạt trong lần phát này' }),
       firedList, evClearBtn
     ]));
     renderEvents();
 
     /* --- 8. Xuất clip --- */
+    var cmpDef = (PS.ArpAnimCompression && typeof PS.ArpAnimCompression.getSettings === 'function')
+      ? PS.ArpAnimCompression.getSettings() : { enabled: true, posEps: 0.001, rotEpsDeg: 0.1 };
+    var cmpChk = el('input', { type: 'checkbox' });
+    cmpChk.checked = cmpDef.enabled !== false;   /* UI mặc định BẬT nén */
+    cmpChk.title = 'Bật = xuất JSON đã nén (loại key thừa + quantize). Tắt = file gốc không nén.';
+    var cmpPos = el('input', { type: 'number', min: '0.1', max: '10', step: '0.1', value: String(Math.round((cmpDef.posEps || 0.001) * 1000 * 10) / 10), style: 'width:56px;', title: 'Ngưỡng vị trí (mm) — key lệch dưới ngưỡng này thì bỏ' });
+    var cmpRot = el('input', { type: 'number', min: '0.01', max: '2', step: '0.05', value: String(cmpDef.rotEpsDeg || 0.1), style: 'width:56px;', title: 'Ngưỡng xoay (độ) — key lệch dưới ngưỡng này thì bỏ' });
+    var cmpStats = el('div', { class: 'arp-note', text: 'Chưa nén thử — bấm "🗜 Nén thử" để xem tỷ lệ trước khi xuất.' });
+    function cmpOpts() {
+      return { compress: cmpChk.checked, posEpsMm: parseFloat(cmpPos.value) || 1, rotEpsDeg: parseFloat(cmpRot.value) || 0.1 };
+    }
+    function cmpStatsText(r) {
+      var AC = PS.ArpAnimCompression;
+      if (r && r.compression && AC && typeof AC.formatStats === 'function') return 'Nén: ' + AC.formatStats(r.compression);
+      if (r && r.stats && AC && typeof AC.formatStats === 'function') return 'Nén thử: ' + AC.formatStats(r.stats);
+      return 'Không nén (module nén chưa load hoặc clip không nén được).';
+    }
     var expJsonBtn = el('button', { class: 'arp-btn', text: '⬇ Xuất JSON' });
     expJsonBtn.addEventListener('click', function () {
-      var r = exportClipJSON();
-      say(r.ok ? ('Đã xuất JSON: ' + r.filename + ' (' + r.trackCount + ' tracks).') : ('Lỗi: ' + r.error), r.ok);
+      var r = exportClipJSON(undefined, cmpOpts());
+      if (r.ok) cmpStats.textContent = r.compression ? cmpStatsText(r) : 'Đã xuất JSON không nén (' + r.filename + ').';
+      say(r.ok ? ('Đã xuất JSON: ' + r.filename + ' (' + r.trackCount + ' tracks).' + (r.compression ? ' ' + cmpStatsText(r) : '')) : ('Lỗi: ' + r.error), r.ok);
+    });
+    var cmpTryBtn = el('button', { class: 'arp-btn', text: '🗜 Nén thử' });
+    cmpTryBtn.addEventListener('click', function () {
+      var r = compressCurrentClip(cmpOpts());
+      cmpStats.textContent = r.ok ? cmpStatsText(r) : ('Nén thử lỗi: ' + r.error);
+      say(r.ok ? cmpStatsText(r) : ('Nén thử lỗi: ' + r.error), r.ok);
     });
     var expFbxBtn = el('button', { class: 'arp-btn', text: '⬇ Xuất FBX (kèm skeleton)' });
     expFbxBtn.addEventListener('click', function () {
@@ -1628,8 +2993,10 @@
     });
     container.appendChild(el('div', { class: 'arp-anim-sec' }, [
       el('div', { class: 'arp-sec-title', text: '8 · Xuất clip đang chọn' }),
-      el('div', { class: 'arp-row' }, [expJsonBtn, expFbxBtn]),
-      el('div', { class: 'arp-note', text: 'JSON đúng format clip studio (tracks .quaternion/.position). FBX qua FBXBinary.write, version 7300.' })
+      el('div', { class: 'arp-row' }, [expJsonBtn, expFbxBtn, cmpTryBtn]),
+      el('div', { class: 'arp-row' }, [cmpChk, el('span', { text: 'Nén khi xuất JSON' }), el('span', { text: 'ngưỡng vị trí (mm):' }), cmpPos, el('span', { text: 'xoay (°):' }), cmpRot]),
+      cmpStats,
+      el('div', { class: 'arp-note', text: 'JSON đúng format clip studio (tracks .quaternion/.position). FBX qua FBXBinary.write, version 7300 — FBX luôn dùng clip gốc (không nén). Nén: loại key thừa + quantize quaternion float16 / vị trí theo mm; file nén vẫn đọc được bằng import cũ (cờ compressed:true).' })
     ]));
 
     /* --- 9. Hiển thị viewport --- */
@@ -1680,6 +3047,19 @@
   Animator.setFadeDuration = setFadeDuration;
   Animator.setBlend = setBlend;
   Animator.clearBlend = clearBlend;
+  Animator.listLayers = listLayers;
+  Animator.addLayer = addLayer;
+  Animator.removeLayer = removeLayer;
+  Animator.updateLayer = updateLayer;
+  Animator.moveLayer = moveLayer;
+  Animator.clearLayers = clearLayers;
+  Animator.syncLayerActions = syncLayerActions;
+  Animator.syncLayerWeights = syncLayerWeights;
+  Animator.applyLayerPoseAtTime = applyLayerPoseAtTime;
+  Animator.exportLayersJSON = exportLayersJSON;
+  Animator.importLayersJSON = importLayersJSON;
+  Animator.openCurveEditor = openCurveEditor;
+  Animator.openCurveEditorFromKeyframe = openCurveEditorFromKeyframe;
   Animator.trimClip = trimClip;
   Animator.retimeClip = retimeClip;
   Animator.reverseClip = reverseClip;
@@ -1688,12 +3068,33 @@
   Animator.setRootMotion = setRootMotion;
   Animator.rootPathFor = rootPathFor;
   Animator.rootPosAt = rootPosAt;
+  /* Nhóm C: root motion thật + event có action */
+  Animator.resetRootPosition = resetRootPosition;
+  Animator.getRootMotionInfo = getRootMotionInfo;
+  Animator.onEvent = onEvent;
+  Animator.offEvent = offEvent;
+  Animator.updateEvent = updateEvent;
+  Animator.setDemoHp = setDemoHp;
+  Animator.resetDemoHp = resetDemoHp;
+  Animator.importClipJSON = importClipJSON;
+  Animator.spawnFlash = spawnFlash;
+  Animator.updateEffects = updateEffects;
+  Animator.clearEffects = clearEffects;
   Animator.addEvent = addEvent;
   Animator.deleteEvent = deleteEvent;
   Animator.listEvents = listEvents;
   Animator.clearFiredLog = clearFiredLog;
   Animator.exportClipJSON = exportClipJSON;
   Animator.exportClipFBX = exportClipFBX;
+  Animator.compressCurrentClip = compressCurrentClip;
+  Animator.getCompressionSettings = function () {
+    var AC = PS.ArpAnimCompression;
+    return AC && typeof AC.getSettings === 'function' ? AC.getSettings() : null;
+  };
+  Animator.setCompressionSettings = function (patch) {
+    var AC = PS.ArpAnimCompression;
+    return AC && typeof AC.setSettings === 'function' ? AC.setSettings(patch) : null;
+  };
   Animator.setDisplay = setDisplay;
   Animator.applyDisplayOnPlay = applyDisplayOnPlay;
   Animator.updateTopBones = updateTopBones;
@@ -1705,6 +3106,14 @@
     Animator._actions = {};
     Animator._currentAction = null;
     Animator._blendAction = null;
+    Animator._layerActions = {};
+    /* Nhóm C: đổi model thì root motion làm lại từ đầu. */
+    Animator._rmOrigin = null;
+    Animator._rmPrevWorld = null;
+    Animator._rmNeedResync = true;
+    Animator._rmHasTrack = false;
+    Animator.rootMotionTravelled = 0;
+    Animator.modelRootPos = { x: 0, y: 0, z: 0 };
     return { ok: true, hasTarget: !!Animator._target };
   };
   Animator._test = {
@@ -1715,9 +3124,15 @@
     findHipsTrack: findHipsTrack,
     applyAdditive: applyAdditive,
     applyRootMotion: applyRootMotion,
+    applyRootMotionTick: applyRootMotionTick,
     drawRootPath: drawRootPath,
     getBoneMap: getBoneMap,
-    findHipsBone: findHipsBone
+    findHipsBone: findHipsBone,
+    getModelRoot: getModelRoot,
+    hipsWorldPos: hipsWorldPos,
+    modelRootWorldPos: modelRootWorldPos,
+    normalizeEvent: normalizeEvent,
+    executeEventAction: executeEventAction
   };
 
   PS.ArpAnimator = Animator;

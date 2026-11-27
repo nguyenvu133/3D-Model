@@ -27,7 +27,14 @@
       if (e.ctrlKey || e.metaKey) {
         const key = e.key.toLowerCase();
         if (key === 's') { e.preventDefault(); PixiStudio.Storage.saveProject('quick-save'); bus.emit('notify', { type: 'success', title: 'Project saved', message: 'quick-save (localStorage)' }); return; }
-        if (key === 'z') { e.preventDefault(); PixiStudio.History.undo(); return; }
+        if (key === 'z') {
+          e.preventDefault();
+          /* Undo/Redo toàn diện (v2): Ctrl+Shift+Z = redo (chuẩn);
+             Ctrl+Z = undo, Ctrl+Y = redo (giữ tương thích cũ). */
+          if (e.shiftKey) PixiStudio.History.redo();
+          else PixiStudio.History.undo();
+          return;
+        }
         if (key === 'y') { e.preventDefault(); PixiStudio.History.redo(); return; }
         if (key === 'd') { e.preventDefault(); PixiStudio.Scene.duplicate(PixiStudio.State.get('selection')); return; }
         if (key === 'c' && PixiStudio.Timeline.keys.selectedKey) { e.preventDefault(); PixiStudio.Timeline.keys.copySelected(); return; }
