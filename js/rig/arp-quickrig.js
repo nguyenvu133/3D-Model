@@ -397,6 +397,21 @@
     merged.mappedCount = merged.mapped.length;
     merged.coverage = merged.mappedCount / DST_NAMES.length * 100;
     merged.guessedCount = merged.mapped.filter(function (m) { return m.guessed; }).length;
+    /* --- AUTO KHỚP (js/rig/arp-automatch.js): lấp xương đích còn thiếu
+       bằng khớp mờ / hierarchy / gộp ngón / xương cha. Chỉ lấp dst
+       thiếu, không ghi đè entry name/position nào; xương nguồn đã
+       dùng bị loại khỏi ứng viên (xem applyToMap). Nếu module chưa
+       load thì map giữ nguyên như cũ — không crash. --- */
+    merged.autoMatchedCount = 0;
+    merged.unresolved = [];
+    try {
+      var AM = window.PixiStudio && PixiStudio.ArpAutoMatch;
+      if (AM && typeof AM.applyToMap === 'function' && merged.missing.length) {
+        var amRes = AM.applyToMap(merged, skeleton);
+        merged.autoMatchedCount = amRes.autoMatchedCount || 0;
+        merged.unresolved = amRes.unresolved || [];
+      }
+    } catch (e) { merged.autoMatchError = e && e.message; }
     QuickRig.lastMap = merged;
     return merged;
   }
@@ -419,13 +434,24 @@
       if (cur.map.mapped[i].dst === dst) { entry = cur.map.mapped[i]; break; }
     }
     if (bone) {
-      /* gỡ src khỏi dst cũ nếu có */
-      for (var j = 0; j < cur.map.mapped.length; j++) {
-        if (cur.map.mapped[j].src === bone.name && cur.map.mapped[j].dst !== dst) {
-          cur.map.mapped.splice(j, 1); break;
+      /* Nếu dst đã map đúng xương này (vd entry tự khớp gộp ngón đã
+         dùng chung xương Index1) thì chỉ đổi method → 'manual', KHÔNG
+         gỡ gì thêm. */
+      var alreadySameSrc = !!(entry && entry.src === bone.name);
+      if (!alreadySameSrc) {
+        /* gỡ src khỏi dst cũ nếu có — TRỪ entry "chủ" của xương đó
+           (entry khớp theo tên mà tên đích trùng tên xương nguồn, vd
+           LeftHandIndex1 → mixamorig:LeftHandIndex1): xương tự khớp
+           dùng CHUNG xương chủ thì không được đoạt xương của chủ. */
+        for (var j = 0; j < cur.map.mapped.length; j++) {
+          var other = cur.map.mapped[j];
+          if (other.src === bone.name && other.dst !== dst) {
+            if (other.method === 'name' && normName(other.dst) === normName(bone.name)) continue;
+            cur.map.mapped.splice(j, 1); break;
+          }
         }
       }
-      if (entry) { entry.src = bone.name; entry.bone = bone; entry.method = 'manual'; entry.guessed = false; }
+      if (entry) { entry.src = bone.name; entry.bone = bone; entry.method = 'manual'; entry.guessed = false; entry.shared = false; delete entry.mergedFrom; delete entry.viaParent; }
       else cur.map.mapped.push({ src: bone.name, dst: dst, method: 'manual', bone: bone });
       cur.bones[dst] = bone;
     } else {
@@ -713,6 +739,9 @@
     result.missing = map.missing;
     result.coverage = map.coverage;
     result.guessedCount = map.guessedCount || 0;
+    result.autoMatchedCount = map.autoMatchedCount || 0;
+    result.autoMatched = map.autoMatched || [];
+    result.unresolved = map.unresolved || [];
     result.controls = Object.keys(controls).length;
     result.poles = Object.keys(poles).length;
     result.skinnedMeshes = skinnedBefore;
@@ -760,6 +789,8 @@
     notify('success', 'Quick Rig xong',
       map.mappedCount + '/41 xương map được (' + map.coverage.toFixed(0) + '%)' +
       (map.guessedCount ? ', ' + map.guessedCount + ' xương đoán theo vị trí' : '') +
+      (map.autoMatchedCount ? ', ' + map.autoMatchedCount + ' xương tự khớp (xem bảng map)' : '') +
+      (map.unresolved && map.unresolved.length ? ', ' + map.unresolved.length + ' xương không tự khớp được: ' + map.unresolved.map(function (u) { return u.dst; }).join(', ') : '') +
       ' · ' + Object.keys(controls).length + ' control · ' + Object.keys(poles).length + ' pole target' +
       ' · skin ' + skinnedBefore + ' mesh + ' + clipsBefore + ' clip gốc giữ nguyên' +
       (map.unmapped.length ? ' · không khớp: ' + map.unmapped.slice(0, 5).join(', ') + (map.unmapped.length > 5 ? '…' : '') : '') +
@@ -2097,9 +2128,26 @@
     return {
       total: map.total, mappedCount: map.mappedCount, coverage: +map.coverage.toFixed(1),
       method: map.method, guessedCount: map.guessedCount || 0,
-      mapped: map.mapped.map(function (m) { return { src: m.src, dst: m.dst, method: m.method, guessed: !!m.guessed }; }),
+      autoMatchedCount: map.autoMatchedCount || 0,
+      unresolved: (map.unresolved || []).slice(),
+      mapped: map.mapped.map(function (m) { return { src: m.src, dst: m.dst, method: m.method, guessed: !!m.guessed, confidence: (typeof m.confidence === 'number' ? m.confidence : (m.method === 'name' ? 100 : null)), shared: !!m.shared, mergedFrom: m.mergedFrom || null, viaParent: m.viaParent || null }; }),
       unmapped: map.unmapped.slice(), extra: (map.extra || []).slice(), missing: map.missing.slice()
     };
+  };
+
+  /* Nhãn trạng thái 1 dòng map: 'map theo tên' / 'tự khớp (gộp ngón)
+     50%' / 'KHÔNG KHỚP'... — dùng ArpAutoMatch.labelFor khi có, nếu
+     chưa load module thì fallback logic cũ (proxy/guessed/manual). */
+  QuickRig.mapStatusLabel = function (entry) {
+    var AM = window.PixiStudio && PixiStudio.ArpAutoMatch;
+    if (AM && typeof AM.labelFor === 'function') {
+      var lab = AM.labelFor(entry);
+      return { text: lab.badge, cssClass: lab.cssClass, isAutoMatch: lab.isAutoMatch };
+    }
+    if (!entry) return { text: 'KHÔNG KHỚP', cssClass: 'arp-map-unmatched', isAutoMatch: false };
+    var text = (entry.bone && entry.bone.userData && entry.bone.userData.isProxy) ? 'xương giả (proxy)'
+      : entry.guessed ? 'đoán theo vị trí' : entry.method === 'manual' ? 'sửa tay' : 'map theo tên';
+    return { text: text, cssClass: 'arp-map-' + (entry.method || 'name'), isAutoMatch: false };
   };
 
   /* ============================================================
@@ -2136,6 +2184,7 @@
     container.appendChild(el('div', { class: 'arp-note', html:
       '<b>' + rep.mappedCount + '/' + rep.total + ' xương map được (' + rep.coverage + '%)</b> · phương pháp: ' + rep.method +
       (rep.guessedCount ? ' · ' + rep.guessedCount + ' đoán theo vị trí' : '') +
+      (rep.autoMatchedCount ? ' · <span class="arp-automatch-badge">' + rep.autoMatchedCount + ' tự khớp</span> (mờ / hierarchy / gộp ngón / xương cha — xem cột Trạng thái)' : '') +
       (rep.missing.length ? ' · thiếu: ' + rep.missing.join(', ') : '') }));
     var table = el('table', { class: 'arp-map-table', style: { width: '100%', fontSize: '12px', borderCollapse: 'collapse' } });
     var head = el('tr', {}, [
@@ -2162,14 +2211,31 @@
         else renderMapTable(container);
       });
       var tdSel = el('td', {}); tdSel.appendChild(sel); row.appendChild(tdSel);
-      row.appendChild(el('td', { text: entry ? (entry.bone && entry.bone.userData && entry.bone.userData.isProxy ? 'xương giả (proxy)' : entry.guessed ? 'đoán theo vị trí' : entry.method === 'manual' ? 'sửa tay' : 'map theo tên') : 'KHÔNG KHỚP',
-        style: entry ? {} : { color: '#c00', fontWeight: 'bold' } }));
+      var status = QuickRig.mapStatusLabel(entry);
+      var statusCell = el('td', { text: status.text,
+        style: entry ? (status.isAutoMatch ? { color: '#7a5c00', fontWeight: 'bold' } : {}) : { color: '#c00', fontWeight: 'bold' } });
+      if (status.cssClass) statusCell.className = status.cssClass;
+      /* Ghi chú dùng chung: xương tự khớp gộp ngón / xương cha dùng
+         chung 1 xương nguồn với xương khác (xoay cùng nhau). */
+      if (entry && entry.shared) {
+        statusCell.title = 'Dùng chung xương nguồn "' + entry.src + '"' +
+          (entry.mergedFrom ? ' (gộp từ ' + entry.mergedFrom + ')' : '') +
+          (entry.viaParent ? ' (qua xương cha ' + entry.viaParent + ')' : '') +
+          ' — finger curl / IK vẫn chạy, các ngón gập cùng nhau.';
+      }
+      row.appendChild(statusCell);
       table.appendChild(row);
     });
     container.appendChild(table);
     if (rep.unmapped.length) {
       container.appendChild(el('div', { class: 'arp-note', style: { color: '#c00' },
         text: 'Xương nguồn thừa (không có đích): ' + rep.unmapped.join(', ') }));
+    }
+    if (rep.unresolved && rep.unresolved.length) {
+      container.appendChild(el('div', { class: 'arp-note', style: { color: '#c00' },
+        html: '<b>Không tự khớp được (' + rep.unresolved.length + '):</b><br>' + rep.unresolved.map(function (u) {
+          return '• <b>' + u.dst + '</b> — ' + u.reason + ' Gợi ý: ' + u.suggestion;
+        }).join('<br>') }));
     }
   }
 

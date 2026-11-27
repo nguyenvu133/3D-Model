@@ -535,3 +535,22 @@
   font-size: 12px; padding: 4px 8px; border-radius: 6px;
   pointer-events: none; font-variant-numeric: tabular-nums;
 }
+
+/* ============ ARP AUTO KHỚP (arp-automatch.js, 2026-11-27) ============
+   Badge "tự khớp" trong bảng map tab Quick Rig — khác hẳn "map theo
+   tên": nền vàng nhạt + chữ nâu đậm, để user phân biệt xương khớp mờ /
+   hierarchy / gộp ngón / xương cha với xương khớp đúng theo tên. */
+.arp-automatch-badge {
+  background: #fff3cd;
+  color: #7a5c00;
+  font-weight: bold;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid #e0c36a;
+  white-space: nowrap;
+}
+.arp-map-table tr:has(.arp-automatch-badge) {
+  background: #fffdf5;
+}
+.arp-map-unmatched { color: #c00; font-weight: bold; }
+.arp-map-proxy { color: #0a7d4a; }

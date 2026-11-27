@@ -264,6 +264,12 @@
 .toast .t-msg span { font-size: 11.5px; color: var(--text-2); display: block; margin-top: 1px; line-height: 1.4; }
 .toast .t-close { color: var(--text-4); flex: none; }
 .toast .t-close:hover { color: var(--text); }
+.toast .t-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.toast .t-action {
+  background: var(--accent); color: #fff; border: none; border-radius: 6px;
+  padding: 5px 10px; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.toast .t-action:hover { filter: brightness(1.15); }
 .toast .progress { margin-top: 7px; }
 
 /* ==================== LOADING OVERLAY (task progress) ==================== */

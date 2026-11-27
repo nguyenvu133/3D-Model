@@ -26,6 +26,18 @@
       p.firstChild.style.width = U.clamp(opts.progress, 0, 100) + '%';
       msg.appendChild(p);
     }
+    /* FIX2: nút hành động trong toast (vd IK chưa có rig → "Mở tab
+       Quick Rig"). Không có actions thì toast như cũ. */
+    if (opts.actions && opts.actions.length) {
+      const row = U.el('div', { class: 't-actions' });
+      opts.actions.forEach(function (a) {
+        row.appendChild(U.el('button', {
+          class: 't-action', text: a.label || 'Mở',
+          onclick: function () { try { if (a.onClick) a.onClick(); } catch (e) {} dismiss(); }
+        }));
+      });
+      msg.appendChild(row);
+    }
     toast.appendChild(msg);
     toast.appendChild(U.el('button', {
       class: 't-close', html: U.icon('x', 'ic-sm'),

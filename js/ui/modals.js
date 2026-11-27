@@ -145,7 +145,7 @@
       ['Antialias (reload cần thiết)', settings.antialias, function (on) { settings.antialias = on; }],
       ['PixiJS Overlay FX', PixiStudio.PixiRenderer.enabled, function (on) { PixiStudio.PixiRenderer.setEnabled(on); }],
       ['Autosave (mỗi ' + settings.autosaveInterval + 's)', settings.autosave, function (on) { settings.autosave = on; }],
-      ['Quad Labels', PixiStudio.State.get('showQuadLabels'), function (on) { PixiStudio.State.set('showQuadLabels', on); document.getElementById('quad-labels').classList.toggle('hidden', !on); }],
+      ['Quad Labels', PixiStudio.State.get('showQuadLabels'), function (on) { PixiStudio.State.set('showQuadLabels', on); /* FIX2: chip quad chỉ hiện khi ĐANG ở quad-view — bật setting lúc single-view không được làm chip BACK rò ra giữa màn hình */ document.getElementById('quad-labels').classList.toggle('hidden', !on || PixiStudio.State.get('viewMode') !== 'quad'); }],
       ['Perf HUD', PixiStudio.State.get('showPerfHud'), function (on) { PixiStudio.State.set('showPerfHud', on); document.getElementById('perf-hud').classList.toggle('hidden', !on); }],
       ['🔄 Auto-update Tripo tasks', AIPanel_autoUpdate.tripo, function (on) { AIPanel_autoUpdate.tripo = on; }],
       ['🔄 Auto-update Meshy FBX', AIPanel_autoUpdate.meshy, function (on) { AIPanel_autoUpdate.meshy = on; }]

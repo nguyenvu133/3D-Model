@@ -1260,6 +1260,26 @@
     if (result && result.ok) {
       ArpSmart.hideGhost();   /* rig thật đã có SkeletonHelper — ẩn ghost */
       ArpSmart.saveSession();
+      /* --- AUTO KHỚP (js/rig/arp-automatch.js): rig Smart có thể thiếu
+         xương ngón (boneSet hy3d28 chỉ có Thumb1/Index1/Middle1, không
+         có đốt 2 / Ring / Pinky; minimal15 không có ngón nào) — tính
+         bảng tự khớp để Quick Rig / Remap dùng chung, KHÔNG dừng rig
+         khi thiếu ngón. Guard try/catch: automatch lỗi thì rig vẫn ok,
+         chỉ thiếu báo cáo. --- */
+      try {
+        var AM = window.PixiStudio && PixiStudio.ArpAutoMatch;
+        if (AM && typeof AM.autoMatch === 'function') {
+          var rigBones = (result.rig && (result.rig.boneList || result.rig.bones)) || target;
+          var amRes = AM.autoMatch(rigBones);
+          ArpSmart.lastAutoMatch = amRes;
+          result.autoMatch = {
+            mappedCount: amRes.mappedCount, total: amRes.total,
+            autoMatchedCount: amRes.autoMatchedCount,
+            missing: amRes.missing.slice(), unresolved: amRes.unresolved.slice(),
+            summary: AM.summarize(amRes)
+          };
+        }
+      } catch (e) { ArpSmart.lastAutoMatchError = e && e.message; }
     }
     ArpSmart.refreshReadout();
     return result;

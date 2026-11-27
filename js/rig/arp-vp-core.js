@@ -25,6 +25,17 @@
  *     defaultVisible: false         // trạng thái mặc định khi chưa có bản
  *                                   // lưu và module không báo được isVisible
  *   });
+ * QUY ƯỚC GIÁ TRỊ TRẢ VỀ (sửa vòng fix2 — trước đây chỉ literal
+ * `false` bị coi là thất bại nên `{ok:false}` vẫn được tính là
+ * thành công, preset/toolbar báo sai):
+ *   - show/hide trả `true` (hoặc `undefined`, `{ok:true}`, ...) khi
+ *     THÀNH CÔNG; trả literal `false`, `{ok:false, ...}` hoặc throw
+ *     khi THẤT BẠI.
+ *   - Setter kiểu "trả về giá trị mới" (vd `setXVisible(false)` trả
+ *     `false` sau khi tắt thành công) là MƠ HỒ và CẤM dùng làm
+ *     show/hide của layer — setter phải trả `true` khi thành công
+ *     (xem arp-vp-measure.js: setReferenceVisible /
+ *     setMeasurementsVisible / setGroundVisible).
  *   - Đăng ký trùng key thì GHI ĐÈ (module load sau thắng).
  *   - show/hide/isVisible phải defensive: không được throw khi scene
  *     chưa sẵn sàng — throw thì registry coi như thất bại (false).
@@ -113,6 +124,11 @@
     try {
       var r = fn();
       if (r === false) return false;
+      /* FIX2: mọi show() của VP trả {ok:false, reason} khi thất bại
+         (skeleton/labels/IK/measure...) — object đó PHẢI tính là thất
+         bại, nếu không showLayer() set state=true + showAll() đếm
+         layer "áp được" dù thật sự không hiện gì. */
+      if (r && typeof r === 'object' && r.ok === false) return false;
       return true;
     } catch (e) {
       if (window.console && console.warn) {

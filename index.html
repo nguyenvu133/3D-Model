@@ -236,7 +236,12 @@
         <canvas id="pixi-overlay"></canvas>
 
         <!-- Overlay HUD layers -->
-        <div class="vp-hud" id="quad-labels">
+        <!-- FIX2: mặc định ẨN — chip Front/Right/Left/Back chỉ có nghĩa ở
+             chế độ quad-view (viewMode mặc định là perspective); trước đây
+             showQuadLabels=true mặc định nên chip "BACK" (.br, giữa màn
+             hình) rò sang cả single-view. Viewport.setView() đồng bộ lại
+             mỗi lần đổi chế độ xem. -->
+        <div class="vp-hud hidden" id="quad-labels">
           <span class="quad-label tl">Front</span>
           <span class="quad-label tr">Right</span>
           <span class="quad-label bl">Left</span>
@@ -553,6 +558,9 @@
      tab ARP (arp-smart.js, ...) để sẵn sàng khi các tab/plugin đăng ký. -->
 <script src="js/rig/arp-plugins.js"></script>
 <script src="js/rig/arp-plugin-modelstats.js"></script>
+<!-- ARP AutoMatch: PHẢI load TRƯỚC arp-smart.js / arp-remap.js /
+     arp-quickrig.js (3 module đều tra PixiStudio.ArpAutoMatch khi chạy). -->
+<script src="js/rig/arp-automatch.js"></script>
 <script src="js/rig/arp-smart.js"></script>
 <script src="js/rig/arp-remap.js"></script>
 <script src="js/rig/arp-export.js"></script>

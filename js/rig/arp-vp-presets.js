@@ -272,7 +272,17 @@
   }
 
   /* Áp preset: gọi ArpViewport.showLayer/hideLayer cho từng layer
-   * trong map; layer chưa đăng ký thì bỏ qua êm, ghi vào skipped. */
+   * trong map; layer chưa đăng ký thì bỏ qua êm, ghi vào skipped.
+   * FIX2 (báo cáo trung thực): trước đây ghi `applied[key]=want` vô
+   * điều kiện nên apply('Full') báo ik/markers/ghost/helpers:true
+   * trong khi show() của chúng trả {ok:false} (chưa có control rig /
+   * chưa có marker...) và listLayers() thực tế vẫn false.
+   * Nay: chỉ ghi applied khi show/hide trả true VÀ trạng thái thật
+   * (isLayerVisible, nếu đọc được) khớp với want; ngược lại ghi
+   * skipped kèm lý do {key, reason}. Layer chưa đăng ký vẫn ghi
+   * skipped dạng chuỗi (tương thích harness cũ).
+   * Active preset cũng trung thực: còn layer nào skip thì active
+   * được tính lại (thường là 'Custom') thay vì ép tên preset. */
   function apply(name, opts) {
     opts = opts || {};
     _ensureBusListener();
@@ -290,20 +300,38 @@
       Object.keys(map).forEach(function (key) {
         var want = !!map[key];
         if (!reg || !_isRegistered(key)) { skipped.push(key); return; }
+        var ok = false;
         try {
-          if (want && typeof reg.showLayer === 'function') reg.showLayer(key);
-          else if (!want && typeof reg.hideLayer === 'function') reg.hideLayer(key);
-          applied[key] = want;
+          if (want && typeof reg.showLayer === 'function') ok = reg.showLayer(key);
+          else if (!want && typeof reg.hideLayer === 'function') ok = reg.hideLayer(key);
         } catch (e) {
-          skipped.push(key);
+          skipped.push({ key: key, reason: want ? 'show-threw' : 'hide-threw', error: e && e.message ? e.message : String(e) });
           _warn('apply: layer "' + key + '" lỗi:', e && e.message);
+          return;
         }
+        if (!ok) {
+          skipped.push({ key: key, reason: want ? 'show-failed' : 'hide-failed' });
+          return;
+        }
+        /* show/hide báo thành công nhưng trạng thái thật không đổi
+           (vd module trả true mà isVisible vẫn sai) → không ghi applied. */
+        try {
+          if (reg && typeof reg.isLayerVisible === 'function') {
+            var cur = reg.isLayerVisible(key);
+            if (cur !== null && cur !== undefined && !!cur !== want) {
+              skipped.push({ key: key, reason: 'state-mismatch' });
+              return;
+            }
+          }
+        } catch (e) { /* không đọc được trạng thái thật: tin show/hide */ }
+        applied[key] = want;
       });
     } finally {
       _applying = false;
     }
-    if (skipped.length) _log('apply "' + name + '": bỏ qua layer chưa đăng ký:', skipped.join(', '));
-    _setActive(name);
+    if (skipped.length) _log('apply "' + name + '": bỏ qua layer:', JSON.stringify(skipped));
+    if (!skipped.length) _setActive(name);
+    else refreshActive();
     var bus = _bus();
     if (bus && typeof bus.emit === 'function') {
       try { bus.emit('arp:vp-preset-applied', { name: name, applied: applied, skipped: skipped, source: opts.source || 'manual' }); } catch (e) {}

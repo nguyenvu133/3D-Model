@@ -63,6 +63,40 @@
   function emit(ev, data) {
     try { var b = bus(); if (b && typeof b.emit === 'function') b.emit(ev, data); } catch (e) {}
   }
+  /* FIX2: phản hồi NHÌN THẤY ĐƯỢC khi IK không hiện được vì chưa có
+     control rig — trước đây show() chỉ trả {ok:false} và registry
+     chỉ ghi console.warn, user bấm nút IK không thấy gì xảy ra.
+     Nay: toast warning (kèm nút "Mở tab Quick Rig" nhảy thẳng sang
+     tab Quick Rig để Convert/Auto Gen) + bus event
+     'arp:vp-ik-needs-rig'. Chống spam: tối đa 1 toast / 15s
+     (show() còn được gọi bởi preset Full / khôi phục trạng thái). */
+  var _lastNoRigNotify = 0;
+  function notifyNoRig() {
+    var now = Date.now();
+    if (now - _lastNoRigNotify < 15000) return false;
+    _lastNoRigNotify = now;
+    try {
+      var b = bus();
+      if (b && typeof b.emit === 'function') {
+        b.emit('notify', {
+          type: 'warning', title: 'IK chưa hiện được',
+          message: 'Chưa có control rig — mở tab Quick Rig, bấm Convert hoặc Auto Gen cho model đã rig rồi bật lại IK.',
+          duration: 9000,
+          actions: [{
+            label: 'Mở tab Quick Rig',
+            onClick: function () {
+              try {
+                var P = window.PixiStudio && window.PixiStudio.ArpPanel;
+                if (P && typeof P.open === 'function') P.open('quickrig');
+              } catch (e) {}
+            }
+          }]
+        });
+        b.emit('arp:vp-ik-needs-rig', { reason: 'no-control-rig' });
+      }
+    } catch (e) {}
+    return true;
+  }
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
   /* ---------- màu chuẩn — thống nhất gizmo (arp-qr3-gizmo.js) ---------- */
@@ -380,7 +414,10 @@
   function show() {
     state.visible = true;
     var cur = getRig();
-    if (!cur || !cur.target) return { ok: false, error: 'Chưa có control rig để hiện IK.', visible: true };
+    if (!cur || !cur.target) {
+      notifyNoRig(); /* FIX2: báo rõ + nút nhảy sang Quick Rig, không chỉ console.warn */
+      return { ok: false, error: 'Chưa có control rig để hiện IK.', visible: true };
+    }
     var b = build();
     if (state.group) state.group.visible = true;
     var r = update(0);
@@ -559,7 +596,8 @@
       isVisible: isVisible,
       getState: getState,
       getLimbInfo: getLimbInfo,
-      state: state
+      state: state,
+      notifyNoRig: notifyNoRig
     }
   };
 

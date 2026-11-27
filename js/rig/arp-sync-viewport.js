@@ -50,6 +50,10 @@
  *    'Custom'/null (vd layer markers/ghost chưa đăng ký nên snapshot
  *    không khớp hẳn preset gốc) thì so tolerant: các layer ĐÃ ĐĂNG KÝ
  *    trong map preset phải khớp, layer chưa đăng ký thì bỏ qua.
+ *    FIX (vòng 1): preset Animation tắt labels (map labels:false) nên
+ *    sau khi áp phải KHÔI PHỤC skeleton/labels nếu chúng đang hiện
+ *    trước đó (gọi trực tiếp module, xem maybeSwitchPresetToAnimation)
+ *    — bấm Play không được làm xương/nhãn biến mất.
  *
  * THỨ TỰ LOAD (coordinator append script tag — KHÔNG sửa index.html
  * ở đây): sau arp-animator.js, arp-qr3-gizmo.js, arp-vp-*.js,
@@ -92,6 +96,9 @@
     tickCount: 0,
     lastPresetFrom: null, /* preset trước lần tự đổi gần nhất */
     lastAutoSwitch: null, /* {from, to, clipId, at} */
+    lastAppliedPreset: null, /* {name, skipped:[key], at} — preset áp gần nhất (bus arp:vp-preset-applied) */
+    _presetTrackingBound: false,
+    _layerListenerBound: false,
     presetSwitches: 0,
     dragHeld: null,       /* {dst, kind, frames, lastApply} */
     lastRefresh: null,
@@ -151,6 +158,20 @@
         if (AN._target) return AN._target;
       } catch (e) {}
     }
+    /* FIX (vòng 1): trước đây bám getMainModel() ngay sau Animator —
+       model mẫu thắng. Ưu tiên selection / model hiện tại trước. */
+    try {
+      if (PS.State && typeof PS.State.get === 'function') {
+        var sel = PS.State.get('selection');
+        if (sel) return sel;
+      }
+    } catch (e) {}
+    try {
+      if (PS.Models && typeof PS.Models.getCurrent === 'function') {
+        var cur = PS.Models.getCurrent();
+        if (cur && cur.object3D) return cur.object3D;
+      }
+    } catch (e) {}
     if (PS.Viewport && typeof PS.Viewport.getMainModel === 'function') {
       try { return PS.Viewport.getMainModel(); } catch (e) { return null; }
     }
@@ -254,9 +275,22 @@
    * presets/toolbar, không phải lỗi của module này). Chỉ khi
    * getActive() ra 'Custom'/null mới refreshActive + so tolerant
    * theo snapshot (layer chưa đăng ký thì bỏ qua). */
+  /* FIX (vòng 1): presets.apply() từ FIX2 (nhóm 2) chỉ set active =
+   * tên preset khi KHÔNG layer nào skip; còn layer nào skip (vd
+   * markers chưa có marker nào để hiện, ghost chưa build) thì active
+   * tính lại = 'Custom' — dù user vừa áp Rigging. Nếu chỉ tin
+   * getActive()/snapshot, detectCurrentPreset() sẽ trả null và tính
+   * năng tự chuyển preset khi phát sẽ CHẾT hẳn mỗi khi có layer
+   * optional chưa show được. Vì thế module còn nhớ preset ÁP GẦN
+   * NHẤT (bus 'arp:vp-preset-applied' kèm danh sách skipped) và khi
+   * so tolerant thì BỎ QUA đúng các layer đã skip ở lần áp đó: preset
+   * đã áp vẫn là mode xem hiện tại của user. Layer nào user đổi tay
+   * sau đó (registry onLayerChange ngoài lần apply) sẽ xóa trí nhớ
+   * này — xem _bindPresetTracking(). */
   function detectCurrentPreset() {
     var P = getPresets();
     if (!P) return null;
+    _bindPresetTracking(); /* registry có thể xuất hiện sau init() */
     try {
       if (typeof P.getActive === 'function') {
         var active = P.getActive();
@@ -275,6 +309,7 @@
       if (typeof P.getPreset === 'function' && typeof P.snapshot === 'function') {
         var snap = P.snapshot() || {};
         var names = ['Rigging', 'Animation', 'Clean', 'Full'];
+        var lap = state.lastAppliedPreset;
         for (var i = 0; i < names.length; i++) {
           var map = P.getPreset(names[i]);
           if (!map) continue;
@@ -283,6 +318,9 @@
           for (var k = 0; k < keys.length; k++) {
             var cur = snap[keys[k]];
             if (cur === null || cur === undefined) continue; /* layer chưa đăng ký: bỏ qua */
+            /* Layer đã skip ở lần áp preset này (không show được vì
+               chưa có gì để hiện) thì không tính là lệch. */
+            if (lap && lap.name === names[i] && lap.skipped && lap.skipped.indexOf(keys[k]) >= 0) continue;
             checked++;
             if (!!cur !== !!map[keys[k]]) { matched = false; break; }
           }
@@ -291,6 +329,35 @@
       }
     } catch (e) {}
     return null;
+  }
+
+  /* Nhớ preset áp gần nhất + xóa trí nhớ khi user đổi layer tay.
+   * Thứ tự sự kiện trong 1 lần apply(): các layer-changed phát TRƯỚC,
+   * 'arp:vp-preset-applied' phát SAU — nên listener layer-changed
+   * xóa trí nhớ cũ rồi preset-applied ghi trí nhớ mới; đổi layer tay
+   * (toolbar gọi registry trực tiếp, không qua apply) chỉ phát
+   * layer-changed nên xóa trí nhớ đúng như ý. */
+  function _bindPresetTracking() {
+    try {
+      if (bus && typeof bus.on === 'function' && !state._presetTrackingBound) {
+        bus.on('arp:vp-preset-applied', function (d) {
+          try {
+            if (!d || !d.name) return;
+            var sk = [];
+            (d.skipped || []).forEach(function (s) { sk.push(typeof s === 'string' ? s : s.key); });
+            state.lastAppliedPreset = { name: d.name, skipped: sk, at: (new Date()).toISOString() };
+          } catch (e) {}
+        });
+        state._presetTrackingBound = true;
+      }
+    } catch (e) {}
+    try {
+      var reg = getRegistry();
+      if (reg && typeof reg.onLayerChange === 'function' && !state._layerListenerBound) {
+        reg.onLayerChange(function () { state.lastAppliedPreset = null; });
+        state._layerListenerBound = true;
+      }
+    } catch (e) {}
   }
 
   function maybeSwitchPresetToAnimation() {
@@ -302,6 +369,27 @@
     if (cur !== 'Rigging' && cur !== 'Clean') {
       return { ok: false, reason: 'preset-kept', current: cur };
     }
+    /* FIX (ARP View vòng 1): preset Animation có map labels:false
+       (markers:false) và KHÔNG có skeleton — áp preset này khi user
+       bấm Play sẽ TẮT nhãn ngay lúc phát (đúng lỗi "bấm Play thì
+       skeleton/labels biến mất"). Ghi lại trạng thái skeleton/labels
+       TRƯỚC khi áp, rồi khôi phục lại sau khi áp bằng gọi TRỰC TIẾP
+       module (không qua registry — qua registry sẽ kích
+       onLayerChange → presets.refreshActive() → active nhảy sang
+       'Custom' ngay, trong khi preset vừa áp vẫn là Animation; gọi
+       trực tiếp thì preset hiển thị giữ 'Animation' cho tới lần
+       refresh sau, và toolbar vẫn đồng bộ vì isLayerVisible đọc từ
+       module). Sửa đúng trong presets.js (thêm skeleton/labels vào
+       map Animation) thuộc nhóm 2 — không sửa ở đây. */
+    var skBefore = null, lbBefore = null;
+    try {
+      var Sk0 = getSkeleton();
+      if (Sk0 && typeof Sk0.isVisible === 'function') skBefore = !!Sk0.isVisible();
+    } catch (e) {}
+    try {
+      var Lb0 = getLabels();
+      if (Lb0 && typeof Lb0.isVisible === 'function') lbBefore = !!Lb0.isVisible();
+    } catch (e) {}
     var r = null;
     try { r = P.apply('Animation', { source: 'animator-play' }); } catch (e) {
       return { ok: false, reason: 'apply-threw', from: cur, error: e && e.message };
@@ -309,14 +397,35 @@
     if (!r || r.ok === false) {
       return { ok: false, reason: 'apply-failed', from: cur, detail: r };
     }
+    var restored = { skeleton: null, labels: null };
+    if (skBefore) {
+      try {
+        var Sk = getSkeleton();
+        var tgt = getTarget();
+        if (Sk && typeof Sk.show === 'function') {
+          var rs = Sk.show(tgt);
+          restored.skeleton = !!(rs && rs.ok);
+        }
+      } catch (e) { restored.skeleton = false; }
+    }
+    if (lbBefore) {
+      try {
+        var Lb = getLabels();
+        var tgt2 = getTarget();
+        if (Lb && typeof Lb.show === 'function') {
+          var rl = Lb.show(tgt2);
+          restored.labels = !!(rl && rl.ok);
+        }
+      } catch (e) { restored.labels = false; }
+    }
     state.lastPresetFrom = cur;
-    state.lastAutoSwitch = { from: cur, to: 'Animation', clipId: null, at: (new Date()).toISOString() };
+    state.lastAutoSwitch = { from: cur, to: 'Animation', clipId: null, at: (new Date()).toISOString(), restored: restored };
     try {
       var AN = getAnimator();
       if (AN && AN.currentId) state.lastAutoSwitch.clipId = AN.currentId;
     } catch (e) {}
     state.presetSwitches++;
-    return { ok: true, from: cur, to: 'Animation', applied: r.applied || {}, skipped: r.skipped || [] };
+    return { ok: true, from: cur, to: 'Animation', applied: r.applied || {}, skipped: r.skipped || [], restored: restored };
   }
 
   /* ---------------- 2. Trails: báo nguồn 'animator' ---------------- */
@@ -391,7 +500,14 @@
           else if (typeof Sk.show === 'function') skShown = Sk.show(target);
         } catch (e) { skShown = { ok: false, error: e && e.message }; }
         var boneCount = null;
-        try { if (Sk.getState) { var sst = Sk.getState(); boneCount = (sst && (sst.boneCount || (sst.bones && sst.bones.length))) || null; } } catch (e) {}
+        /* FIX (vòng 1): skeleton expose getStatus(), KHÔNG có getState()
+           (nay đã thêm alias getState = getStatus trong skeleton.js) —
+           đọc getStatus() trước, fallback getState() để boneCount không
+           còn null. */
+        try {
+          if (Sk.getStatus) { var sst = Sk.getStatus(); boneCount = (sst && sst.boneCount) || null; }
+          else if (Sk.getState) { var sst2 = Sk.getState(); boneCount = (sst2 && (sst2.boneCount || (sst2.bones && sst2.bones.length))) || null; }
+        } catch (e) {}
         out.skeleton = { ok: !!(skShown && skShown.ok !== false), visible: true, boneCount: boneCount, detail: skShown };
         if (!out.skeleton.ok) missing.push('ArpVpSkeleton.show lỗi');
       }
@@ -668,6 +784,7 @@
 
   function init() {
     var w = wrapAnimator();
+    _bindPresetTracking();
     /* Lắng nghe rig-complete để lần phát sau có target mới vẫn đúng
      * (không làm gì ngay — skeleton/IK tự resolve target mỗi lần). */
     try {
@@ -693,6 +810,7 @@
       presetSwitches: state.presetSwitches,
       lastPresetFrom: state.lastPresetFrom,
       lastAutoSwitch: state.lastAutoSwitch,
+      lastAppliedPreset: state.lastAppliedPreset,
       dragHeld: state.dragHeld,
       lastRefresh: state.lastRefresh,
       lastGhostKeyIndex: state.lastGhostKeyIndex,

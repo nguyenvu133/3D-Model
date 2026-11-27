@@ -1262,6 +1262,18 @@
     }
   }
 
+  /* FIX (ARP View vòng 1): setDisplay đi qua registry ArpViewport
+   * (showLayer/hideLayer) khi có — registry lưu localStorage + phát
+   * 'arp-viewport:layer-changed' nên toolbar/preset đồng bộ trạng
+   * thái; trước đây gọi trực tiếp Sk.show/hide nên toolbar lệch.
+   * Trả true khi registry áp được, false khi layer chưa đăng ký
+   * (caller rơi về gọi trực tiếp), null khi registry chưa có. */
+  function applyViaRegistry(key, on) {
+    var AV = PS.ArpViewport;
+    if (!AV || typeof AV.showLayer !== 'function' || typeof AV.hideLayer !== 'function') return null;
+    try { return on ? !!AV.showLayer(key) : !!AV.hideLayer(key); } catch (e) { return null; }
+  }
+
   function setDisplay(key, on) {
     var valid = ['skeleton', 'ik', 'trails', 'onion', 'readout', 'boneAngles', 'rootPath'];
     if (valid.indexOf(key) < 0) return { ok: false, error: 'Lớp hiển thị không biết: ' + key };
@@ -1272,23 +1284,29 @@
       if (key === 'skeleton') {
         var Sk = PS.ArpVpSkeleton;
         if (Sk && typeof Sk.show === 'function' && typeof Sk.hide === 'function') {
-          if (on) Sk.show(target); else Sk.hide();
+          if (applyViaRegistry('skeleton', on) !== true) { if (on) Sk.show(target); else Sk.hide(); }
           applied.push('skeleton');
         } else missing.push('ArpVpSkeleton chưa load');
       } else if (key === 'ik') {
         var Ik = PS.ArpVpIk;
         if (Ik && typeof Ik.show === 'function' && typeof Ik.hide === 'function') {
-          if (on) Ik.show(); else Ik.hide();
+          if (applyViaRegistry('ik', on) !== true) { if (on) Ik.show(); else Ik.hide(); }
           applied.push('ik');
         } else missing.push('ArpVpIk chưa load');
       } else if (key === 'trails') {
         var Tr = PS.ArpVpTrails;
-        if (Tr && typeof Tr.setTrailsEnabled === 'function') { Tr.setTrailsEnabled(!!on); applied.push('trails'); }
+        if (Tr && typeof Tr.setTrailsEnabled === 'function') {
+          if (applyViaRegistry('trails', on) !== true) Tr.setTrailsEnabled(!!on);
+          applied.push('trails');
+        }
         else if (Tr && typeof Tr.showTrails === 'function') { if (on) Tr.showTrails(); else Tr.hideTrails(); applied.push('trails'); }
         else missing.push('ArpVpTrails chưa load');
       } else if (key === 'onion') {
         var Tr2 = PS.ArpVpTrails;
-        if (Tr2 && typeof Tr2.setOnionEnabled === 'function') { Tr2.setOnionEnabled(!!on); applied.push('onion'); }
+        if (Tr2 && typeof Tr2.setOnionEnabled === 'function') {
+          if (applyViaRegistry('onion', on) !== true) Tr2.setOnionEnabled(!!on);
+          applied.push('onion');
+        }
         else if (Tr2 && typeof Tr2.showOnion === 'function') { if (on) Tr2.showOnion(); else Tr2.hideOnion(); applied.push('onion'); }
         else missing.push('ArpVpTrails chưa load');
         /* Onion cho clip keyframe: ghost của Keyframe */

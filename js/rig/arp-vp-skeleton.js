@@ -25,6 +25,13 @@
  *    pose/animation mà KHÔNG cần update mỗi frame.
  *  • Khớp = HÌNH CẦU NHỎ (SphereGeometry) đặt tại gốc mỗi
  *    xương, cũng là con của xương đó nên tự đi theo pose.
+ *  • ĐỒNG BỘ BONE SHAPE (vòng Bone Shape 2026-11-27): khi tạo hình,
+ *    module đọc PixiStudio.ArpBoneShape.getShapeForBone() — xương nào
+ *    đã custom trong tab Bone Shape thì dùng đúng hình/màu/opacity/
+ *    khớp đó, xương chưa custom thì giữ nguyên cylinder + khớp cầu
+ *    mặc định trên; event 'boneshape:changed' → refresh() dựng lại.
+ *    Chỉ phần TẠO HÌNH đọc Bone Shape; logic update/event/visibility
+ *    của module này không đổi.
  *  • SkeletonHelper có sẵn (nếu có) sẽ bị ẨN khi layer này
  *    BẬT — tránh đường 1px đứng yên ở T-pose gây rối — và
  *    được KHÔI PHỤC đúng trạng thái cũ khi layer TẮT.
@@ -64,10 +71,19 @@
  *
  * API: PixiStudio.ArpVpSkeleton
  *   show(target?) / hide() / toggle() / isVisible()
- *   refresh() / clear() / getStatus() / statusText()
+ *   autoShow(target?) — tự hiện sau rig/load, tôn trọng cờ tắt-tay
+ *     trong-phiên-cho-đúng-model (xem _manualHiddenFor)
+ *   hideManual() / refresh() / clear() / getStatus() / getState()
+ *   (alias getStatus) / statusText()
  *   renderStatus(el) / syncPanelRow() / syncToolbarButton()
  *   setThickness(v) / setJointSize(v) / setColor(group, hex)
  *   setAutoShow(b) / getSettings() / getBoneCount() / init()
+ *
+ * SỬA VÒNG 1 (2026-11-27, nhóm Target resolution): _findSkeleton hợp
+ * nhất skeleton.bones + traverse (FBX Mixamo thật: 34 → 41 xương);
+ * _resolveTarget ưu tiên selection → Models.current → Anim.target
+ * thay vì getMainModel() đầu tiên; autoShow() + cờ _manualHiddenFor
+ * tách "tắt tay trong phiên" khỏi "visible:false đã lưu".
  * ============================================================ */
 (function () {
   'use strict';
@@ -76,7 +92,15 @@
   var NO_SKELETON_MSG = 'chưa có skeleton — hãy rig trước';
   var SHORTCUT_KEY = 'b'; /* 'B' — đã kiểm tra còn trống ở studio chính */
 
-  var THICKNESS_RADIUS = { thin: 0.003, medium: 0.0055, thick: 0.009 };
+  /* Độ dày xương (bán kính cylinder, mét) + khớp cầu mặc định.
+     FIX2 — đo thật trên trình duyệt (Thiếu Lâm 41 xương, FOV 38°,
+     cam 4.99m, canvas 880×548: 159 px/m): mặc định cũ medium
+     0.0055 → thân xương chỉ 1.5px, khớp 0.012 → 3.9px — thấy được
+     nhưng chìm giữa mesh có texture. Chuẩn đích: ở khoảng cách
+     fit ~3.5m, viewport cao 720px (299 px/m) thì thân ≥5px, khớp
+     ≥12px → thick 0.011 (đường kính 6.6px) + khớp 0.022 (13.1px),
+     và mặc định dùng 'thick'. */
+  var THICKNESS_RADIUS = { thin: 0.004, medium: 0.007, thick: 0.011 };
   var DEFAULT_COLORS = { spine: 0xffb020, left: 0x2fa8ff, right: 0xff4d6d };
   var SPINE_NAMES = {
     Hips: 1, Spine: 1, Spine1: 1, Spine2: 1, Chest: 1,
@@ -86,8 +110,8 @@
   var _settings = {
     visible: true,      /* mặc định BẬT sau khi rig */
     autoShow: true,     /* tự hiện khi nhận event rig-complete */
-    thickness: 'medium',
-    jointSize: 0.012,   /* bán kính khớp cầu, mét */
+    thickness: 'thick', /* FIX2: mặc định dày nhất cho dễ thấy (xem THICKNESS_RADIUS) */
+    jointSize: 0.022,   /* bán kính khớp cầu, mét — FIX2: 0.012 → 0.022 (≥12px ở fit 3.5m / cao 720px) */
     colors: { spine: DEFAULT_COLORS.spine, left: DEFAULT_COLORS.left, right: DEFAULT_COLORS.right }
   };
 
@@ -107,6 +131,17 @@
   var _registered = false;
   var _toolbarBtn = null;
   var _panelRow = null;
+  /* FIX persisted-state (ARP View vòng 1): "user đã tắt tay" được tách
+   * khỏi "state khôi phục từ lần trước" bằng cờ IN-MEMORY này — uuid
+   * của model mà user đã tắt skeleton BẰNG TAY (nút toolbar / phím B /
+   * nút panel, tức qua toggle()) TRONG PHIÊN HIỆN TẠI. Chỉ hide()
+   * manual mới ghi cờ; hide() từ preset/registry/Animator (vd nút
+   * "Ẩn tất cả") KHÔNG ghi — nên rig lại / load model mới sau "Ẩn
+   * tất cả" vẫn tự hiện lại. _settings.visible đã lưu ở localStorage
+   * từ phiên trước KHÔNG còn chặn auto-show (reload trang → cờ trống
+   * → model mới load auto-show như mặc định). */
+  var _manualHiddenFor = null; /* uuid model đã tắt tay trong phiên, hoặc null */
+  var _nextHideManual = false; /* toggle() đặt trước khi gọi hide() */
 
   /* ---------- helpers ---------- */
   function _PS() {
@@ -194,6 +229,40 @@
     return (typeof c === 'number') ? c : DEFAULT_COLORS[group] || 0xffffff;
   }
 
+  /* ---------- đồng bộ hình xương với Bone Shape (vòng Bone Shape) ----------
+   * VP skeleton KHÔNG vẽ riêng 1 bộ hình khác: khi tạo hình xương, đọc
+   * spec từ PixiStudio.ArpBoneShape.getShapeForBone(boneName) — chỉ
+   * dùng khi xương đó đã được custom trong Bone Shape (customized),
+   * còn không thì fallback đúng hình mặc định cũ của VP (cylinder +
+   * khớp cầu theo nhóm màu). Chỉ chạm phần TẠO HÌNH (geometry/
+   * material); logic update/event/visibility giữ nguyên. */
+  function _boneShapeSpec(bone) {
+    try {
+      var PS = _PS();
+      var BS = PS && PS.ArpBoneShape;
+      if (!BS || typeof BS.getShapeForBone !== 'function') return null;
+      var spec = BS.getShapeForBone(bone && bone.name);
+      if (!spec || !spec.customized) return null;
+      return spec;
+    } catch (e) { return null; }
+  }
+  function _segmentGeometry(type, radius, len) {
+    var THREE = _THREE();
+    if (!THREE) return null;
+    if (type === 'box') return new THREE.BoxGeometry(radius * 2, len, radius * 2);
+    if (type === 'sphere') return new THREE.SphereGeometry(1, 12, 10);
+    if (type === 'octahedron' || type === 'diamond') return new THREE.OctahedronGeometry(1, 0);
+    if (type === 'cone') return new THREE.ConeGeometry(radius, len, 10);
+    return new THREE.CylinderGeometry(radius, radius, len, 8, 1);
+  }
+  function _jointGeometry(style, r) {
+    var THREE = _THREE();
+    if (!THREE) return null;
+    if (style === 'box') return new THREE.BoxGeometry(r * 2, r * 2, r * 2);
+    if (style === 'octahedron') return new THREE.OctahedronGeometry(r, 0);
+    return new THREE.SphereGeometry(r, 12, 10);
+  }
+
   /* ---------- tìm skeleton trong target ---------- */
   function _collectBones(target) {
     var bones = [];
@@ -201,18 +270,49 @@
     target.traverse(function (o) { if (o && o.isBone) bones.push(o); });
     return bones;
   }
+  /* Leo từ 1 object bất kỳ lên ancestor gần nhất có xương (chính nó
+   * nếu đã có; vd selection đang là 1 SkinnedMesh — xương là sibling,
+   * traverse từ mesh không thấy — hoặc 1 xương con). DỪNG ở modelRoot:
+   * không bao giờ leo lên modelRoot/scene (traverse từ đó sẽ thấy
+   * xương của model KHÁC). Trả null nếu leo tới đỉnh model vẫn
+   * không thấy xương nào. */
+  function _climbToRigged(obj) {
+    var PS = _PS();
+    var root = null;
+    try { root = PS && PS.Viewport && PS.Viewport.modelRoot; } catch (e) {}
+    var o = obj, guard = 0;
+    while (o && guard < 64) {
+      if (o.isScene || (root && o === root)) return null; /* đã leo khỏi model */
+      if (_collectBones(o).length) return o;
+      o = o.parent;
+      guard++;
+    }
+    return null;
+  }
   function _findSkeleton(target) {
     if (!target) return null;
     var THREE = _THREE();
     if (!THREE) return null;
-    /* Ưu tiên SkinnedMesh.skeleton (rig thật đã bind skin). */
+    /* FIX (ARP View vòng 1, 2026-11-27): trước đây ƯU TIÊN
+     * SkinnedMesh.skeleton.bones — với FBX Mixamo/Thiếu Lâm thật,
+     * skeleton.bones chỉ có 34 xương (thiếu 3 *_End + 4 đầu ngón tay
+     * không có skin weight nên FBXLoader không đưa vào skeleton),
+     * trong khi traverse thấy đủ 41. Nay HỢP NHẤT cả 2 nguồn (khử
+     * trùng theo uuid): xương nào chỉ có ở 1 nguồn vẫn được hiển thị.
+     * Đo trên trình duyệt thật: show(fbxObject) 34 → 41 xương. */
     var skel = null;
     target.traverse(function (o) {
       if (!skel && o && o.isSkinnedMesh && o.skeleton && o.skeleton.bones && o.skeleton.bones.length) {
         skel = o.skeleton;
       }
     });
-    var bones = (skel && skel.bones) ? skel.bones.filter(function (b) { return b && b.isBone; }) : _collectBones(target);
+    var bones = [];
+    var seen = {};
+    function _push(b) {
+      if (b && b.isBone && !seen[b.uuid]) { seen[b.uuid] = true; bones.push(b); }
+    }
+    if (skel && skel.bones) skel.bones.forEach(_push);
+    _collectBones(target).forEach(_push);
     if (!bones.length) return null;
     /* Root = xương có tên Hips, nếu không thì xương không có cha là Bone. */
     var root = null;
@@ -238,24 +338,50 @@
     } catch (e) {}
     return 1.8;
   }
-  /* Resolve target hiển thị: đối số → target đã lưu → Viewport
-   * main model → State selection → RigAutoGen/QuickRig current. */
+  /* Resolve target hiển thị.
+   * FIX (ARP View vòng 1): thứ tự cũ đặt Viewport.getMainModel() ĐẦU
+   * TIÊN — mà getMainModel() trả về child visible đầu tiên của
+   * modelRoot (model mẫu Hero_001 Sample, 0 xương) nên show() không
+   * đối số luôn báo 'no-skeleton' sau khi import FBX rigged. Thứ tự
+   * mới: đối số → target đã lưu (đã rig thành công) → State.selection
+   * (model vừa import được registerModel chọn sẵn; leo lên ancestor
+   * có xương khi selection là mesh/xương con) → Models.current
+   * (mới import nhất) → Anim.targetObject (FBX vừa load, app.js set)
+   * → RigAutoGen/QuickRig current → AutoRigPro lastResult →
+   * getMainModel() (nay đã sửa tập trung ở viewport.js, chỉ còn là
+   * fallback cuối). QUY TẮC: ứng viên ĐẦU TIÊN có mặt thì thắng (leo
+   * lên ancestor có xương; leo không được thì trả chính nó để show()
+   * báo "chưa có rig" trung thực) — CHỈ ứng viên vắng (null) mới rơi
+   * xuống ứng viên sau; nếu không, khi user chọn model chưa rig thì
+   * skeleton sẽ bám nhầm vào rig cũ của model khác. */
   function _resolveTarget(arg) {
-    if (arg && arg.traverse) return arg;
+    if (arg && arg.traverse) { var c0 = _climbToRigged(arg); if (c0) return c0; return arg; }
     if (arg && arg.isBone) return arg; /* truyền thẳng rootBone cũng được */
     if (_state.target && _state.target.traverse) return _state.target;
     var PS = _PS();
     if (PS) {
       try {
-        if (PS.Viewport && PS.Viewport.getMainModel) {
-          var m = PS.Viewport.getMainModel();
-          if (m && m.traverse) return m;
+        if (PS.State && PS.State.get) {
+          var sel = PS.State.get('selection');
+          if (sel) { var cSel = _climbToRigged(sel); return cSel || sel; }
         }
       } catch (e) {}
       try {
-        if (PS.State && PS.State.get) {
-          var sel = PS.State.get('selection');
-          if (sel && sel.traverse) return sel;
+        if (PS.Models && typeof PS.Models.getCurrent === 'function') {
+          var cur = PS.Models.getCurrent();
+          if (cur && cur.object3D) { var cCur = _climbToRigged(cur.object3D); return cCur || cur.object3D; }
+        }
+      } catch (e) {}
+      try {
+        if (PS.Anim && PS.Anim.targetObject) {
+          var cAnim = _climbToRigged(PS.Anim.targetObject);
+          return cAnim || PS.Anim.targetObject;
+        }
+      } catch (e) {}
+      try {
+        if (PS.Viewport && PS.Viewport.getMainModel) {
+          var m = PS.Viewport.getMainModel();
+          if (m && m.traverse) { var cMain = _climbToRigged(m); return cMain || m; }
         }
       } catch (e) {}
       try {
@@ -330,11 +456,21 @@
     found.bones.forEach(function (bone) {
       var group = _classifyBone(bone);
       var color = _colorOf(group);
-      /* --- khớp cầu tại gốc xương --- */
+      var spec = _boneShapeSpec(bone); /* null = chưa custom → mặc định VP */
+      /* --- khớp cầu tại gốc xương (hình/cỡ/màu theo Bone Shape nếu có) --- */
+      var jointColor = color;
+      var jointR2 = jointR;
+      var jointGeo = null;
+      if (spec) {
+        if (typeof spec.jointColor === 'number') jointColor = spec.jointColor;
+        else if (typeof spec.color === 'number') jointColor = spec.color;
+        if (spec.jointSize) jointR2 = jointR * spec.jointSize;
+        jointGeo = _jointGeometry(spec.jointStyle, jointR2);
+      }
       try {
         var jm = new THREE.Mesh(
-          new THREE.SphereGeometry(jointR, 12, 10),
-          new THREE.MeshBasicMaterial({ color: color, depthTest: false, transparent: true, opacity: 0.95, toneMapped: false })
+          jointGeo || new THREE.SphereGeometry(jointR, 12, 10),
+          new THREE.MeshBasicMaterial({ color: jointColor, depthTest: false, transparent: true, opacity: 0.95, toneMapped: false })
         );
         jm.name = '__arp_vp_joint_' + _stripName(bone.name);
         jm.userData.isArpVpSkeleton = true;
@@ -360,10 +496,23 @@
         if (!seg.len || seg.len < 1e-6) return;
         try {
           var dirN = seg.dir.clone().normalize();
+          /* Hình/màu/opacity đoạn xương theo Bone Shape nếu xương đã
+             custom; chưa custom → cylinder mặc định như trước. */
+          var segColor = (spec && typeof spec.color === 'number') ? spec.color : color;
+          var segOpacity = (spec && typeof spec.opacity === 'number') ? spec.opacity : 0.9;
+          var segRadius = radius * ((spec && spec.thickness) ? spec.thickness : 1);
+          var segType = spec ? spec.type : 'cylinder';
           var cm = new THREE.Mesh(
-            new THREE.CylinderGeometry(radius, radius, seg.len, 8, 1),
-            new THREE.MeshBasicMaterial({ color: color, depthTest: false, transparent: true, opacity: 0.9, toneMapped: false })
+            _segmentGeometry(segType, segRadius, seg.len),
+            new THREE.MeshBasicMaterial({ color: segColor, depthTest: false, transparent: true, opacity: segOpacity, toneMapped: false })
           );
+          /* Geometry unit (sphere/octahedron/diamond) thì scale theo
+             đoạn xương; geometry đã sized sẵn thì chỉ áp width. */
+          if (segType === 'sphere' || segType === 'octahedron' || segType === 'diamond') {
+            cm.scale.set(segRadius, seg.len / 2, segRadius);
+          } else if (spec && spec.width && spec.width !== 1) {
+            cm.scale.set(spec.width, 1, 1);
+          }
           cm.name = '__arp_vp_bone_' + _stripName(bone.name);
           cm.userData.isArpVpSkeleton = true;
           cm.userData.isBoneVisual = true; /* xem ghi chú ở khớp cầu trên */
@@ -463,12 +612,18 @@
       if (!target && data.rig && data.rig.rootBone) target = data.rig.rootBone;
       var resolved = _resolveTarget(target);
       if (!resolved) return;
-      if (_settings.autoShow && _settings.visible !== false) {
-        ArpVpSkeleton.show(resolved);
+      if (_settings.autoShow) {
+        /* autoShow() tự tôn trọng cờ tắt-tay-trong-phiên: model đã bị
+           user tắt tay thì chỉ dựng display ở trạng thái ẩn. */
+        var r = ArpVpSkeleton.autoShow(resolved);
+        if (!r.ok && r.reason === 'manual-hidden') {
+          var found = _findSkeleton(resolved);
+          if (found) { _buildDisplay(resolved, found); _setPartsVisible(false); _state.visible = false; _syncUI(); }
+        }
       } else {
         /* autoShow tắt: chỉ dựng display ở trạng thái ẩn để toggle sau có sẵn. */
-        var found = _findSkeleton(resolved);
-        if (found) { _buildDisplay(resolved, found); _setPartsVisible(false); _state.visible = false; _syncUI(); }
+        var found2 = _findSkeleton(resolved);
+        if (found2) { _buildDisplay(resolved, found2); _setPartsVisible(false); _state.visible = false; _syncUI(); }
       }
       _tryRegister();
     } catch (e) {}
@@ -483,6 +638,12 @@
       bus.on('arpquickrig:converted', _onRigComplete);
       bus.on('arpquickrig:autogen-done', _onRigComplete);
       bus.on('arpquickrig:mixamo-done', _onRigComplete);
+      /* Đồng bộ Bone Shape → viewport: đổi hình trong panel Bone Shape
+         thì dựng lại hình VP ngay (chỉ gọi refresh() có sẵn; không
+         sửa logic update/event/visibility của module này). */
+      bus.on('boneshape:changed', function () {
+        try { if (_state.rootBone && _state.visible) ArpVpSkeleton.refresh(); } catch (e) {}
+      });
       _busBound = true;
       return true;
     } catch (e) { return false; }
@@ -547,13 +708,37 @@
     }
     _settings.visible = true;
     _state.visible = true;
+    /* Hiện tay (toolbar/B/preset-show) → xóa cờ tắt-tay của model này. */
+    if (resolved && resolved.uuid && _manualHiddenFor === resolved.uuid) _manualHiddenFor = null;
     _setPartsVisible(true);
     _saveSettings();
     _syncUI();
     return { ok: true, boneCount: _state.boneCount, target: resolved, rootBone: _state.rootBone };
   };
 
-  ArpVpSkeleton.hide = function () {
+  /* Tự hiện sau rig/load — KHÁC show(): tôn trọng "user đã tắt tay
+   * trong phiên hiện tại" cho ĐÚNG model đó (uuid), nhưng model MỚI
+   * (uuid khác) hoặc phiên mới (cờ trống) thì luôn hiện bất chấp
+   * _settings.visible đã lưu ở localStorage. app.js (model:loaded)
+   * và _onRigComplete dùng hàm này; toolbar/B dùng show()/toggle(). */
+  ArpVpSkeleton.autoShow = function (target) {
+    _bindBus();
+    _tryRegister();
+    var resolved = _resolveTarget(target);
+    if (!resolved) return { ok: false, reason: 'no-target', message: NO_SKELETON_MSG };
+    if (resolved.uuid && _manualHiddenFor === resolved.uuid) {
+      return { ok: false, reason: 'manual-hidden', target: resolved };
+    }
+    return ArpVpSkeleton.show(resolved);
+  };
+
+  ArpVpSkeleton.hide = function (opts) {
+    /* Chỉ hide() MANUAL (qua toggle() / hideManual()) mới ghi cờ tắt
+       tay — hide() từ registry (preset Clean / "Ẩn tất cả") hay từ
+       Animator.setDisplay KHÔNG ghi, để rig/load sau vẫn auto-show. */
+    var manual = !!((opts && opts.manual) || _nextHideManual);
+    _nextHideManual = false;
+    if (manual && _state.target && _state.target.uuid) _manualHiddenFor = _state.target.uuid;
     _settings.visible = false;
     _state.visible = false;
     _setPartsVisible(false);
@@ -563,8 +748,17 @@
     return { ok: true, visible: false };
   };
 
+  /* Ẩn tay tường minh (ghi cờ tắt-tay) — dùng khi cần hide() manual
+   * mà không qua toggle(). */
+  ArpVpSkeleton.hideManual = function () {
+    return ArpVpSkeleton.hide({ manual: true });
+  };
+
   ArpVpSkeleton.toggle = function (target) {
-    if (ArpVpSkeleton.isVisible()) return ArpVpSkeleton.hide();
+    if (ArpVpSkeleton.isVisible()) {
+      _nextHideManual = true; /* tắt tay → ghi cờ cho model hiện tại */
+      return ArpVpSkeleton.hide();
+    }
     return ArpVpSkeleton.show(target);
   };
 
@@ -590,6 +784,7 @@
     _state.bones = [];
     _state.boneCount = 0;
     _state.visible = false;
+    _manualHiddenFor = null;
     _syncUI();
     return { ok: true };
   };
@@ -611,6 +806,10 @@
         : NO_SKELETON_MSG
     };
   };
+
+  /* Alias getState (tên mà arp-sync-viewport.js vẫn gọi) — cùng nội
+   * dung getStatus(), tránh refreshOverlaysForTime đọc boneCount null. */
+  ArpVpSkeleton.getState = ArpVpSkeleton.getStatus;
 
   ArpVpSkeleton.statusText = function () {
     return ArpVpSkeleton.getStatus().message;
@@ -675,6 +874,9 @@
     findSkeleton: _findSkeleton,
     buildDisplay: _buildDisplay,
     onRigComplete: _onRigComplete,
+    climbToRigged: _climbToRigged,
+    resolveTarget: _resolveTarget,
+    getManualHiddenFor: function () { return _manualHiddenFor; },
     state: _state,
     settings: _settings,
     THICKNESS_RADIUS: THICKNESS_RADIUS,

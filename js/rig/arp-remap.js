@@ -25,6 +25,15 @@
  *   sẽ bị từ chối theo luật này dù track của nó khớp hết — luật đo
  *   độ phủ rig, không đo độ khớp của clip. Muốn cho clip từng phần
  *   qua thì phải hạ MIN_COMPAT hoặc đổi mẫu số (chưa làm).
+ *   AUTO KHỚP (js/rig/arp-automatch.js, 2026-11-27): rig đích thiếu
+ *   xương ngón (vd chibi không có Middle/Ring/Pinky) thì track clip
+ *   của xương thiếu KHÔNG bị bỏ — nó được remap về xương nguồn mà
+ *   AutoMatch đã khớp (gộp ngón → Index, hoặc xương cha → Hand) và
+ *   tính vào compat như xương được phủ. Nhờ vậy clip Mixamo đủ 41
+ *   xương không bị từ chối oan trên rig chibi 23–36 xương.
+ *   result.autoMatched = [{clipBone, dstBone, method, confidence}]
+ *   liệt kê các track đi qua auto khớp; xương đích thật vẫn ưu tiên
+ *   khớp theo tên trước (boneMap), auto khớp chỉ là fallback.
  *
  * GIỚI HẠN TRUNG THỰC:
  *   • Chỉ map theo tên xương — KHÔNG xử lý khác tỉ lệ xương, khác
@@ -215,7 +224,7 @@
   function retargetClip(clip, targetRig, opts) {
     opts = opts || {};
     var src = resolveClip(clip);
-    var result = { ok: false, clip: null, compat: 0, mapped: 0, skipped: [], missing: [], total: 0, rigBoneTotal: 0, matchedBones: 0, reason: '' };
+    var result = { ok: false, clip: null, compat: 0, mapped: 0, skipped: [], missing: [], total: 0, rigBoneTotal: 0, matchedBones: 0, reason: '', autoMatched: [], autoMatchCount: 0 };
     if (!src) {
       result.reason = 'Không tìm thấy clip nguồn (clip rỗng hoặc id không có trong studio).';
       notify('error', 'Remap', result.reason);
@@ -238,6 +247,28 @@
       return result;
     }
     result.rigBoneTotal = rigBones.length;
+    /* --- AUTO KHỚP fallback: xương clip (chuẩn 41) không có trong rig
+       đích → tra bảng auto khớp của rig đích (gộp ngón / xương cha).
+       Chỉ chạy khi ArpAutoMatch đã load; tắt bằng opts.autoMatch=false.
+       Tra theo tên đích CHUẨN (vd 'lefthandmiddle1'), đích đến là tên
+       xương nguồn thật của rig (vd 'mixamorig:LeftHandIndex1'). --- */
+    var amByDst = null;
+    if (opts.autoMatch !== false) {
+      try {
+        var AM = (typeof window !== 'undefined' && window.PixiStudio && window.PixiStudio.ArpAutoMatch) || null;
+        if (AM && typeof AM.autoMatch === 'function') {
+          var amRes = AM.autoMatch(rig);
+          amByDst = {};
+          amRes.mapped.forEach(function (e) {
+            /* chỉ các entry tự khớp (không phải name) mới cần fallback —
+               entry name đã có trong boneMap rồi */
+            if (e.method && e.method !== 'name') {
+              amByDst[normalizeBoneName(e.dst)] = { src: e.src, method: e.method, confidence: e.confidence, mergedFrom: e.mergedFrom || null };
+            }
+          });
+        }
+      } catch (e) { amByDst = null; }
+    }
     var scaleRoot = (typeof opts.scaleRoot === 'number' && isFinite(opts.scaleRoot) && opts.scaleRoot > 0) ? opts.scaleRoot : 1;
 
     var totalBoneTracks = 0;
@@ -250,11 +281,22 @@
       if (!parsed) return;   /* track không phải bone (vd morph) → bỏ qua, không đếm */
       totalBoneTracks++;
       var destBone = boneMap[normalizeBoneName(parsed.bone)];
+      var viaAuto = null;
+      if (!destBone && amByDst) {
+        viaAuto = amByDst[normalizeBoneName(parsed.bone)] || null;
+        if (viaAuto) {
+          destBone = viaAuto.src;
+          result.autoMatched.push({ clipBone: parsed.bone, dstBone: destBone, method: viaAuto.method, confidence: viaAuto.confidence, mergedFrom: viaAuto.mergedFrom });
+        }
+      }
       if (!destBone) {
         skippedSet[parsed.bone] = true;   /* xương clip không có trong rig → bỏ track */
         return;
       }
-      matchedSet[normalizeBoneName(parsed.bone)] = true;
+      /* xương đích được phủ = xương nguồn thật nhận track (vd track
+         Middle1 → Index1 thì Index1 được tính là phủ, không đếm
+         Middle1 vốn không có trong rig). */
+      matchedSet[normalizeBoneName(destBone)] = true;
       var nt = track.clone();
       nt.name = destBone + '.' + parsed.prop;
       /* scale root motion Hips.position nếu 2 rig cao khác nhau */
@@ -266,8 +308,47 @@
       mappedTracks++;
     });
 
+    /* --- XƯƠNG THỪA ngoài chuẩn 41 (vd Thumb3/4, Index3/4, Toe_End
+       của Thiếu Lâm): tính là phủ khi xương tổ tiên gần nhất của
+       chúng được clip phủ — skin của chúng đi theo cha. CHỈ áp cho
+       xương ngoài chuẩn 41 (không cascade sang xương chuẩn: clip
+       thiếu Middle1 thật thì Middle1 vẫn tính là thiếu, từ chối
+       đúng luật). Lặp tới fixpoint để Thumb4 theo Thumb3. --- */
+    var extraCovered = [];
+    try {
+      var AM2 = (typeof window !== 'undefined' && window.PixiStudio && window.PixiStudio.ArpAutoMatch) || null;
+      if (AM2 && typeof AM2.collectBones === 'function' && AM2.DST_NAMES) {
+        var stdSet = {};
+        AM2.DST_NAMES.forEach(function (n) { stdSet[normalizeBoneName(n)] = true; });
+        var rigBoneObjs = AM2.collectBones(rig);
+        var boneByNorm = {};
+        rigBoneObjs.forEach(function (b) { if (b && b.name) boneByNorm[normalizeBoneName(b.name)] = b; });
+        var changed = true, guard = 0;
+        while (changed && guard++ < 5) {
+          changed = false;
+          rigBones.forEach(function (norm) {
+            if (matchedSet[norm] || stdSet[norm]) return;
+            var bone = boneByNorm[norm];
+            if (!bone) return;
+            var p = bone.parent;
+            while (p) {
+              if (matchedSet[normalizeBoneName(p.name)]) {
+                matchedSet[norm] = true;
+                extraCovered.push(boneMap[norm] || bone.name);
+                changed = true;
+                break;
+              }
+              p = p.parent;
+            }
+          });
+        }
+      }
+    } catch (e) {}
+    result.extraCovered = extraCovered;
+
     result.total = totalBoneTracks;
     result.mapped = mappedTracks;
+    result.autoMatchCount = result.autoMatched.length;
     result.skipped = Object.keys(skippedSet).sort();
     /* missing = xương RIG ĐÍCH không được clip phủ (để lý do từ chối liệt kê) */
     result.missing = rigBones.filter(function (norm) { return !matchedSet[norm]; })
@@ -307,6 +388,8 @@
     notify('success', 'Remap xong',
       '"' + src.name + '" → "' + newName + '": phủ ' + result.matchedBones + '/' + rigBones.length +
       ' xương rig (' + Math.round(result.compat * 100) + '%), khớp ' + mappedTracks + '/' + totalBoneTracks + ' track' +
+      (result.autoMatchCount ? ' · ' + result.autoMatchCount + ' track tự khớp (' + result.autoMatched.slice(0, 3).map(function (a) { return a.clipBone.split(':').pop() + '→' + a.dstBone.split(':').pop(); }).join(', ') + (result.autoMatchCount > 3 ? '…' : '') + ')' : '') +
+      (result.extraCovered && result.extraCovered.length ? ' · ' + result.extraCovered.length + ' xương thừa theo cha (' + result.extraCovered.slice(0, 3).join(', ') + (result.extraCovered.length > 3 ? '…' : '') + ')' : '') +
       (result.missing.length ? ' · ' + result.missing.length + ' xương rig không có trong clip: ' + result.missing.slice(0, 5).join(', ') + (result.missing.length > 5 ? '…' : '') : ' · phủ 100% rig') +
       (result.skipped.length ? ' · bỏ ' + result.skipped.length + ' track xương clip không có trong rig' : ''),
       10000);
@@ -536,6 +619,7 @@
       }
       resultBox.innerHTML = '';
       resultBox.appendChild(el('div', { style: 'color:var(--success,#4c4);', html: '<b>✓ Tương thích ' + Math.round(r.compat * 100) + '%</b> — phủ ' + r.matchedBones + '/' + r.rigBoneTotal + ' xương rig, khớp ' + r.mapped + '/' + r.total + ' track.' }));
+      if (r.autoMatchCount) resultBox.appendChild(el('div', { text: 'Tự khớp ' + r.autoMatchCount + ' track: ' + r.autoMatched.map(function (a) { return a.clipBone + ' → ' + a.dstBone + ' (' + a.method + ' ' + a.confidence + '%)'; }).join(', ') }));
       if (r.missing.length) resultBox.appendChild(el('div', { text: 'Xương rig không có trong clip (' + r.missing.length + '): ' + r.missing.join(', ') }));
       else resultBox.appendChild(el('div', { text: 'Phủ 100% rig — không thiếu xương nào.' }));
       if (r.skipped.length) resultBox.appendChild(el('div', { text: 'Track xương clip bị bỏ (không có trong rig): ' + r.skipped.join(', ') }));

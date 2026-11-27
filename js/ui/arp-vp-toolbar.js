@@ -3,8 +3,9 @@
  * THANH CÔNG CỤ VIEWPORT cho Auto Rig Pro Blend.
  *
  * 1 thanh overlay riêng trong viewport (góc trên-trái, dễ thấy,
- * không che model): nút bật/tắt nhanh Skeleton, Nhãn xương, IK,
- * Markers, Ghost, Grid, Control helpers + "Hiện tất cả" / "Ẩn tất cả".
+ * không che model): 11 nút bật/tắt nhanh cho đủ 11 layer registry
+ * (Skeleton, Nhãn xương, IK, Markers, Ghost, Grid, Control helpers,
+ * Trails, Onion, Đo đạc, Tham chiếu) + "Hiện tất cả" / "Ẩn tất cả".
  * Mỗi nút có trạng thái RÕ RÀNG: bật = nền tím sáng, tắt = mờ.
  *
  * Mọi nút bấm gọi PixiStudio.ArpViewport (js/rig/arp-vp-core.js) —
@@ -45,7 +46,13 @@
 
   var PS = window.PixiStudio || (window.PixiStudio = {});
 
-  /* Nút trên thanh công cụ, theo đúng thứ tự nhiệm vụ liệt kê. */
+  /* Nút trên thanh công cụ, theo đúng thứ tự nhiệm vụ liệt kê.
+     FIX2: đủ 11 nút = 11 layer registry (trước đây chỉ 7 nút;
+     trails/onion/measure/reference chỉ bật được qua preset).
+     4 nút mới không cần adapter built-in — trails/onion do
+     arp-vp-trails.js, measure/reference do arp-vp-measure.js tự
+     đăng ký vào registry; module chưa load thì nút vẫn hiện với
+     class 'arp-vp-btn-missing' như các nút cũ. */
   var BUTTONS = [
     { key: 'skeleton', label: 'Skeleton', icon: '🦴', title: 'Hiện/ẩn skeleton' },
     { key: 'labels', label: 'Nhãn xương', icon: '🏷️', title: 'Hiện/ẩn nhãn tên xương' },
@@ -53,7 +60,11 @@
     { key: 'markers', label: 'Markers', icon: '📍', title: 'Hiện/ẩn marker Smart (cần Guess Markers trước)' },
     { key: 'ghost', label: 'Ghost', icon: '👻', title: 'Hiện/ẩn ghost skeleton preview' },
     { key: 'grid', label: 'Grid', icon: '#️⃣', title: 'Hiện/ẩn lưới + trục viewport' },
-    { key: 'helpers', label: 'Control helpers', icon: '🕹️', title: 'Hiện/ẩn control helpers Quick Rig' }
+    { key: 'helpers', label: 'Control helpers', icon: '🕹️', title: 'Hiện/ẩn control helpers Quick Rig' },
+    { key: 'trails', label: 'Trails', icon: '🌀', title: 'Hiện/ẩn motion trails (cần đang phát animation)' },
+    { key: 'onion', label: 'Onion', icon: '🧅', title: 'Hiện/ẩn onion skinning (cần đang phát animation)' },
+    { key: 'measure', label: 'Đo đạc', icon: '📏', title: 'Hiện/ẩn đo đạc kích thước model' },
+    { key: 'reference', label: 'Tham chiếu', icon: '🧍', title: 'Hiện/ẩn khung tham chiếu T/A-pose' }
   ];
 
   var TOOLBAR_ID = 'arp-vp-toolbar';

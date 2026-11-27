@@ -943,11 +943,33 @@ tỉ lệ.
      Tối ưu model ĐANG Ở TRONG SCENE xuống dưới 1 MiB để chia sẻ /
      upload nơi giới hạn dung lượng: giảm tris bằng meshopt (giữ
      hình dạng + UV + skin weights) + thu nhỏ texture về JPEG
-     256px (map + normalMap, q70 — như bản v2-tex256 làm bằng
-     Blender: 15.520 tris / 955KB) + giữ nguyên skeleton/skin
-     (khác nút Save Mixamo là mesh-only). Lặp tối đa 5 mức quanh
-     ~15.500 tris, dừng ngay khi file < 1MB; nếu 5 mức vẫn chưa
+     + giữ nguyên skeleton/skin (khác nút Save Mixamo là mesh-only).
+     Lặp tối đa 5 mức, dừng ngay khi file < 1MB; nếu 5 mức vẫn chưa
      đủ thì tải bản nhỏ nhất kèm cảnh báo.
+
+     TEXTURE-FIRST (v2, 2026-11-27) — đo trên file thật:
+     GLB Tripo gốc (50.000 tris) chi 660.639 B cho 3 texture 1024²
+     (32% file); file tối ưu cũ chỉ chi 18.424 B cho 2 texture 256²
+     (2% file) mà vẫn 1.018.188 B trên Thiếu Lâm rigged — nút cũ
+     KHÁT TEXTURE: độ nét cảm nhận chủ yếu đến từ độ phân giải
+     texture, không phải tris. Đo bằng PIL trên texture thật:
+     map 512² q85 ≈ 66KB, normal 512² q85 ≈ 23KB (tổng ≈ 89KB);
+     map 256² q70 + normal 256² q70 ≈ 18KB. Đổi 1.500 tris
+     (~9% tris, ~85KB geometry) lấy texture 512² thay cho 256²
+     (4x điểm ảnh, +71KB) nên bảng attempt mới ưu tiên texture
+     512² ở 3 mức đầu, chỉ giảm TRIS trước (16.000 → 14.500 →
+     13.000), rồi mới hạ texture xuống 384² (mức 4), và chỉ về
+     256² + bỏ normalMap ở mức cuối khi thật sự không vừa.
+     Map và normalMap DÙNG CHUNG 1 mức tex/q: normalMap JPEG rất
+     rẻ (nền trơn → 512² q85 chỉ ≈ 23KB, ~26% ngân sách texture)
+     nên tách res riêng chỉ tiết kiệm ~11KB mà tốn thêm schema +
+     chữ ký textureProvider — không đáng; basecolor (quyết định độ
+     nét nhiều nhất) được giữ 512² tới mức 3 nhờ đó.
+     Ước tính (Thiếu Lâm rigged, geometry ~62 B/tri do đỉnh double
+     nhiễu — xem ghi chú dưới): mức 1 ≈ 1.086.000 B → trượt, mức 2
+     ≈ 980KB vừa; Thần Điêu GLB mức 1 ≈ 891KB vừa ngay.
+     KHÔNG tăng giới hạn 1MB, KHÔNG bỏ skeleton/animation,
+     KHÔNG bỏ weld/meshopt.
 
      QUAN TRỌNG — writer ghi Vertices/Normals/UV dạng double (8
      byte); FBX SDK (fbx2gltf/Blender) SEGFAULT khi gặp mảng float
@@ -956,7 +978,16 @@ tỉ lệ.
      fflate.unzlibSync) + ghi Normal/UV dạng IndexToDirect (mảng
      chỉ chứa giá trị duy nhất + Index map từng polygon-vertex,
      như Blender) → ~60 byte/tri (đã đo trên Thiếu Lâm: 15.520
-     tris ≈ 955KB, ngang Blender). KHÔNG dùng ByVertex cho UV:
+     tris ≈ 955KB, ngang Blender). Chi phí geometry PHỤ THUỘC
+     NGUỒN (đo 2026-11-27): file Mixamo có đỉnh double "sạch"
+     (byte thấp mantissa toàn 0 — thực chất là float32) nên
+     Vertices nén còn 131.637 B; file rigged AttackRun có đỉnh
+     double nhiễu đủ 8 byte (byte thấp 256 giá trị khác nhau)
+     nên cùng ~13,6k đỉnh Vertices nén tới 221.787 B (+90KB,
+     ~62 B/tri thay vì ~57 B/tri). Hướng cải tiến sau (ngoài
+     vòng này): lượng tử đỉnh về độ chính xác float32 trước khi
+     ghi để Vertices nén tốt hơn — KHÔNG làm ở đây vì chạm
+     writer + có thể ảnh hưởng skin/bindpose. KHÔNG dùng ByVertex cho UV:
      1 vị trí có nhiều UV (UV seam) nên reader sẽ bỏ UV và gộp
      đỉnh theo vị trí (đã đo 2026-11-26: 9.495 đỉnh → 4.353).
      Ngoài ra writer ghi TOÀN BỘ đỉnh trong attribute (kể cả đỉnh
@@ -965,12 +996,15 @@ tỉ lệ.
      file vẫn to như gốc dù tris đã giảm.
      ============================================================ */
   var OPT_1MB = 1048576; /* 1 MiB */
+  /* TEXTURE-FIRST (v2, 2026-11-27): 3 mức đầu giữ texture 512²,
+     chỉ giảm TRIS trước; mức 4 mới hạ texture 384²; mức cuối
+     mới về 256² + bỏ normalMap. Xem bảng đo trong comment đầu mục. */
   var OPT_ATTEMPTS = [
-    { tris: 16000, tex: 256, q: 0.70, dropNormal: false, err: 0.02 },
-    { tris: 15500, tex: 256, q: 0.70, dropNormal: false, err: 0.02 },
-    { tris: 14000, tex: 256, q: 0.70, dropNormal: false, err: 0.03 },
-    { tris: 12000, tex: 256, q: 0.60, dropNormal: false, err: 0.03 },
-    { tris: 10000, tex: 256, q: 0.50, dropNormal: true, err: 0.04 }
+    { tris: 16000, tex: 512, q: 0.85, dropNormal: false, err: 0.02 },
+    { tris: 14500, tex: 512, q: 0.80, dropNormal: false, err: 0.02 },
+    { tris: 13000, tex: 512, q: 0.70, dropNormal: false, err: 0.03 },
+    { tris: 11500, tex: 384, q: 0.80, dropNormal: false, err: 0.03 },
+    { tris: 9500, tex: 256, q: 0.60, dropNormal: true, err: 0.04 }
   ];
 
   /* Số tam giác của 1 geometry (triCountOf nằm trong

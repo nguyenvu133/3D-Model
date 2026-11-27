@@ -151,6 +151,7 @@
 
   /* ---------- DRAG & DROP (toàn app) ---------- */
   Importers.setupDragDrop = function () {
+    Importers.bindFileInput(); /* input change phải hoạt động cả khi chưa từng mở dialog */
     const dz = document.getElementById('global-dropzone');
     let dragDepth = 0;
 
@@ -176,15 +177,37 @@
   };
 
   /* ---------- HIDDEN FILE INPUT ---------- */
-  Importers.openFileDialog = function () {
+  /* FIX2: bind onchange MỘT LẦN lúc init (không đợi openFileDialog):
+     trước đây onchange chỉ được gán trong openFileDialog() nên
+     automation (Playwright setInputFiles) hoặc bất kỳ ai set file
+     trực tiếp lên #hidden-file-input đều không kích hoạt import. */
+  Importers.bindFileInput = function () {
+    if (Importers._fileInputBound) return true;
     const input = document.getElementById('hidden-file-input');
-    if (!input) return;
-    input.value = '';
+    if (!input) return false;
     input.onchange = function () {
       if (input.files && input.files.length) Importers.importFiles(input.files);
     };
+    Importers._fileInputBound = true;
+    return true;
+  };
+
+  Importers.openFileDialog = function () {
+    const input = document.getElementById('hidden-file-input');
+    if (!input) return;
+    Importers.bindFileInput();
+    input.value = '';
     input.click();
   };
+
+  /* Bind sớm ngay khi module load (script đặt cuối body nên input
+     thường đã có trong DOM); setupDragDrop() gọi lại lúc boot để chắc. */
+  try {
+    if (typeof document !== 'undefined') {
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', Importers.bindFileInput);
+      else Importers.bindFileInput();
+    }
+  } catch (e) { /* bind lại ở setupDragDrop */ }
 
   window.PixiStudio.Importers = Importers;
 })();

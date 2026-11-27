@@ -19,8 +19,15 @@
  *      KF._test.snapshotJoints (tái dùng ghost của keyframe).
  *   3. Anim (PixiStudio.Anim): Anim.current + action chưa pause;
  *      clip = entry.clip của Anim.clips.
- *   4. AnimAutoGen (PixiStudio.AnimAutoGen): currentClip + mixer
+ *   4. Animator (PixiStudio.ArpAnimator, mới — vòng 1): playing +
+ *      currentId + getClip(); trước đây không có nên trails/onion
+ *      không hiện khi chỉ có Animator phát.
+ *   5. QuickRig Mixamo (mới — vòng 1): QuickRig.current.clipPlaying
+ *      + clipAction (mixer riêng của rig, playMixamoClip).
+ *   6. AnimAutoGen (PixiStudio.AnimAutoGen): currentClip + mixer
  *      action của RigAutoGen.current.
+ * Nhánh paused của 1 nguồn KHÔNG return ngay (ghi nhớ rồi xét tiếp)
+ * để nguồn khác đang phát thật không bị che mất.
  * Ngoài ra bus event (nếu bus.on có): 'animation:played',
  * 'animation:stopped', 'anim:autogen-played', 'arpqr3:play',
  * 'arpliveretarget:play/stop/ended' — chỉ để ghi nhớ tên clip +
@@ -199,14 +206,61 @@
     return s.replace(/^(model:{1,2})+/i, '').replace(/^mixamorig:?/i, '').replace(/__proxy$/i, '');
   }
   function getTarget() {
+    /* FIX (ARP View vòng 1): thứ tự cũ — QuickRig.current rồi
+       getMainModel() (model mẫu Hero_001, 0 xương) rồi mới
+       Anim.targetObject (FBX, fallback thứ 3, không bao giờ tới) —
+       nên buildBoneMap() không tìm được khớp nào, trailCounts 0 dù
+       clip đang phát. Thứ tự mới: selection → Models.current (mới
+       import nhất) → Anim.targetObject → QuickRig.current →
+       getMainModel() (đã sửa tập trung). QUY TẮC như skeleton/labels:
+       ứng viên ĐẦU TIÊN có mặt thì thắng (leo lên ancestor có xương;
+       leo không được thì trả chính nó); CHỈ ứng viên vắng mới rơi
+       xuống ứng viên sau — tránh trails bám nhầm rig cũ khi user
+       đang chọn model chưa rig. */
+    try {
+      if (PS.State && PS.State.get) {
+        var sel = PS.State.get('selection');
+        if (sel) { var cs = climbToRigged(sel); return cs || sel; }
+      }
+    } catch (e) {}
+    try {
+      if (PS.Models && typeof PS.Models.getCurrent === 'function') {
+        var cur = PS.Models.getCurrent();
+        if (cur && cur.object3D) { var cc = climbToRigged(cur.object3D); return cc || cur.object3D; }
+      }
+    } catch (e) {}
+    try {
+      if (PS.Anim && PS.Anim.targetObject) {
+        var ca = climbToRigged(PS.Anim.targetObject);
+        return ca || PS.Anim.targetObject;
+      }
+    } catch (e) {}
     var rig = getRig();
     if (rig && rig.target) return rig.target;
     try {
-      if (PS.Viewport && typeof PS.Viewport.getMainModel === 'function') return PS.Viewport.getMainModel();
+      if (PS.Viewport && typeof PS.Viewport.getMainModel === 'function') {
+        var mm = PS.Viewport.getMainModel();
+        if (mm) { var cm = climbToRigged(mm); return cm || mm; }
+      }
     } catch (e) {}
-    try {
-      if (PS.Anim && PS.Anim.targetObject) return PS.Anim.targetObject;
-    } catch (e) {}
+    return null;
+  }
+  /* Leo từ 1 object lên ancestor gần nhất có xương; dừng ở
+   * modelRoot/Scene để không nhặt xương model khác. */
+  function climbToRigged(obj) {
+    var o = obj, guard = 0;
+    var root = null;
+    try { root = (PS.Viewport && PS.Viewport.modelRoot) || null; } catch (e) {}
+    while (o && guard < 64) {
+      if (o.isScene || (root && o === root)) return null;
+      var found = false;
+      if (o.traverse) {
+        o.traverse(function (x) { if (x && x.isBone) found = true; });
+      } else if (o.isBone) found = true;
+      if (found) return o;
+      o = o.parent;
+      guard++;
+    }
     return null;
   }
   function getScene() {
@@ -562,6 +616,16 @@
     return null;
   }
   function detectPlayback() {
+    /* FIX (ARP View vòng 1): các nhánh "đang dừng/tạm dừng" cũ RETURN
+       NGAY nên che mất nguồn phát thật phía sau (vd Anim.current còn
+       đó nhưng đã dừng thì Animator / QuickRig-Mixamo đang phát cũng
+       không bao giờ được kiểm tra). Nay chỉ return ngay khi thấy
+       ĐANG PHÁT; trạng thái paused chỉ ghi nhớ (pausedInfo) và trả về
+       cuối cùng khi không nguồn nào đang phát. Thứ tự nguồn phát:
+       LiveRetarget → Keyframe → Anim → Animator → QuickRig-Mixamo →
+       AnimAutoGen → hint thủ công. */
+    var pausedInfo = null;
+    function _notePaused(info) { if (!pausedInfo) pausedInfo = info; }
     /* 1. LiveRetarget */
     try {
       var LR = getLR();
@@ -574,7 +638,7 @@
         };
       }
       if (LR && typeof LR.isPaused === 'function' && LR.isPaused()) {
-        return { playing: false, paused: true, source: 'liveretarget', time: LR.getTime(), duration: LR.getDuration() || 0, clip: resolveLiveRetargetClip(), clipName: '', kind: 'three' };
+        _notePaused({ playing: false, paused: true, source: 'liveretarget', time: LR.getTime(), duration: LR.getDuration() || 0, clip: resolveLiveRetargetClip(), clipName: '', kind: 'three' });
       }
     } catch (e) {}
     /* 2. Keyframe */
@@ -607,10 +671,51 @@
             clip: entry ? entry.clip : null, clipName: Anim.current, kind: 'three'
           };
         }
-        return { playing: false, paused: paused, source: 'anim', time: (typeof act.time === 'number' ? act.time : 0), duration: 0, clip: null, clipName: Anim.current, kind: 'three' };
+        if (paused) _notePaused({ playing: false, paused: true, source: 'anim', time: (typeof act.time === 'number' ? act.time : 0), duration: 0, clip: null, clipName: Anim.current, kind: 'three' });
       }
     } catch (e) {}
-    /* 4. AnimAutoGen */
+    /* 4. Animator (mới — vòng 1): tab Animator phát bằng mixer riêng,
+       trước đây detectPlayback không biết nên trails/onion không hiện
+       khi chỉ có Animator phát (sync-viewport notePlay chỉ là hint
+       ưu tiên thấp, thua Anim/AutoGen). */
+    try {
+      var AN = PS.ArpAnimator;
+      if (AN && AN.playing && !AN.paused && AN.currentId && typeof AN.getClip === 'function') {
+        var aEntry = AN.getClip(AN.currentId);
+        if (aEntry) {
+          return {
+            playing: true, paused: false, source: 'animator',
+            time: (typeof AN.time === 'number' ? AN.time : 0),
+            duration: aEntry.duration || 0,
+            clip: aEntry.clip || null, clipName: aEntry.name || AN.currentId, kind: 'three'
+          };
+        }
+      }
+      if (AN && AN.playing && AN.paused) {
+        _notePaused({ playing: false, paused: true, source: 'animator', time: (typeof AN.time === 'number' ? AN.time : 0), duration: 0, clip: null, clipName: AN.currentId || '', kind: 'three' });
+      }
+    } catch (e) {}
+    /* 5. QuickRig Mixamo (mới — vòng 1): clip Mixamo phát bằng mixer
+       riêng của rig (QuickRig.playMixamoClip → cur.clipPlaying, tick
+       qua QuickRig.tickMixamo / mixamorig plugin / sync-control). */
+    try {
+      var QR = getQR();
+      var cur = QR && QR.current;
+      if (cur && cur.clipPlaying && cur.clipAction && !cur.clipAction.paused) {
+        var mxClip = (cur.clipByName && cur.currentClipName && cur.clipByName[cur.currentClipName]) ||
+          (cur.clips && cur.clips[0]) || null;
+        return {
+          playing: true, paused: false, source: 'quickrig-mixamo',
+          time: (typeof cur.clipAction.time === 'number' ? cur.clipAction.time : 0),
+          duration: (mxClip && mxClip.duration) || 0,
+          clip: mxClip, clipName: (mxClip && mxClip.name) || cur.currentClipName || '', kind: 'three'
+        };
+      }
+      if (cur && cur.clipPlaying && cur.clipAction && cur.clipAction.paused) {
+        _notePaused({ playing: false, paused: true, source: 'quickrig-mixamo', time: (typeof cur.clipAction.time === 'number' ? cur.clipAction.time : 0), duration: 0, clip: null, clipName: cur.currentClipName || '', kind: 'three' });
+      }
+    } catch (e) {}
+    /* 6. AnimAutoGen */
     try {
       var AAG = PS.AnimAutoGen;
       var RAG = PS.RigAutoGen;
@@ -629,7 +734,7 @@
         }
       }
     } catch (e) {}
-    /* 5. Hint thủ công từ notePlay() */
+    /* 7. Hint thủ công từ notePlay() */
     if (hint && typeof hint.getTime === 'function') {
       try {
         return {
@@ -642,6 +747,7 @@
     if (hint && hint.playing) {
       return { playing: true, paused: false, source: hint.source || 'manual', time: hint.time || 0, duration: hint.duration || 0, clip: hint.clip || null, clipName: hint.clipName || '', kind: hint.kind || 'three' };
     }
+    if (pausedInfo) return pausedInfo;
     return { playing: false, paused: false, source: '', time: state.time, duration: 0, clip: null, clipName: '', kind: '' };
   }
 
@@ -1131,6 +1237,8 @@
       resolveTrailBones: resolveTrailBones,
       sampleClipPoseAt: sampleClipPoseAt,
       detectPlayback: detectPlayback,
+      climbToRigged: climbToRigged,
+      getTarget: getTarget,
       trailCounts: trailCounts,
       getGizmoColors: getGizmoColors,
       colorForJoint: colorForJoint,

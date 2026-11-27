@@ -705,26 +705,31 @@
     return true;
   };
 
+  /* QUY ƯỚC FIX2: setter trả `true` khi thành công, `{ok:false}`
+     khi thất bại — KHÔNG trả về giá trị mới (false sau khi tắt sẽ
+     bị registry coi là "tắt thất bại", xem arp-vp-core.js callFn). */
   ArpVpMeasure.setReferenceVisible = function (on) {
     ArpVpMeasure.refVisible = !!on;
     if (on) {
       if (!ArpVpMeasure.landmarks) ArpVpMeasure.refresh();
-      buildReference();
+      if (buildReference() === false) {
+        return { ok: false, reason: 'reference-build-failed', message: 'Không dựng được overlay tham chiếu (thiếu landmark / AutoRigPro).' };
+      }
     }
     if (ArpVpMeasure.refGroup) ArpVpMeasure.refGroup.visible = ArpVpMeasure.refVisible && ArpVpMeasure.visible;
-    return ArpVpMeasure.refVisible;
+    return true;
   };
 
   ArpVpMeasure.setMeasurementsVisible = function (on) {
     ArpVpMeasure.measureVisible = !!on;
     if (ArpVpMeasure.group) ArpVpMeasure.group.visible = ArpVpMeasure.measureVisible && ArpVpMeasure.visible;
-    return ArpVpMeasure.measureVisible;
+    return true;
   };
 
   ArpVpMeasure.setGroundVisible = function (on) {
     ArpVpMeasure.groundVisible = !!on;
     if (ArpVpMeasure.groundLine) ArpVpMeasure.groundLine.visible = ArpVpMeasure.groundVisible;
-    return ArpVpMeasure.groundVisible;
+    return true;
   };
 
   /* Lưới: dùng lại GridEnv có sẵn của viewport, KHÔNG tạo grid mới. */

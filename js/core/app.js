@@ -100,6 +100,34 @@
           PixiStudio.Anim.registerGLTFClips(entry.object3D, entry.clips);
         }
       }
+      /* FIX (ARP View vòng 1): model có rig load xong thì TỰ HIỆN
+         skeleton + nhãn (+ IK nếu có control rig) — trước đây không có
+         auto-show nào ở đây, skeleton/nhãn chỉ tự hiện khi bấm rig
+         (event 'arp:rig-complete') nên model Mixamo/FBX đã rig sẵn
+         không bao giờ hiện xương. Dùng autoShow() của từng module để
+         vẫn tôn trọng "user đã tắt tay trong phiên cho đúng model đó";
+         model MỚI load (uuid mới) thì mặc định hiện. IK chỉ gọi khi
+         có QuickRig.current (control rig) — ArpVpIk.show() khi chưa
+         có rig sẽ tự báo lỗi, không ép. */
+      try {
+        const obj = entry && entry.object3D;
+        let hasBones = false;
+        if (obj && obj.traverse) obj.traverse(function (o) { if (o && o.isBone) hasBones = true; });
+        if (hasBones) {
+          if (PixiStudio.ArpVpSkeleton) {
+            if (typeof PixiStudio.ArpVpSkeleton.autoShow === 'function') PixiStudio.ArpVpSkeleton.autoShow(obj);
+            else if (typeof PixiStudio.ArpVpSkeleton.show === 'function') PixiStudio.ArpVpSkeleton.show(obj);
+          }
+          if (PixiStudio.ArpVpLabels) {
+            if (typeof PixiStudio.ArpVpLabels.autoShow === 'function') PixiStudio.ArpVpLabels.autoShow(obj);
+            else if (typeof PixiStudio.ArpVpLabels.show === 'function') PixiStudio.ArpVpLabels.show(obj);
+          }
+          if (PixiStudio.ArpVpIk && PixiStudio.ArpQuickRig && PixiStudio.ArpQuickRig.current &&
+              typeof PixiStudio.ArpVpIk.show === 'function') {
+            PixiStudio.ArpVpIk.show();
+          }
+        }
+      } catch (e) { /* auto-show không được chặn model:loaded */ }
       PixiStudio.Toolbar.renderPage('model');
       const sbView = document.getElementById('sb-view');
       if (sbView) sbView.textContent = 'View: ' + PixiStudio.State.get('viewMode');

@@ -145,6 +145,13 @@
 
     Viewport.modelRoot.traverse(function (o) {
       if (!o.isMesh) return;
+      /* FIX2: mesh trang trí của xương (cylinder/khớp cầu skeleton,
+         IK target/pole, trails...) PHẢI giữ nguyên material của nó —
+         trước đây chế độ xray ép opacity=0.35 lên cả xương hiển thị
+         (xương mờ đi ngay lúc cần thấy rõ nhất) và wireframe bật
+         wireframe lên cả khớp cầu. Nhãn sprite (isArpBoneLabel) vốn
+         không phải Mesh nên đã được loại; ghi rõ ở đây cho chắc. */
+      if (o.userData && (o.userData.isBoneVisual || o.userData.isArpBoneLabel)) return;
       const mat = o.material;
       if (!mat) return;
 
@@ -214,8 +221,52 @@
   };
 
   /* ---------- HELPERS ---------- */
+  /* Leo từ 1 object bất kỳ (mesh, xương, con cháu model) lên child
+   * trực tiếp của modelRoot; trả null nếu object không nằm trong
+   * modelRoot (vd primitive của Scene, gizmo). Dùng cho getMainModel
+   * để selection/current trỏ tới model đúng dù user đang chọn 1 mesh
+   * hay 1 xương bên trong model đó. */
+  function topLevelChildOfModelRoot(obj) {
+    if (!obj || !Viewport.modelRoot) return null;
+    let o = obj;
+    let guard = 0;
+    while (o && o.parent && o.parent !== Viewport.modelRoot && guard < 64) {
+      o = o.parent;
+      guard++;
+    }
+    if (o && o.parent === Viewport.modelRoot) return o;
+    return null;
+  }
   Viewport.getMainModel = function () {
-    return Viewport.modelRoot.children.find(function (c) { return c.visible; }) || null;
+    if (!Viewport.modelRoot) return null;
+    const kids = Viewport.modelRoot.children;
+    if (!kids.length) return null;
+    /* FIX (ARP View vòng 1, 2026-11-27): trước đây trả về child VISIBLE
+     * ĐẦU TIÊN của modelRoot — studio tự nạp model mẫu Hero_001 (Sample)
+     * lúc mở trang nên sau khi import FBX rigged, getMainModel() vẫn trả
+     * về Sample (0 xương) và mọi đường resolve target không đối số của
+     * ARP View (skeleton/labels/trails) đều báo "không có skeleton".
+     * Nay ưu tiên model ĐANG CHỌN / model HIỆN TẠI (mới import nhất —
+     * registerModel set cả State.selection lẫn Models.currentId), chỉ
+     * rơi về child visible đầu tiên khi không xác định được model nào.
+     * Các caller cũ (exporter, rig, animation...) đều đã dùng mẫu
+     * `selection || getMainModel()` nên thứ tự này khớp đúng ngữ nghĩa
+     * "model chính" của chúng; Quad fit / glow cũng fit đúng model user
+     * đang làm việc thay vì model mẫu. */
+    let sel = null;
+    try { sel = PixiStudio.State.get('selection'); } catch (e) { sel = null; }
+    const fromSel = topLevelChildOfModelRoot(sel);
+    if (fromSel && fromSel.visible) return fromSel;
+    let cur = null;
+    try {
+      cur = (PixiStudio.Models && typeof PixiStudio.Models.getCurrent === 'function')
+        ? PixiStudio.Models.getCurrent() : null;
+    } catch (e) { cur = null; }
+    if (cur && cur.object3D) {
+      const fromCur = topLevelChildOfModelRoot(cur.object3D);
+      if (fromCur && fromCur.visible) return fromCur;
+    }
+    return kids.find(function (c) { return c.visible; }) || null;
   };
 
   Viewport.focusSelected = function () {
@@ -275,6 +326,15 @@
       Viewport.orbit.setView(mode);
       PixiStudio.Gizmo.refreshVisible();
     }
+    /* FIX2: chip Front/Right/Left/Back (#quad-labels) CHỈ hiện ở chế
+       độ quad-view (kèm setting showQuadLabels) — trước đây setting
+       mặc định true nên chip "BACK" (.br ở giữa màn hình) rò sang
+       cả single-view. Viewport.init() gọi setView('perspective')
+       nên trạng thái đúng ngay từ lúc boot. */
+    try {
+      const ql = document.getElementById('quad-labels');
+      if (ql) ql.classList.toggle('hidden', !(mode === 'quad' && PixiStudio.State.get('showQuadLabels')));
+    } catch (e) { /* HUD chưa có trong DOM: bỏ qua */ }
     /* Gizmo chỉ dùng được single view */
     if (PixiStudio.Gizmo.transformControls) {
       const gizOk = mode !== 'quad';
