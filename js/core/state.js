@@ -17,6 +17,8 @@
     shading: 'lit',               // lit | solid | wireframe | xray | material | render
     gizmoMode: 'select',          // select | move | rotate | scale
     gizmoSpace: 'local',
+    rotateSnap: 0,               // snap góc xoay (độ): 0 | 15 | 45 | 90
+    rotatePivot: 'object',       // tâm xoay: object | feet | origin
     leftCollapsed: false,
     rightCollapsed: false,
     bottomCollapsed: false,

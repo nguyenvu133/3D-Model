@@ -1329,6 +1329,41 @@ tỉ lệ.
     return out;
   }
 
+  /* Số texture record TỐI THIỂU file ghi ra phải có, đếm theo material
+     RIÊNG BIỆT có map (+ normalMap trừ khi attempt bỏ normal).
+     GUARD CHỐNG MẤT MÀU (2026-11-27, user báo FBX <1MB mất texture):
+     model gốc CÓ texture mà file ghi ra thiếu texture record (downscale
+     fail + ảnh chưa load khiến cả fallback full-res của writer cũng
+     fail) thì file đó nhỏ hơn hẳn nên sẽ thắng "best = nhỏ nhất" + break
+     sớm — đúng cơ chế file trắng lọt ra. Attempt nào thiếu texture so
+     với mức tối thiểu này thì BỊ LOẠI (không thành best, không break);
+     nếu mọi attempt đều mất màu thì optimizer trả null + ghi lý do vào
+     lastOptError để nút bấm báo lỗi rõ ràng thay vì tải file trắng về.
+     Model vốn không có texture (expect = 0) thì guard không chặn. */
+  var lastOptError = null;
+  function expectedTextureRecords(root, dropNormal) {
+    var seen = [], n = 0;
+    if (!root || !root.traverse) return 0;
+    root.traverse(function (o) {
+      if (!o.isMesh || !o.material) return;
+      var mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach(function (m) {
+        if (!m || seen.indexOf(m) >= 0) return;
+        seen.push(m);
+        if (m.map) n++;
+        if (m.normalMap && !dropNormal) n++;
+      });
+    });
+    return n;
+  }
+  /* Số texture record writer thật sự nhúng (report.textures =
+     texRecords.length trong fbx-binary.js); null = không biết (giữ
+     hành vi cũ, không chặn). */
+  function writtenTextureRecords(res) {
+    if (!res || !res.report || typeof res.report.textures !== 'number') return null;
+    return res.report.textures;
+  }
+
   /* Vòng lặp tối ưu trên root đã cho (KHÔNG sửa root gốc — clone +
      decimate + ghi thử từng mức). textureProvider(maxDim, quality,
      dropNormal) -> textureBytes map; mặc định dùng canvas (trình
@@ -1342,6 +1377,8 @@ tỉ lệ.
     var attempts = target.attempts;
     var best = null;
     var trisBefore = countTris(root);
+    lastOptError = null;
+    var texLost = 0;
     for (var a = 0; a < attempts.length; a++) {
       var att = attempts[a];
       var texBytes = null;
@@ -1357,12 +1394,25 @@ tỉ lệ.
         });
       } catch (e) { res = null; }
       if (!res || !res.bytes || !res.bytes.length) continue;
+      /* GUARD MẤT MÀU: file ghi ra thiếu texture so với model gốc thì
+         loại attempt này (không best, không break) — xem ghi chú ở
+         expectedTextureRecords. */
+      var expectTex = expectedTextureRecords(root, att.dropNormal);
+      var gotTex = writtenTextureRecords(res);
+      if (expectTex > 0 && gotTex !== null && gotTex < expectTex) {
+        texLost++;
+        lastOptError = 'Mất texture ở mức ' + (a + 1) + '/' + attempts.length + ' (gốc có ' + expectTex + ' texture, file ghi ra chỉ có ' + gotTex + ') — texture chưa load xong hoặc downscale lỗi; thử lại sau khi texture hiện đủ màu trong viewport.';
+        continue;
+      }
       var size = res.bytes.length;
       var entry = { bytes: res.bytes, size: size, trisAfter: dec.trisAfter, texMaxDim: att.tex, texQ: att.q, attempt: a + 1, report: res.report };
       if (!best || size < best.size) best = entry;
       if (size < target.bytes) break;
     }
-    if (!best) return null;
+    if (!best) {
+      if (texLost > 0 && !lastOptError) lastOptError = 'Mọi mức tối ưu đều mất texture — không xuất file trắng.';
+      return null;
+    }
     return {
       bytes: best.bytes, filename: buildFileName(modelName, target.suffix, '.fbx'),
       size: best.size, trisBefore: trisBefore, trisAfter: best.trisAfter,
@@ -1492,6 +1542,8 @@ tỉ lệ.
     var best = null;
     var trisBefore = countTris(root);
     var stopped = false; /* dừng khi 1 attempt đã đạt target (như break ở bản sync) */
+    lastOptError = null;
+    var texLost = 0;
     var chain = Promise.resolve();
     for (var a = 0; a < attempts.length; a++) {
       (function (a) {
@@ -1519,6 +1571,16 @@ tỉ lệ.
                 });
               } catch (e) { res = null; }
               if (!res || !res.bytes || !res.bytes.length) return null;
+              /* GUARD MẤT MÀU (như bản sync): file ghi ra thiếu texture
+                 so với model gốc thì loại attempt này — không best,
+                 không dừng. Xem ghi chú ở expectedTextureRecords. */
+              var expectTex = expectedTextureRecords(root, att.dropNormal);
+              var gotTex = writtenTextureRecords(res);
+              if (expectTex > 0 && gotTex !== null && gotTex < expectTex) {
+                texLost++;
+                lastOptError = 'Mất texture ở mức ' + (a + 1) + '/' + attempts.length + ' (gốc có ' + expectTex + ' texture, file ghi ra chỉ có ' + gotTex + ') — texture chưa load xong hoặc downscale lỗi; thử lại sau khi texture hiện đủ màu trong viewport.';
+                return null;
+              }
               var size = res.bytes.length;
               var entry = { bytes: res.bytes, size: size, trisAfter: dec.trisAfter, texMaxDim: att.tex, texQ: att.q, attempt: a + 1, report: res.report };
               if (!best || size < best.size) best = entry;
@@ -1533,7 +1595,10 @@ tỉ lệ.
     }
     return chain.then(function () {
       if (cancelFlag && cancelFlag.cancelled) return null;
-      if (!best) return null;
+      if (!best) {
+        if (texLost > 0 && !lastOptError) lastOptError = 'Mọi mức tối ưu đều mất texture — không xuất file trắng.';
+        return null;
+      }
       return {
         bytes: best.bytes, filename: buildFileName(modelName, target.suffix, '.fbx'),
         size: best.size, trisBefore: trisBefore, trisAfter: best.trisAfter,
@@ -1583,7 +1648,8 @@ tỉ lệ.
       return res;
     }).then(function (res) {
       if (!res) {
-        bus.emit('notify', { type: 'error', title: 'Tối ưu FBX lỗi', message: 'Không ghi được file FBX.' });
+        var texErr = (SaveManager._optimizeFBX && SaveManager._optimizeFBX.lastOptError) ? SaveManager._optimizeFBX.lastOptError() : null;
+        bus.emit('notify', { type: 'error', title: 'Tối ưu FBX lỗi', message: texErr || 'Không ghi được file FBX.' });
         return null;
       }
       var blob = new Blob([res.bytes], { type: 'application/octet-stream' });
@@ -1647,7 +1713,8 @@ tỉ lệ.
             }, optTarget.bytes);
             PixiStudio.Notifications.hideLoading();
             if (!res) {
-              bus.emit('notify', { type: 'error', title: 'Tối ưu FBX lỗi', message: 'Không ghi được file FBX.' });
+              var texErr2 = (SaveManager._optimizeFBX && SaveManager._optimizeFBX.lastOptError) ? SaveManager._optimizeFBX.lastOptError() : null;
+              bus.emit('notify', { type: 'error', title: 'Tối ưu FBX lỗi', message: texErr2 || 'Không ghi được file FBX.' });
               resolve(null); return;
             }
             var blob = new Blob([res.bytes], { type: 'application/octet-stream' });
@@ -1689,7 +1756,12 @@ tỉ lệ.
     collectDownscaledTextures: collectDownscaledTextures,
     collectDownscaledTexturesAsync: collectDownscaledTexturesAsync,
     optimizeRootUnder1MBAsync: SaveManager.optimizeRootUnder1MBAsync,
-    optimizeFBXUnder1MBWorker: SaveManager.optimizeFBXUnder1MBWorker
+    optimizeFBXUnder1MBWorker: SaveManager.optimizeFBXUnder1MBWorker,
+    expectedTextureRecords: expectedTextureRecords,
+    /* Lý do lần tối ưu gần nhất trả null do mất texture (guard chống
+       mất màu) — nút bấm đọc để báo lỗi rõ ràng thay vì "Không ghi
+       được file FBX." chung chung; null khi không có lỗi texture. */
+    lastOptError: function () { return lastOptError; }
   };
 
   /* ============================================================

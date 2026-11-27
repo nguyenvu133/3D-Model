@@ -327,7 +327,14 @@
         bitmapP = createImageBitmap(img);
       }
       return bitmapP.then(function (bmp) {
-        var flipY = (tex.flipY !== false);
+        /* flipY PHẢI khớp đường sync downscaleTextureToBytes +
+           writer encodeTextureToBytes: chỉ lật khi tex.flipY === false
+           (ảnh glTF top-down; FBX đọc bottom-up). Bản cũ dùng
+           (tex.flipY !== false) — NGƯỢC: texture FBX (flipY=true
+           mặc định) bị lật dọc, render ra mặt lộn lên đỉnh đầu, áo
+           sai màu (đo 2026-11-27: async Thiếu Lâm meanRGB
+           [174,113,84] vs sync [214,155,108], ảnh chụp xác nhận). */
+        var flipY = (tex.flipY === false);
         return Bridge.runTask('texture-downscale',
           { imageBitmap: bmp, maxDim: maxDim, quality: quality, flipY: flipY },
           { transfer: [bmp], fallback: fallbackMainThread });
@@ -335,8 +342,16 @@
         if (!res || !res.bytes) return fallbackMainThread();
         var bytes = new Uint8Array(res.bytes);
         var b64 = '';
-        /* btoa theo chunk để không tràn stack với ảnh lớn. */
-        var CHUNK = 8192;
+        /* btoa theo chunk để không tràn stack với ảnh lớn.
+         * CHUNK PHẢI chia hết cho 3: base64 mã hoá 3 byte -> 4 ký tự;
+         * chunk 8192 byte (8192 % 3 = 2) làm mỗi chunk chèn '=' đệm
+         * GIỮA chuỗi -> atob() trong fbx-binary.js (b64ToBytes) throw
+         * InvalidCharacterError -> FBXBinary.write lỗi -> toàn bộ
+         * đường worker tối ưu FBX trả null (đo 2026-11-27 trên
+         * Thần Điêu + Thiếu Lâm: 5/5 attempt fail ở atob, file
+         * <1MB không bao giờ ra từ đường worker). 8190 = 3 x 2730:
+         * mỗi chunk không đệm, chỉ chunk cuối có '=' ở cuối chuỗi. */
+        var CHUNK = 8190;
         for (var i = 0; i < bytes.length; i += CHUNK) {
           b64 += btoa(String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK)));
         }

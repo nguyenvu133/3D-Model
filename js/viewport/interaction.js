@@ -613,6 +613,8 @@
       else {
         if (IX.multi.indexOf(hit) < 0) IX.setSelection([hit], hit);
       }
+      /* Object đang khoá: chỉ chọn, không kéo (mọi mode) */
+      if (PixiStudio.ObjectTools && PixiStudio.ObjectTools.isLocked(hit)) { IX.refreshOutline(); return; }
       if (mode !== 'select') { IX.refreshOutline(); return; }
       if (startDrag(e, hit)) {
         e.stopPropagation();

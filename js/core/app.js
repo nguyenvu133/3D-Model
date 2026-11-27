@@ -86,10 +86,12 @@
 
   /* ---------- WIRING ---------- */
   App.wireEvents = function () {
-    /* selection → gizmo attach */
+    /* selection → gizmo attach (không attach khi object đang khoá) */
     bus.on('selection:changed', function (data) {
       const mode = PixiStudio.State.get('gizmoMode');
       if (mode === 'select' || !data.object3D) {
+        PixiStudio.Gizmo.attach(null);
+      } else if (PixiStudio.ObjectTools && PixiStudio.ObjectTools.isLocked(data.object3D)) {
         PixiStudio.Gizmo.attach(null);
       } else {
         PixiStudio.Gizmo.attach(data.object3D);

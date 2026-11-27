@@ -518,8 +518,14 @@
     if (!clone) return null;
     clone.name = (object3D.name || 'Object') + '_copy';
     clone.position.x += 0.8;
-    PixiStudio.Viewport.scene.add(clone);
-    Scene.register(clone, 'primitive', clone.name);
+    /* Clone về đúng parent của bản gốc (trước đây luôn gắn vào
+       Viewport.scene nên bản sao của model trong modelRoot rớt ra
+       khỏi modelRoot: picking/getMainModel/export không thấy, undo
+       delete cũng gắn lại sai chỗ). */
+    const parent = (object3D.parent && object3D.parent.add) ? object3D.parent : PixiStudio.Viewport.scene;
+    parent.add(clone);
+    const srcReg = Scene._findReg(object3D.uuid);
+    Scene.register(clone, (srcReg && srcReg.type) || 'primitive', clone.name);
     PixiStudio.History.push('Duplicate ' + object3D.name);
     PixiStudio.State.select(clone);
     bus.emit('scene:changed', { action: 'duplicate' });

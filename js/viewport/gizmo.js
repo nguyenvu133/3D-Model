@@ -26,6 +26,9 @@
       const tc = new THREE.TransformControls(camera, domElement);
       tc.setSize(0.85);
       tc.visible = false;   /* chỉ hiện khi attach + mode != select */
+      /* Snap góc đã lưu (Object Tools): kéo vòng xoay dính theo bội số */
+      const savedSnap = PixiStudio.State.get('rotateSnap');
+      if (savedSnap > 0) tc.rotationSnap = THREE.MathUtils.degToRad(savedSnap);
 
       tc.addEventListener('dragging-changed', function (e) {
         bus.emit('gizmo:dragging', { dragging: e.value });
@@ -74,6 +77,12 @@
     if (Gizmo.transformControls) {
       Gizmo.transformControls.setSpace(space === 'world' ? 'world' : 'local');
     }
+  };
+
+  /* Snap góc cho kéo vòng xoay (độ; 0 = tắt). */
+  Gizmo.setRotationSnap = function (deg) {
+    if (!Gizmo.transformControls) return;
+    Gizmo.transformControls.rotationSnap = deg > 0 ? THREE.MathUtils.degToRad(deg) : null;
   };
 
   Gizmo.refreshVisible = function () {

@@ -90,19 +90,22 @@
     const tsc = U.el('div', { class: 'section-content' });
 
     const axisRow = function (label, channel) {
+      const isRot = channel === 'rotation';
       const row = U.el('div', { class: 'vec-row' }, [
-        U.el('span', { class: 'vec-label', text: label })
+        U.el('span', { class: 'vec-label', text: label + (isRot ? ' °' : '') })
       ]);
       ['x', 'y', 'z'].forEach(function (ax) {
         const wrap = U.el('div', { class: 'axis-input ' + ax }, [
           U.el('span', { class: 'ax', text: ax.toUpperCase() })
         ]);
-        const input = U.el('input', { type: 'number', step: '0.05', 'data-channel': channel, 'data-axis': ax });
+        /* Rotation nhập bằng ĐỘ (trước đây ghi thẳng radian: gõ 45 → 45 rad
+           = 2578°, model quay loạn — bug user báo "chưa có chế độ xoay"). */
+        const input = U.el('input', { type: 'number', step: isRot ? '1' : '0.05', 'data-channel': channel, 'data-axis': ax });
         input.addEventListener('input', function () {
           Inspector._updating = true;
           const v = parseFloat(input.value) || 0;
           const src = channel === 'position' ? sel.position : channel === 'rotation' ? sel.rotation : sel.scale;
-          src[ax] = v;
+          src[ax] = isRot ? THREE.MathUtils.degToRad(v) : v;
           bus.emit('transform:changed', { id: sel.uuid, source: 'inspector', channel: channel });
           Inspector._updating = false;
         });
@@ -117,18 +120,128 @@
       return row;
     };
 
+    /* ---- Gizmo mode (đồng bộ 2 chiều với toolbar viewport + phím Q/W/E/R) ---- */
+    const modeRow = U.el('div', { style: 'display:flex;gap:6px;margin-bottom:8px;' });
+    Inspector._modeBtns = {};
+    [['select', 'Chọn (Q)'], ['move', 'Di chuyển (W)'], ['rotate', 'Xoay (E)'], ['scale', 'Scale (R)']].forEach(function (m) {
+      const b = U.el('button', {
+        class: 'btn sm grow' + (PixiStudio.State.get('gizmoMode') === m[0] ? ' active' : ''),
+        text: m[1],
+        onclick: function () { if (PixiStudio.ObjectTools) PixiStudio.ObjectTools.setGizmoMode(m[0]); }
+      });
+      Inspector._modeBtns[m[0]] = b;
+      modeRow.appendChild(b);
+    });
+    tsc.appendChild(modeRow);
+
     tsc.appendChild(axisRow('Position', 'position'));
     tsc.appendChild(axisRow('Rotation', 'rotation'));
     tsc.appendChild(axisRow('Scale', 'scale'));
 
+    /* ---- Xoay nhanh theo góc số ---- */
+    const OT = PixiStudio.ObjectTools;
+    const locked = OT && OT.isLocked(sel);
+    if (locked) {
+      tsc.appendChild(U.el('div', { style: 'margin:6px 0;color:#ffb454;font-size:11.5px;font-weight:700;', text: '🔒 Object đang khoá — mở khoá để chỉnh sửa transform.' }));
+    }
+    const rotAxisRow = U.el('div', { style: 'display:flex;gap:6px;margin-top:8px;align-items:center;' }, [
+      U.el('span', { class: 'vec-label', style: 'font-size:11.5px;font-weight:600;color:var(--text-2);', text: 'Xoay trục' })
+    ]);
+    Inspector._rotAxis = Inspector._rotAxis || 'y';
+    ['x', 'y', 'z'].forEach(function (ax) {
+      const b = U.el('button', {
+        class: 'btn sm' + (Inspector._rotAxis === ax ? ' active' : ''),
+        text: ax.toUpperCase(),
+        onclick: function () {
+          Inspector._rotAxis = ax;
+          rotAxisRow.querySelectorAll('button').forEach(function (bb) { bb.classList.toggle('active', bb.textContent.toLowerCase() === ax); });
+        }
+      });
+      rotAxisRow.appendChild(b);
+    });
+    tsc.appendChild(rotAxisRow);
+    const quickRow = U.el('div', { style: 'display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;' });
+    [-90, -45, -15, 15, 45, 90].forEach(function (d) {
+      quickRow.appendChild(U.el('button', {
+        class: 'btn sm grow', text: (d > 0 ? '+' : '') + d + '°', disabled: locked ? true : undefined,
+        onclick: function () { if (OT) OT.rotateBy(sel, Inspector._rotAxis || 'y', d); }
+      }));
+    });
+    tsc.appendChild(quickRow);
+
+    /* Snap góc + Space + Pivot */
+    const optRow = U.el('div', { style: 'display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap;' });
+    const snapSel = U.el('select', { class: 'select', style: 'width:96px;height:27px;font-size:11.5px;', disabled: locked ? true : undefined });
+    [['0', 'Snap: tắt'], ['15', 'Snap 15°'], ['45', 'Snap 45°'], ['90', 'Snap 90°']].forEach(function (o) {
+      const op = U.el('option', { value: o[0], text: o[1] });
+      if (String(OT ? OT.getSnapAngle() : 0) === o[0]) op.selected = true;
+      snapSel.appendChild(op);
+    });
+    snapSel.addEventListener('change', function () { if (OT) OT.setSnapAngle(parseInt(snapSel.value, 10)); });
+    optRow.appendChild(snapSel);
+    const spaceBtn = U.el('button', {
+      class: 'btn sm grow', text: 'Không gian: ' + ((PixiStudio.State.get('gizmoSpace') || 'local') === 'local' ? 'Local' : 'World'),
+      onclick: function () {
+        if (!OT) return;
+        const next = OT.setSpace(OT.getSpace() === 'local' ? 'world' : 'local');
+        spaceBtn.textContent = 'Không gian: ' + (next === 'local' ? 'Local' : 'World');
+      }
+    });
+    optRow.appendChild(spaceBtn);
+    const pivotSel = U.el('select', { class: 'select', style: 'width:118px;height:27px;font-size:11.5px;', disabled: locked ? true : undefined });
+    [['object', 'Tâm: object'], ['feet', 'Tâm: chân'], ['origin', 'Tâm: gốc (0,0,0)']].forEach(function (o) {
+      const op = U.el('option', { value: o[0], text: o[1] });
+      if ((OT ? OT.getPivot() : 'object') === o[0]) op.selected = true;
+      pivotSel.appendChild(op);
+    });
+    pivotSel.addEventListener('change', function () { if (OT) OT.setPivot(pivotSel.value); });
+    optRow.appendChild(pivotSel);
+    tsc.appendChild(optRow);
+
     /* Nút utility */
     const tbtns = U.el('div', { style: 'display:flex;gap:6px;margin-top:6px;' }, [
-      U.el('button', { class: 'btn sm grow', text: 'Reset', onclick: function () { sel.position.set(0, sel.position.y, 0); sel.scale.set(1, 1, 1); sel.rotation.set(0, 0, 0); Inspector.syncTransform(sel); bus.emit('transform:changed', { source: 'reset' }); if (PixiStudio.History) PixiStudio.History.push('Reset transform'); } }),
+      U.el('button', { class: 'btn sm grow', text: 'Reset', disabled: locked ? true : undefined, onclick: function () { if (OT) OT.resetTransform(sel); else { sel.position.set(0, sel.position.y, 0); sel.scale.set(1, 1, 1); sel.rotation.set(0, 0, 0); } Inspector.syncTransform(sel); bus.emit('transform:changed', { source: 'reset' }); } }),
+      U.el('button', { class: 'btn sm grow', text: 'Reset xoay', disabled: locked ? true : undefined, onclick: function () { if (OT) OT.resetRotation(sel); Inspector.syncTransform(sel); } }),
       U.el('button', { class: 'btn sm grow', text: 'Focus (F)', onclick: function () { PixiStudio.Viewport.focusSelected(); } })
     ]);
     tsc.appendChild(tbtns);
     transformSection.appendChild(tsc);
     body.appendChild(transformSection);
+
+    /* ---- Object actions ---- */
+    const objSection = U.el('div', { class: 'section-block' }, [
+      U.el('div', { class: 'section-head' }, [U.el('span', { html: U.icon('cube') }), U.el('span', { text: 'Object' })])
+    ]);
+    const osc = U.el('div', { class: 'section-content' });
+    const nameRow = U.el('div', { style: 'display:flex;gap:6px;margin-bottom:6px;' });
+    const nameInput = U.el('input', { type: 'text', class: 'input', style: 'flex:1;height:27px;font-size:11.5px;', value: sel.name || '' });
+    nameInput.addEventListener('change', function () { if (OT) OT.rename(sel, nameInput.value); });
+    nameRow.appendChild(nameInput);
+    osc.appendChild(nameRow);
+    const actGrid = U.el('div', { class: 'obj-actions' });
+    const actBtn = function (label, fn, dis) {
+      return U.el('button', { class: 'btn sm', text: label, disabled: dis ? true : undefined, onclick: fn });
+    };
+    actGrid.appendChild(actBtn('⧉ Nhân bản', function () { if (OT) OT.duplicate(sel); }));
+    actGrid.appendChild(actBtn('🗑 Xoá', function () { if (OT) OT.deleteObj(sel); }, locked));
+    actGrid.appendChild(actBtn(sel.visible ? '👁 Ẩn' : '👁 Hiện', function () { if (OT) OT.toggleVisible(sel); }));
+    actGrid.appendChild(actBtn(locked ? '🔓 Mở khoá' : '🔒 Khoá', function () { if (OT) OT.setLocked(sel, !locked); }));
+    actGrid.appendChild(actBtn('🎯 Focus', function () { if (OT) OT.focus(sel); }));
+    actGrid.appendChild(actBtn('⬇ Đặt xuống đất', function () { if (OT) OT.alignToGround(sel); }, locked));
+    actGrid.appendChild(actBtn('# Snap lưới', function () { if (OT) OT.snapToGrid(sel); }, locked));
+    actGrid.appendChild(actBtn('⧉ Copy transform', function () { if (OT) OT.copyTransform(sel); }));
+    actGrid.appendChild(actBtn('⎘ Paste transform', function () { if (OT) OT.pasteTransform(sel); }, locked));
+    actGrid.appendChild(actBtn('⇄ Lật X', function () { if (OT) OT.flip(sel, 'x'); }, locked));
+    osc.appendChild(actGrid);
+    const uniRow = U.el('div', { style: 'display:flex;gap:6px;margin-top:6px;align-items:center;' }, [
+      U.el('span', { class: 'vec-label', style: 'font-size:11.5px;font-weight:600;color:var(--text-2);', text: 'Scale đều' })
+    ]);
+    const uniInput = U.el('input', { type: 'number', step: '0.1', min: '0.01', class: 'input', style: 'flex:1;height:27px;font-size:11.5px;', value: String(U.round(sel.scale.x, 3)), disabled: locked ? true : undefined });
+    uniInput.addEventListener('change', function () { if (OT) OT.setUniformScale(sel, parseFloat(uniInput.value)); });
+    uniRow.appendChild(uniInput);
+    osc.appendChild(uniRow);
+    objSection.appendChild(osc);
+    body.appendChild(objSection);
 
     Inspector._transformRefs = { object: sel };
 
@@ -208,7 +321,7 @@
     body.appendChild(physSection);
   };
 
-  /* Sync transform inputs từ object (khi gizmo kéo) */
+  /* Sync transform inputs từ object (khi gizmo kéo) — Rotation hiển thị ĐỘ */
   Inspector.syncTransform = function (object3D) {
     if (!object3D) return;
     const body = document.getElementById('inspector-body');
@@ -218,8 +331,18 @@
       const ax = input.getAttribute('data-axis');
       const src = ch === 'position' ? object3D.position : ch === 'rotation' ? object3D.rotation : object3D.scale;
       if (document.activeElement !== input) {
-        input.value = U.round(src[ax], 3);
+        const v = ch === 'rotation' ? THREE.MathUtils.radToDeg(src[ax]) : src[ax];
+        input.value = U.round(v, 3);
       }
+    });
+  };
+
+  /* Đồng bộ nút mode gizmo (toolbar viewport / phím tắt đổi mode). */
+  Inspector.syncModeButtons = function () {
+    if (!Inspector._modeBtns) return;
+    const mode = PixiStudio.State.get('gizmoMode');
+    Object.keys(Inspector._modeBtns).forEach(function (m) {
+      Inspector._modeBtns[m].classList.toggle('active', m === mode);
     });
   };
 
@@ -284,6 +407,11 @@
     bus.on('transform:changed', function (data) {
       if (data.source !== 'inspector') Inspector.syncTransform(PixiStudio.State.get('selection'));
       PixiStudio.History && data.source === 'gizmo' && null;
+    });
+
+    /* Gizmo mode đổi từ toolbar viewport / phím tắt → sync nút mode */
+    bus.on('state:changed', function (data) {
+      if (data.key === 'gizmoMode') Inspector.syncModeButtons();
     });
 
     /* Model loaded → render */
