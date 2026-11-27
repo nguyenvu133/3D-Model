@@ -12,8 +12,8 @@
     this.target = new THREE.Vector3(0, 0.9, 0);
 
     this.radius = 5.2;
-    this.theta = THREE.MathUtils.degToRad(28);   // azimuth quanh trục Y
-    this.phi = THREE.MathUtils.degToRad(72);     // polar từ trục Y (90 = ngang)
+    this.theta = 0;                          // chính diện: camera thẳng trục +Z, nhìn thẳng mặt nhân vật
+    this.phi = THREE.MathUtils.degToRad(90); // ngang tầm mắt (90 = ngang, không nhìn từ trên xuống)
 
     this.minRadius = 1.2;
     this.maxRadius = 30;
@@ -80,7 +80,7 @@
 
   /* ---------- View presets ---------- */
   const VIEWS = {
-    perspective: { theta: THREE.MathUtils.degToRad(28), phi: THREE.MathUtils.degToRad(72), radius: 5.2, target: [0, 0.9, 0] },
+    perspective: { theta: 0, phi: THREE.MathUtils.degToRad(90), radius: 5.2, target: [0, 0.9, 0] },
     /* Iso học từ MapEditor CameraRig: theta 45°, phi ~54.7° */
     iso: { theta: THREE.MathUtils.degToRad(45), phi: 0.955, radius: 8, target: [0, 0.9, 0] },
     ortho: { theta: THREE.MathUtils.degToRad(35), phi: THREE.MathUtils.degToRad(70), radius: 5.2, target: [0, 0.9, 0] },

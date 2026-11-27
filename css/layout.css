@@ -4,10 +4,14 @@
    ============================================================ */
 
 #app {
-  height: 100%;
+  height: 100vh; /* fallback: trình duyệt cũ chưa có dvh */
+  height: 100dvh; /* dynamic viewport height — xem ghi chú ở main.css */
   display: grid;
-  grid-template-rows: var(--topbar-h) 1fr var(--bottom-h) var(--statusbar-h);
-  grid-template-columns: 1fr;
+  /* minmax(0, 1fr): track co lại được dưới min-content của nội dung,
+     nếu không topbar/viewport (chứa nhiều nút) sẽ phình ra 3000px+ và
+     che mất nửa phải màn hình PC (không cuộn được vì body overflow:hidden) */
+  grid-template-rows: var(--topbar-h) minmax(0, 1fr) var(--bottom-h) var(--statusbar-h);
+  grid-template-columns: minmax(0, 1fr);
   background: var(--bg);
 }
 
@@ -93,7 +97,24 @@
   box-shadow: 0 3px 12px rgba(113,59,255,.4);
 }
 
-.topbar-actions { display: flex; align-items: center; gap: 7px; flex: none; }
+.topbar-actions {
+  display: flex; align-items: center; gap: 7px; flex: none;
+  /* 16+ nút: cho cuộn ngang thay vì đẩy tràn khỏi màn hình */
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: #4a4a5e transparent;
+  -webkit-overflow-scrolling: touch;
+}
+.topbar-actions::-webkit-scrollbar { height: 4px; }
+.topbar-actions::-webkit-scrollbar-thumb { background: #3a3a4c; border-radius: 4px; }
+/* ≤1920px: nút topbar chỉ còn icon (ẩn nhãn) để vừa màn hình — 16 nút có nhãn
+   rộng ~1850px, cộng brand + tagline đã vượt 1920px và bóp chết workspace-nav */
+@media (max-width: 1920px) {
+  .topbar-actions .btn .lbl { display: none; }
+  .topbar-actions .btn { padding: 0; width: 32px; justify-content: center; flex: none; }
+}
 
 /* Window controls */
 .win-controls { display: flex; align-items: center; gap: 2px; margin-left: 6px; }
@@ -110,7 +131,7 @@
 #main-row {
   grid-row: 2;
   display: grid;
-  grid-template-columns: var(--toolbar-w) var(--left-w) 1fr var(--right-w);
+  grid-template-columns: var(--toolbar-w) var(--left-w) minmax(0, 1fr) var(--right-w);
   min-height: 0;
   position: relative;
 }
@@ -441,7 +462,7 @@ body.resizing-v * { pointer-events: none !important; }
 #bottom-row {
   grid-row: 3;
   display: grid;
-  grid-template-columns: 1fr 264px 236px;
+  grid-template-columns: minmax(0, 1fr) 264px 236px;
   min-height: 0;
   background: var(--bg);
 }

@@ -62,7 +62,8 @@
 html, body {
   margin: 0;
   padding: 0;
-  height: 100%;
+  height: 100vh; /* fallback: trình duyệt cũ chưa có dvh */
+  height: 100dvh; /* dynamic viewport: vừa đúng màn mobile khi thanh địa chỉ ẩn/hiện */
   overflow: hidden;
   background: var(--bg);
   color: var(--text);

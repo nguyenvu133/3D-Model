@@ -344,8 +344,8 @@
     const o = PixiStudio.Viewport.orbit;
     o.dTarget.set(0, 0.9, 0);
     o.dRadius = 5.2;
-    o.dTheta = THREE.MathUtils.degToRad(28);
-    o.dPhi = THREE.MathUtils.degToRad(72);
+    o.dTheta = 0;                          // chính diện: thẳng trục +Z
+    o.dPhi = THREE.MathUtils.degToRad(90); // ngang tầm mắt
     bus.emit('ix:camera', { reset: true });
   };
 
@@ -407,6 +407,8 @@
     head.appendChild(toggle);
     panel.appendChild(head);
     const body = U.el('div', { class: 'ix-body' });
+    /* Màn nhỏ (≤767px): panel thu gọn sẵn để không che model — bấm ▾ để mở */
+    if (window.innerWidth <= 767) { body.style.display = 'none'; toggle.textContent = '▸'; }
     /* badge trục khóa khi kéo */
     const lockBadge = U.el('div', { id: 'ix-lock-badge', style: 'display:none;margin-bottom:5px;padding:2px 7px;border-radius:6px;background:#16385f;color:#9fd0ff;font-size:10.5px;font-weight:700;' });
     body.appendChild(lockBadge);

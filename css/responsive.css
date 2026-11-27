@@ -169,18 +169,28 @@
   .modal { width: calc(100vw - 24px); }
   #task-loading { width: calc(100vw - 24px); }
 
-  /* Gợi ý xoay ngang */
+  /* Gợi ý xoay ngang — BANNER NHỎ DƯỚI ĐÁY, KHÔNG chặn app.
+     Trước đây là overlay full-screen (position:fixed; inset:0) che toàn màn
+     hình ở portrait ≤479px. Lưu ý: phần tử #rotate-hint hiện chưa có trong
+     index.html nên rule này chỉ phòng khi nó được thêm lại sau này; nếu thêm
+     lại thì cần gắn JS cho nút .rh-skip để tắt banner. */
   #rotate-hint {
     display: flex;
-    position: fixed; inset: 0; z-index: 9700;
-    background: var(--bg);
+    position: fixed;
+    left: 12px; right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    z-index: 9700;
+    background: rgba(27, 27, 36, .96);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow-pop);
     flex-direction: column; align-items: center; justify-content: center;
-    gap: 14px; text-align: center; padding: 30px;
+    gap: 8px; text-align: center; padding: 14px 16px;
   }
-  #rotate-hint .rh-icon { font-size: 54px; }
-  #rotate-hint b { font-size: 16px; }
-  #rotate-hint p { color: var(--text-3); font-size: 12.5px; max-width: 300px; line-height: 1.6; }
-  #rotate-hint .rh-skip { margin-top: 8px; }
+  #rotate-hint .rh-icon { font-size: 28px; }
+  #rotate-hint b { font-size: 13.5px; }
+  #rotate-hint p { color: var(--text-3); font-size: 11.5px; max-width: 300px; line-height: 1.5; }
+  #rotate-hint .rh-skip { margin-top: 4px; }
 }
 @media (orientation: landscape) and (max-height: 479px) {
   #rotate-hint { display: none !important; }
@@ -206,6 +216,41 @@
 
 /* ============ Drawer toggle mặc định ẩn (chỉ hiện tablet/mobile) ============ */
 .drawer-toggle { display: none; }
+
+/* ============ Mobile dọc + màn thấp: cho phép CUỘN TRANG + full chiều cao động ============
+   Mặc định (main.css) html,body overflow:hidden + touch-action:none nên trang
+   KHÔNG BAO GIỜ cuộn: nội dung tràn là bị cắt, không có thanh cuộn. Trên điện
+   thoại màn dọc cao (19.5:9 / 20:9, vd TECNO SPARK 20 360 CSS px) và màn ngang
+   thấp, chuyển #app thành trang cuộn dọc để với tới mọi phần. Trên PC (≥1024px)
+   và màn cao, block này không áp dụng nên giữ nguyên kiểu app desktop.
+   - html,body: overflow-y:auto + touch-action:auto → cuộn cảm ứng hoạt động.
+   - #app: height:auto + min-height:100dvh → trang dài theo nội dung, vẫn full
+     màn khi nội dung ngắn. Grid rows giữ nguyên (1fr → auto khi cao không cố
+     định), bottom timeline giữ --bottom-h và cuộn nội bộ như cũ.
+   - #viewport-canvas-wrap: min-height 40dvh để viewport 3D luôn đủ cao xem model.
+   - #three-canvas giữ touch-action:none riêng để xoay/quay model vẫn chạy,
+     còn chạm vào chỗ khác thì cuộn trang bình thường.
+   - --statusbar-h cộng safe-area-inset-bottom để thanh trạng thái không bị
+     thanh cử chỉ / home indicator che (Android = 0 nên không đổi). */
+@media (max-width: 767px), (max-height: 500px) and (max-width: 1023px) {
+  html, body {
+    overflow-x: hidden; /* chặn cuộn ngang do phần tử tràn */
+    overflow-y: auto;   /* cho phép cuộn dọc trang */
+    touch-action: auto; /* cho phép cuộn cảm ứng (pan) */
+  }
+
+  #app {
+    height: auto;
+    min-height: 100vh; /* fallback */
+    min-height: 100dvh;
+  }
+
+  #viewport-canvas-wrap { min-height: 40dvh; }
+
+  #three-canvas { touch-action: none; }
+
+  :root { --statusbar-h: calc(26px + env(safe-area-inset-bottom, 0px)); }
+}
 
 /* ============ In / Presentation mode ============ */
 @media print {
