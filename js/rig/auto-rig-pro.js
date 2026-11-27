@@ -182,7 +182,14 @@
     });
     if (!pts.length) return null;
 
+    /* Độ sâu Z đo từ mesh (trung bình Z của đỉnh mẫu) — dùng khi
+       opts.useDepth bật; mặc định xương vẫn dùng cz của bbox center. */
+    var depthCz = 0;
+    for (var zi = 0; zi < pts.length; zi++) depthCz += pts[zi][2];
+    depthCz = depthCz / pts.length;
+
     var measured = {};
+    measured.depthCz = true;
     var maxAbsXInBand = function (y0, y1) {
       var mx = 0;
       for (var i = 0; i < pts.length; i++) {
@@ -275,7 +282,7 @@
     if (legs) { hipX = (legs.left + legs.right) / 2; measured.hipX = true; }
 
     return {
-      H: H, W: W, cx: cx, cz: cz, groundY: groundY, headTopY: headTopY,
+      H: H, W: W, cx: cx, cz: cz, depthCz: depthCz, groundY: groundY, headTopY: headTopY,
       chinY: chinY, shoulderY: shoulderY, elbowY: elbowY, wristY: wristY,
       groinY: groinY, kneeY: kneeY, ankleY: ankleY,
       shoulderWidth: shoulderWidth, armX: armX, foreX: foreX, handX: handX, hipX: hipX,
@@ -284,9 +291,107 @@
   }
   AutoRigPro.measureLandmarks = measureLandmarks;
 
-  /* ---------- Vị trí world của từng xương, từ landmark ---------- */
-  function boneWorldPositions(lm) {
-    var H = lm.H, cx = lm.cx, cz = lm.cz;
+  /* ---------- Vị trí world của từng xương, từ landmark ----------
+     opts (mới, tab Smart — toàn bộ mặc định giữ hành vi cũ):
+       symmetrical (default true): ép tay/chân trái/phải đối xứng qua
+         trục X (cx): mỗi cặp dùng chung |x-cx| trung bình 2 bên.
+       useDepth (default false): dùng lm.depthCz (Z đo từ mesh) làm
+         tâm Z thay vì lm.cz (tâm Z của bbox). */
+  var SYMM_PAIRS = [
+    ['LeftShoulder', 'RightShoulder'], ['LeftArm', 'RightArm'],
+    ['LeftForeArm', 'RightForeArm'], ['LeftHand', 'RightHand'],
+    ['LeftHandThumb1', 'RightHandThumb1'], ['LeftHandThumb2', 'RightHandThumb2'],
+    ['LeftHandIndex1', 'RightHandIndex1'], ['LeftHandIndex2', 'RightHandIndex2'],
+    ['LeftHandMiddle1', 'RightHandMiddle1'], ['LeftHandMiddle2', 'RightHandMiddle2'],
+    ['LeftHandRing1', 'RightHandRing1'], ['LeftHandRing2', 'RightHandRing2'],
+    ['LeftHandPinky1', 'RightHandPinky1'],
+    ['LeftUpLeg', 'RightUpLeg'], ['LeftLeg', 'RightLeg'],
+    ['LeftFoot', 'RightFoot'], ['LeftToeBase', 'RightToeBase'],
+    ['LeftForeArmTwist', 'RightForeArmTwist'], ['LeftLegTwist', 'RightLegTwist']
+  ];
+  /* ---------- Biến thể skeleton (tab Smart — chỉ cộng thêm, mặc định
+     giữ nguyên 41 xương) ----------
+     boneSet: 'full41' (mặc định, đủ 41 Mixamo) | 'hy3d28' (gọn kiểu
+       HY3D: core 23 - HeadTop_End + 6 đốt ngón tay Thumb/Index/Middle
+       = 28) | 'minimal15' (tối giản: Hips/Spine/Head + 2 tay
+       Arm/ForeArm/Hand + 2 chân UpLeg/Leg/Foot = 15, không Neck).
+     fingers (default true): tắt → bỏ mọi xương ngón tay.
+     toes (default true): tắt → bỏ ToeBase.
+     twist (default false): bật → chèn xương twist giữa ForeArm/Hand
+       và Leg/Foot (LeftForeArmTwist, RightForeArmTwist, LeftLegTwist,
+       RightLegTwist); Hand/Foot đổi parent sang xương twist.
+     spineSegments (1/2/3, default 3): 1 → chỉ Spine (Neck + vai móc
+       vào Spine); 2 → Spine + Spine1 (bỏ Spine2).
+     neckSegments (1/2, default 1): 2 → chèn Neck1 giữa Neck và Head.
+     Xương nào bị bỏ thì con của nó được móc lại vào tổ tiên gần nhất
+     còn giữ (rewire) để cây xương không đứt. */
+  var FINGER_RE = /Hand(Thumb|Index|Middle|Ring|Pinky)/;
+  function variantBoneDefs(opts) {
+    opts = opts || {};
+    var base;
+    if (opts.boneSet === 'hy3d28') {
+      base = ['Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head',
+        'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand',
+        'LeftHandThumb1', 'LeftHandIndex1', 'LeftHandMiddle1',
+        'RightShoulder', 'RightArm', 'RightForeArm', 'RightHand',
+        'RightHandThumb1', 'RightHandIndex1', 'RightHandMiddle1',
+        'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToeBase',
+        'RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase'];
+    } else if (opts.boneSet === 'minimal15') {
+      base = ['Hips', 'Spine', 'Head',
+        'LeftArm', 'LeftForeArm', 'LeftHand',
+        'RightArm', 'RightForeArm', 'RightHand',
+        'LeftUpLeg', 'LeftLeg', 'LeftFoot',
+        'RightUpLeg', 'RightLeg', 'RightFoot'];
+    } else {
+      base = BONE_DEFS.map(function (d) { return d.name; });
+    }
+    var kept = {};
+    base.forEach(function (n) { kept[n] = true; });
+    var spineSegs = opts.spineSegments == null ? 3 : opts.spineSegments;
+    if (spineSegs <= 2) delete kept.Spine2;
+    if (spineSegs <= 1) delete kept.Spine1;
+    if (opts.fingers === false) {
+      Object.keys(kept).forEach(function (n) { if (FINGER_RE.test(n)) delete kept[n]; });
+    }
+    if (opts.toes === false) { delete kept.LeftToeBase; delete kept.RightToeBase; }
+    var parentOf = {};
+    BONE_DEFS.forEach(function (d) { parentOf[d.name] = d.parent; });
+    var defs = BONE_DEFS.filter(function (d) { return kept[d.name]; })
+      .map(function (d) { return { name: d.name, parent: d.parent }; });
+    /* Rewire: parent bị bỏ → tổ tiên gần nhất còn giữ (hoặc null). */
+    defs.forEach(function (d) {
+      var p = d.parent;
+      while (p && !kept[p]) p = parentOf[p];
+      d.parent = p || null;
+    });
+    /* Neck 2 đốt: chèn Neck1, Head móc sang Neck1. */
+    if (opts.neckSegments === 2 && kept.Neck && kept.Head) {
+      defs.push({ name: 'Neck1', parent: 'Neck' });
+      defs.forEach(function (d) { if (d.name === 'Head') d.parent = 'Neck1'; });
+    }
+    /* Twist bones: chèn sau ForeArm/Leg, Hand/Foot móc sang twist. */
+    if (opts.twist) {
+      [['LeftForeArmTwist', 'LeftForeArm', 'LeftHand'],
+       ['RightForeArmTwist', 'RightForeArm', 'RightHand'],
+       ['LeftLegTwist', 'LeftLeg', 'LeftFoot'],
+       ['RightLegTwist', 'RightLeg', 'RightFoot']].forEach(function (t) {
+        if (kept[t[1]] && kept[t[2]]) {
+          defs.push({ name: t[0], parent: t[1] });
+          defs.forEach(function (d) { if (d.name === t[2]) d.parent = t[0]; });
+        }
+      });
+    }
+    /* Giữ thứ tự duyệt: cha trước con (BONE_DEFS gốc đã đúng thứ tự;
+       Neck1/twist chèn cuối vẫn sau cha của chúng). */
+    return defs;
+  }
+  AutoRigPro.variantBoneDefs = variantBoneDefs;
+  function boneWorldPositions(lm, opts) {
+    opts = opts || {};
+    var H = lm.H, cx = lm.cx;
+    /* useDepth: tâm Z đo từ mesh; mặc định cz của bbox center (như cũ) */
+    var cz = (opts.useDepth && lm.depthCz != null) ? lm.depthCz : lm.cz;
     var groin = lm.groinY, shoulder = lm.shoulderY, chin = lm.chinY;
     var elbow = lm.elbowY, wrist = lm.wristY, knee = lm.kneeY, ankle = lm.ankleY;
     var sw = lm.shoulderWidth, ax = lm.armX, fx = lm.foreX, hx = lm.handX, hipX = lm.hipX;
@@ -343,16 +448,139 @@
     pos.RightLeg = V(cx + hipX, knee, cz + 0.005 * H);
     pos.RightFoot = V(cx + hipX, ankle, cz + 0.01 * H);
     pos.RightToeBase = V(cx + hipX, ankle - 0.008 * H, cz + 0.06 * H);
+    /* Vị trí twist bones: luôn tính (dù opts.twist tắt thì skeleton
+       không dùng tới) để SYMM_PAIRS (có cặp twist) không chạm phải
+       vị trí undefined khi đối xứng hoá. */
+    var mid = function (a, b) { return V((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2); };
+    pos.LeftForeArmTwist = mid(pos.LeftForeArm, pos.LeftHand);
+    pos.RightForeArmTwist = mid(pos.RightForeArm, pos.RightHand);
+    pos.LeftLegTwist = mid(pos.LeftLeg, pos.LeftFoot);
+    pos.RightLegTwist = mid(pos.RightLeg, pos.RightFoot);
+    /* Neck 2 đốt (opts.neckSegments === 2): Neck1 giữa Neck và Head. */
+    if (opts.neckSegments === 2) {
+      pos.Neck1 = V(cx, (pos.Neck.y + pos.Head.y) / 2, cz);
+    }
+    /* Tư thế gốc (opts.pose, default 'T'):
+       'A' — tay chếch ~45° so với thân (A-pose theo marker tay):
+       tay khép vào gần thân + hạ thấp hơn so với T-pose ngang 90°.
+       Chỉ là xấp xỉ hình học từ landmark tay, không phải đo lại mesh. */
+    if (opts.pose === 'A') {
+      var aPoseArm = function (side, sgn) {
+        var sh = pos[side + 'Shoulder'], arm = pos[side + 'Arm'],
+            fore = pos[side + 'ForeArm'], hand = pos[side + 'Hand'];
+        arm.x = cx + sgn * (sw + (Math.abs(arm.x - cx) - sw) * 0.8);
+        fore.x = cx + sgn * (sw + (Math.abs(fore.x - cx) - sw) * 0.65);
+        fore.y = fore.y - 0.04 * H;
+        hand.x = cx + sgn * (sw + (Math.abs(hand.x - cx) - sw) * 0.55);
+        hand.y = hand.y - 0.08 * H;
+        if (pos[side + 'ForeArmTwist']) {
+          var tw = pos[side + 'ForeArmTwist'];
+          tw.x = (fore.x + hand.x) / 2; tw.y = (fore.y + hand.y) / 2; tw.z = (fore.z + hand.z) / 2;
+        }
+      };
+      aPoseArm('Left', -1);
+      aPoseArm('Right', 1);
+    }
+    /* Symmetrical (mặc định BẬT): ép cặp trái/phải đối xứng qua cx.
+       |x-cx| dùng trung bình 2 bên để giữ đúng độ rộng đo được. */
+    if (opts.symmetrical !== false) {
+      SYMM_PAIRS.forEach(function (pair) {
+        var L = pos[pair[0]], R = pos[pair[1]];
+        if (!L || !R) return;
+        var d = (Math.abs(L.x - cx) + Math.abs(R.x - cx)) / 2;
+        L.x = cx - d;
+        R.x = cx + d;
+      });
+    }
     return pos;
   }
+
+  /* ============================================================
+     SMART OPTIONS (tab Smart) — áp landmark overrides + Add Neck
+     lên landmark ĐÃ ĐO, trước khi dựng skeleton. Không đổi landmark
+     gốc ngoài các key được ghi đè. Trả về { lm, neckForced,
+     overridesApplied }.
+       landmarkOverrides: { chinY, groinY, shoulderY, elbowY, wristY,
+         kneeY, ankleY, headTopY, groundY, shoulderWidth, armX, foreX,
+         handX, hipX, cx, cz, depthCz } — chỉ key nào lm đã có mới nhận.
+       addNeck: khi đo cằm yếu (measured.chin falsy) thì reset chinY
+         về fallback tỉ lệ 0.85H để xương Neck luôn có đoạn cổ rõ
+         (Neck = chin - 0.02H, Head = chin + 0.03H); neckForced=true.
+         Khi chin đo tốt thì không làm gì (neckForced=false).
+     ============================================================ */
+  var OVERRIDE_KEYS = ['chinY', 'groinY', 'shoulderY', 'elbowY', 'wristY',
+    'kneeY', 'ankleY', 'headTopY', 'groundY', 'shoulderWidth', 'armX',
+    'foreX', 'handX', 'hipX', 'cx', 'cz', 'depthCz'];
+  function applySmartOptions(lm, opts) {
+    opts = opts || {};
+    var out = { lm: lm, neckForced: false, overridesApplied: [] };
+    if (!lm) return out;
+    var ov = opts.landmarkOverrides;
+    if (ov) {
+      OVERRIDE_KEYS.forEach(function (k) {
+        if (ov[k] != null && isFinite(+ov[k]) && lm[k] != null) {
+          lm[k] = +ov[k];
+          out.overridesApplied.push(k);
+        }
+      });
+    }
+    if (opts.addNeck && lm.measured && !lm.measured.chin) {
+      lm.chinY = lm.groundY + RATIO_Y.chin * lm.H;
+      out.neckForced = true;
+    }
+    return out;
+  }
+  AutoRigPro.applySmartOptions = applySmartOptions;
+
+  /* ============================================================
+     GUESS MARKERS (tab Smart) — đo landmark rồi trả về vị trí
+     marker để hiện lên viewport. Trả về { landmarks, markers } hoặc
+     null khi không đo được. Mỗi marker: { id, label, landmarkKey
+     (key Y nó chỉnh), xKey (key X nó chỉnh, nếu có), position,
+     color }.
+     ============================================================ */
+  var MARKER_COLORS = {
+    chin: 0xffd166, groin: 0x06d6a0, shoulder: 0x118ab2,
+    LeftHand: 0xef476f, RightHand: 0xf78c6b,
+    LeftFoot: 0x7b61ff, RightFoot: 0x4cc9f0
+  };
+  function guessMarkers(target) {
+    target = getTarget(target);
+    if (!target) return null;
+    var lm = measureLandmarks(target);
+    if (!lm) return null;
+    var H = lm.H, cx = lm.cx, cz = lm.cz;
+    var P = function (x, y, z) { return { x: x, y: y, z: z }; };
+    var defs = [
+      { id: 'chin', label: 'Cằm (chin)', landmarkKey: 'chinY', xKey: null, position: P(cx, lm.chinY, cz) },
+      { id: 'groin', label: 'Háng (groin)', landmarkKey: 'groinY', xKey: null, position: P(cx, lm.groinY, cz) },
+      { id: 'shoulder', label: 'Vai (shoulder)', landmarkKey: 'shoulderY', xKey: null, position: P(cx, lm.shoulderY, cz) },
+      { id: 'LeftHand', label: 'Tay trái', landmarkKey: 'wristY', xKey: 'handX', position: P(cx - lm.handX, lm.wristY, cz + 0.01 * H) },
+      { id: 'RightHand', label: 'Tay phải', landmarkKey: 'wristY', xKey: 'handX', position: P(cx + lm.handX, lm.wristY, cz + 0.01 * H) },
+      { id: 'LeftFoot', label: 'Chân trái', landmarkKey: 'ankleY', xKey: 'hipX', position: P(cx - lm.hipX, lm.ankleY, cz + 0.01 * H) },
+      { id: 'RightFoot', label: 'Chân phải', landmarkKey: 'ankleY', xKey: 'hipX', position: P(cx + lm.hipX, lm.ankleY, cz + 0.01 * H) }
+    ];
+    var markers = defs.map(function (d) {
+      return {
+        id: d.id, label: d.label, landmarkKey: d.landmarkKey, xKey: d.xKey,
+        position: d.position, color: MARKER_COLORS[d.id]
+      };
+    });
+    return { landmarks: lm, markers: markers };
+  }
+  AutoRigPro.guessMarkers = guessMarkers;
 
   /* ============================================================
      DỰNG SKELETON — 41 xương THREE.Bone, tên mixamorig:*,
      vị trí khớp landmark (đã đổi về local của target).
      Trả về { rootBone, bones, boneList, helper, group }.
      ============================================================ */
-  function buildSkeleton(target, lm) {
-    var worldPos = boneWorldPositions(lm);
+  function buildSkeleton(target, lm, opts) {
+    opts = opts || {};
+    var worldPos = boneWorldPositions(lm, opts);
+    /* Biến thể skeleton theo opts (mặc định đủ 41 — xem variantBoneDefs).
+       BONE_DEFS gốc không đổi; defs lọc chỉ dùng trong lần build này. */
+    var defs = variantBoneDefs(opts);
     /* world → local của target (target có thể đã scale/rotate) */
     target.updateMatrixWorld(true);
     var inv = target.matrixWorld.clone().invert();
@@ -363,14 +591,14 @@
     var bones = {};
     var group = new THREE.Group();
     group.name = '__autorigpro_rig__';
-    BONE_DEFS.forEach(function (def) {
+    defs.forEach(function (def) {
       var b = new THREE.Bone();
       b.name = 'mixamorig:' + def.name;
       b.userData.targetWorld = worldPos[def.name].clone();
       b.userData.targetLocal = localPos[def.name].clone();
       bones[def.name] = b;
     });
-    BONE_DEFS.forEach(function (def) {
+    defs.forEach(function (def) {
       var b = bones[def.name];
       if (def.parent) {
         var p = bones[def.parent];
@@ -397,7 +625,7 @@
       helper.material.depthTest = false;
       target.add(helper);
     } catch (e) { helper = null; }
-    return { rootBone: bones.Hips, bones: bones, boneList: boneList, helper: helper, group: group };
+    return { rootBone: bones.Hips, bones: bones, boneList: boneList, helper: helper, group: group, boneDefs: defs };
   }
   AutoRigPro.buildSkeleton = buildSkeleton;
 
@@ -427,14 +655,15 @@
       anchors[name] = new THREE.Vector3().setFromMatrixPosition(rig.bones[name].matrixWorld);
     });
     var childrenOf = {};
-    BONE_DEFS.forEach(function (def) {
+    var skinDefs = (rig && rig.boneDefs) || BONE_DEFS;
+    skinDefs.forEach(function (def) {
       if (def.parent) {
         if (!childrenOf[def.parent]) childrenOf[def.parent] = [];
         childrenOf[def.parent].push(def.name);
       }
     });
     var segs = [];
-    BONE_DEFS.forEach(function (def) {
+    skinDefs.forEach(function (def) {
       var a = anchors[def.name];
       var kids = childrenOf[def.name] || [];
       var b;
@@ -663,6 +892,15 @@
      RUN — pipeline đầy đủ: đo landmark → dựng skeleton → skin →
      QA → xuất FBX rigged + .py. Chỉ chạy trên model CHƯA có rig.
      Trả về result { ok, alreadyRigged, boneCount, landmarks, ... }.
+     opts mới (tab Smart, mặc định giữ hành vi cũ):
+       symmetrical (default true), addNeck (default false),
+       useDepth (default false), landmarkOverrides (default null),
+       export (default true), modelName.
+     opts biến thể skeleton (tab Smart, mặc định = 41 xương đủ):
+       boneSet ('full41' | 'hy3d28' | 'minimal15'), fingers (default
+       true), toes (default true), twist (default false),
+       spineSegments (1/2/3, default 3), neckSegments (1/2, default 1),
+       pose ('T' | 'A', default 'T').
      ============================================================ */
   AutoRigPro.run = function (target, opts) {
     opts = opts || {};
@@ -697,12 +935,30 @@
       /* 1. Đo landmark */
       var lm = measureLandmarks(target);
       if (!lm) throw new Error('Không đo được landmark — model rỗng hoặc không có mesh.');
+      /* 1b. Smart options (tab Smart): landmark overrides + Add Neck.
+         Không truyền opts mới → lm giữ nguyên như cũ. */
+      var smart = applySmartOptions(lm, opts);
       result.landmarks = lm;
-      /* 2. Dựng skeleton 41 xương */
-      var rig = buildSkeleton(target, lm);
+      result.neckForced = smart.neckForced;
+      result.overridesApplied = smart.overridesApplied;
+      /* 2. Dựng skeleton 41 xương (symmetrical/useDepth qua opts) */
+      var rig = buildSkeleton(target, lm, opts);
       rig.landmarks = lm;
+      rig.smartOpts = {
+        symmetrical: opts.symmetrical !== false,
+        addNeck: !!opts.addNeck,
+        useDepth: !!opts.useDepth
+      };
       result.rig = rig;
       result.boneCount = rig.boneList.length;
+      result.boneSet = opts.boneSet || 'full41';
+      result.rigOptions = {
+        boneSet: result.boneSet, fingers: opts.fingers !== false,
+        toes: opts.toes !== false, twist: !!opts.twist,
+        spineSegments: opts.spineSegments == null ? 3 : opts.spineSegments,
+        neckSegments: opts.neckSegments == null ? 1 : opts.neckSegments,
+        pose: opts.pose || 'T'
+      };
       /* 3. Skin tự động */
       var bound = bindSkin(target, rig);
       result.skinnedMeshes = bound;
@@ -743,7 +999,12 @@
     qaSkin: qaSkin,
     buildBlenderScript: buildBlenderScript,
     boneWorldPositions: boneWorldPositions,
-    BONE_DEFS: BONE_DEFS
+    guessMarkers: guessMarkers,
+    applySmartOptions: applySmartOptions,
+    OVERRIDE_KEYS: OVERRIDE_KEYS,
+    SYMM_PAIRS: SYMM_PAIRS,
+    BONE_DEFS: BONE_DEFS,
+    variantBoneDefs: variantBoneDefs
   };
 
   window.PixiStudio = window.PixiStudio || {};

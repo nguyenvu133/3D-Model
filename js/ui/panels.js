@@ -384,7 +384,8 @@
     const topAutoRigPro = document.getElementById('btn-auto-rig-pro');
     if (topAutoRigPro) {
       topAutoRigPro.addEventListener('click', function () {
-        if (PixiStudio.AutoRigPro && PixiStudio.AutoRigPro.run) PixiStudio.AutoRigPro.run();
+        if (PixiStudio.ArpPanel && PixiStudio.ArpPanel.open) PixiStudio.ArpPanel.open();
+        else if (PixiStudio.AutoRigPro && PixiStudio.AutoRigPro.run) PixiStudio.AutoRigPro.run();
         else bus.emit('notify', { type: 'error', title: 'Auto Rig Pro Blend', message: 'AutoRigPro chưa sẵn sàng.' });
       });
     }
