@@ -907,12 +907,12 @@
     return (AP && AP.boneDefs) ? AP.boneDefs(id) : null;
   };
 
-  /* VÒNG ĐỒNG BỘ SKELETON (2026-11-27): tách phần TÍNH vị trí ghost
-     khỏi phần DỰNG group — dữ liệu ghost (vị trí/độ dài/hierarchy)
-     là CHUẨN cho canonical display (ArpSharedSkeleton); group
-     scene-level cũ là nguyên nhân "bộ trái lơ lửng" (nướng cứng ở
-     gốc, không theo model) nên không dựng nữa khi module chia sẻ có
-     mặt. Trả {pos, jointPositions, pairs, defs, H} hoặc null. */
+  /* VÒNG GIỮ XƯƠNG GỐC (2026-11-27 ~14:19): tách phần TÍNH vị trí
+     ghost khỏi phần DỰNG group — dữ liệu ghost (vị trí/độ dài/
+     hierarchy) là lớp hiển thị RIÊNG của Smart (template từ
+     landmark), KHÔNG còn là chuẩn canonical (chuẩn = xương thật,
+     xem ArpSharedSkeleton). Group ghost scene-level (__arp_ghost__)
+     được dựng lại ở buildGhost, mặc định ẨN khi model có xương thật. */
   ArpSmart._ghostPositions = function () {
     if (!ArpSmart.landmarks) return null;
     var ARP = PixiStudio.AutoRigPro;
@@ -929,6 +929,39 @@
       var APg = window.PixiStudio && PixiStudio.ArpAnimalPresets;
       if (APg && APg.resolvePositions) pos = APg.resolvePositions(pos, ArpSmart.getActivePresetId());
     }
+    /* VÒNG SỬA GHOST LỆCH (2026-11-27 ~14:23): template đặt tay trái
+       ở −X, nhưng file Mixamo/Tripo (nhân vật hướng +Z) đặt tay trái
+       ở +X — ghost không mirror sẽ đứng ngược tay (LeftHand ghost
+       lên tay phải nhân vật). Khi model ĐÃ CÓ rig, dò hướng mặt từ
+       xương thật (LeftHand/LeftArm world X so với cx): nếu tay trái
+       thật ở +X thì mirror toàn bộ vị trí ghost qua cx
+       (x' = 2·cx − x) để khớp ghost trùng khớp thật cùng tên (mục
+       tiêu ≤2cm). Model chưa rig: giữ nguyên template (không có
+       thông tin hướng mặt để dò). Chỉ đổi dữ liệu hiển thị ghost —
+       boneWorldPositions (dùng để rig) KHÔNG đổi. */
+    try {
+      var tgt = (typeof getTarget === 'function') ? getTarget() : null;
+      if (tgt && tgt.traverse && eff && isFinite(eff.cx)) {
+        var leftX = null;
+        tgt.traverse(function (o) {
+          if (leftX != null || !o || !o.isBone) return;
+          var nm = String(o.name || '').replace(/^.*:/, '').replace(/^mixamorig/i, '');
+          if (nm === 'LeftHand' || nm === 'LeftArm') {
+            try {
+              var vv = new THREE.Vector3();
+              o.getWorldPosition(vv);
+              leftX = vv.x;
+            } catch (e) {}
+          }
+        });
+        if (leftX != null && leftX > eff.cx) {
+          Object.keys(pos).forEach(function (k) {
+            var p = pos[k];
+            if (p) p.x = 2 * eff.cx - p.x;
+          });
+        }
+      }
+    } catch (e) {}
     var defs = ArpSmart.getActiveBoneDefs() ||
       (ARP._test.variantBoneDefs ? ARP._test.variantBoneDefs(vOpts) : ARP.BONE_DEFS);
     var pairs = [];
@@ -968,6 +1001,31 @@
     attr.needsUpdate = true;
   };
 
+  /* Dọn group ghost cũ khỏi scene (chỉ buildGhost dùng, trước khi
+     dựng group mới). hideGhost() KHÔNG gọi hàm này — hide chỉ ẩn,
+     group vẫn tồn tại để bật lại (user: "ko bỏ ghost mà tắt đi
+     thôi"). */
+  function _disposeGhostGroup() {
+    var g = ArpSmart.ghost.group;
+    if (!g) return;
+    try {
+      var scene = getScene();
+      if (scene) scene.remove(g);
+    } catch (e) {}
+    try {
+      var mats = {};
+      g.traverse(function (o) {
+        if (o.isMesh || o.isLineSegments || o.isLine) {
+          if (o.geometry && o.geometry.dispose) o.geometry.dispose();
+        }
+        if (o.material && !mats[o.material.uuid]) { mats[o.material.uuid] = o.material; if (o.material.dispose) o.material.dispose(); }
+      });
+    } catch (e) {}
+    ArpSmart.ghost.group = null;
+    ArpSmart.ghost.joints = {};
+    ArpSmart.ghost.lines = null;
+  }
+
   ArpSmart.buildGhost = function () {
     var gp = ArpSmart._ghostPositions();
     if (!gp) return false;
@@ -975,36 +1033,21 @@
     ArpSmart.ghost.jointPositions = gp.jointPositions;
     ArpSmart.ghost.pairs = pairs;
     if (!window.THREE) return true;
-    /* VÒNG ĐỒNG BỘ SKELETON (2026-11-27): KHÔNG dựng group ghost
-       scene-level riêng nữa — group cũ nướng cứng vị trí world ở
-       gốc scene, model dời đi thì ghost đứng yên ("bộ trái lơ
-       lửng"). Dữ liệu ghost (vị trí/độ dài/hierarchy) là CHUẨN;
-       hiển thị duy nhất là canonical display (ArpSharedSkeleton)
-       qua VP skeleton layer — gắn vào model root, tự theo model.
-       ghost.group trỏ alias tới canonical group để toolbar fallback
-       (S.ghost.group.visible) vẫn chạy. */
-    var SH = window.PixiStudio && PixiStudio.ArpSharedSkeleton;
-    if (SH && typeof SH.ensureCanonicalJoints === 'function') {
-      var target = getTarget();
-      var r = null;
-      try { r = SH.ensureCanonicalJoints(target); } catch (e) { r = null; }
-      if (r && r.ok) {
-        ArpSmart.ghost.group = r.group;
-        ArpSmart.ghost.joints = r.joints;
-        ArpSmart.ghost.lines = null;
-        if (ArpSmart.ghost.visible) {
-          var VS = window.PixiStudio && PixiStudio.ArpVpSkeleton;
-          if (VS && typeof VS.show === 'function') { try { VS.show(target); } catch (e) {} }
-        }
-        return true;
-      }
-    }
-    /* Fallback (module chia sẻ chưa load): dựng group ghost cũ. */
+    /* VÒNG GIỮ XƯƠNG GỐC (2026-11-27 ~14:19): ghost là lớp hiển thị
+       RIÊNG — dựng group __arp_ghost__ scene-level từ vị trí
+       template (landmark), KHÔNG alias tới canonical group nữa
+       (canonical = xương thật, do VP skeleton hiển thị). Group
+       ghost mặc định ẨN khi model có xương thật vì cờ visible mặc
+       định false; user bật lại bằng nút Ghost / showGhost().
+       Lưu ý: group scene-level nướng cứng vị trí world lúc build —
+       model dời đi thì ghost không theo; đó là giới hạn đã biết của
+       lớp ghost riêng (chỉ dùng để đối chiếu template), xương thật
+       vẫn là chuẩn hiển thị chính và luôn theo model. */
     var scene = getScene();
     if (!scene) return true;
-    /* hideGhost() đặt visible=false — giữ lại cờ trước khi dọn group cũ. */
+    /* Giữ lại cờ visible trước khi dọn group cũ. */
     var wasVisible = ArpSmart.ghost.visible;
-    ArpSmart.hideGhost();
+    _disposeGhostGroup();
     ArpSmart.ghost.visible = wasVisible;
     var H = gp.H;
     var group = new THREE.Group();
@@ -1046,8 +1089,10 @@
     if (!gp) return false;
     ArpSmart.ghost.jointPositions = gp.jointPositions;
     ArpSmart.ghost.pairs = gp.pairs;
-    /* VÒNG ĐỒNG BỘ: cập nhật khớp chuẩn tại chỗ (giữ mesh VP đang
-       gắn) thay vì dời khớp cầu scene-level. */
+    /* VÒNG GIỮ XƯƠNG GỐC: updateCanonicalFromGhost giờ luôn từ chối
+       (ghost không lái canonical nữa) — rơi xuống fallback dời khớp
+       cầu ghost bên dưới. Chỉ dời khớp của group ghost RIÊNG
+       (__arp_ghost__); không bao giờ dời khớp chuẩn / xương thật. */
     var SH = window.PixiStudio && PixiStudio.ArpSharedSkeleton;
     if (SH && typeof SH.updateCanonicalFromGhost === 'function') {
       try {
@@ -1055,7 +1100,8 @@
         if (r && r.ok) return true;
       } catch (e) {}
     }
-    /* Fallback cũ (group ghost scene-level): dời khớp cầu + đường nối. */
+    /* Fallback (group ghost scene-level): dời khớp cầu + đường nối. */
+    if (!ArpSmart.ghost.group || ArpSmart.ghost.group.name !== '__arp_ghost__') return true;
     Object.keys(gp.pos).forEach(function (k) {
       var j = ArpSmart.ghost.joints[k];
       if (j && j.isMesh) j.position.copy(gp.pos[k]);
@@ -1076,20 +1122,11 @@
   ArpSmart.showGhost = function () {
     if (!ArpSmart.landmarks) { notify('warning', 'Tab Smart', 'Chưa có marker — bấm Guess Markers trước rồi mới xem ghost.'); return false; }
     ArpSmart.ghost.visible = true;
-    /* VÒNG ĐỒNG BỘ SKELETON (2026-11-27): ghost = canonical display
-       duy nhất — hiện qua VP skeleton layer (gắn vào model), không
-       bật group scene-level riêng. */
-    var SH = window.PixiStudio && PixiStudio.ArpSharedSkeleton;
-    if (SH && typeof SH.ensureCanonicalJoints === 'function') {
-      if (!ArpSmart.ghost.group || !ArpSmart.ghost.jointPositions || !Object.keys(ArpSmart.ghost.jointPositions).length) ArpSmart.buildGhost();
-      else { try { SH.ensureCanonicalJoints(getTarget()); } catch (e) {} }
-      var VS = window.PixiStudio && PixiStudio.ArpVpSkeleton;
-      if (VS && typeof VS.show === 'function') { try { VS.show(getTarget()); } catch (e) {} }
-      ArpSmart._syncControls();
-      ArpSmart.refreshReadout();
-      return true;
-    }
-    if (!ArpSmart.ghost.group) ArpSmart.buildGhost();
+    /* VÒNG GIỮ XƯƠNG GỐC: ghost là lớp hiển thị RIÊNG
+       (__arp_ghost__) — hiện group ghost, KHÔNG bật VP skeleton
+       (xương thật) và KHÔNG đổi chuẩn hiển thị: bật ghost lên cũng
+       không làm lệch xương thật. */
+    if (!ArpSmart.ghost.group || !ArpSmart.ghost.jointPositions || !Object.keys(ArpSmart.ghost.jointPositions).length) ArpSmart.buildGhost();
     else ArpSmart.ghost.group.visible = true;
     ArpSmart._syncControls();
     ArpSmart.refreshReadout();
@@ -1098,41 +1135,11 @@
 
   ArpSmart.hideGhost = function () {
     ArpSmart.ghost.visible = false;
-    /* VÒNG ĐỒNG BỘ SKELETON (2026-11-27): ẩn canonical display qua
-       VP layer — chỉ khi đang ở mode ghost; ở mode bones, display là
-       xương thật nên ghost ẩn không được tắt nó. Group alias KHÔNG
-       dispose (canonical hierarchy thuộc shared module; VP layer
-       quản lý mesh của nó). */
-    var SH = window.PixiStudio && PixiStudio.ArpSharedSkeleton;
-    if (SH && typeof SH.getCanonicalInfo === 'function') {
-      try {
-        var info = SH.getCanonicalInfo();
-        if (info && info.mode === 'ghost') {
-          var VS = window.PixiStudio && PixiStudio.ArpVpSkeleton;
-          if (VS && typeof VS.hide === 'function') { try { VS.hide(); } catch (e) {} }
-        }
-      } catch (e) {}
-      return true;
-    }
-    /* Fallback cũ (module chia sẻ chưa load): dọn group ghost scene-level. */
-    if (ArpSmart.ghost.group) {
-      var scene = getScene();
-      if (scene) scene.remove(ArpSmart.ghost.group);
-      ArpSmart.ghost.group.traverse(function (o) {
-        if (o.isMesh || o.isLineSegments || o.isLine) {
-          if (o.geometry && o.geometry.dispose) o.geometry.dispose();
-        }
-      });
-      /* material dùng chung cho mọi khớp/đường — dispose 1 lần. */
-      var mats = {};
-      ArpSmart.ghost.group.traverse(function (o) {
-        if (o.material && !mats[o.material.uuid]) { mats[o.material.uuid] = o.material; if (o.material.dispose) o.material.dispose(); }
-      });
-      ArpSmart.ghost.group = null;
-      ArpSmart.ghost.joints = {};
-      ArpSmart.ghost.lines = null;
-      ArpSmart.ghost.pairs = [];
-    }
+    /* VÒNG GIỮ XƯƠNG GỐC: chỉ ẨN group ghost — KHÔNG dispose, KHÔNG
+       xóa group/code (user: "ko bỏ ghost mà tắt đi thôi"); group
+       __arp_ghost__ vẫn tồn tại trong scene, bật lại bằng showGhost.
+       KHÔNG chạm VP skeleton / xương thật / canonical. */
+    if (ArpSmart.ghost.group) ArpSmart.ghost.group.visible = false;
     return true;
   };
 
@@ -1528,10 +1535,11 @@
     }
     var result = ARP.run(target, ArpSmart.buildRunOpts(extra));
     if (result && result.ok) {
-      /* VÒNG ĐỒNG BỘ SKELETON (2026-11-27): KHÔNG hideGhost() nữa —
-         ghost/canonical display CHÍNH LÀ skeleton display (VP layer
-         dựng mesh trên khớp chuẩn); ẩn nó lúc rig xong là sai — pose
-         sync tự nhận xương thật mới theo tên. */
+      /* VÒNG GIỮ XƯƠNG GỐC (2026-11-27 ~14:19): KHÔNG hideGhost()
+         nữa — display xương thật (VP layer dựng mesh trên khớp
+         chuẩn = xương thật) không còn gắn với ghost; ẩn ghost lúc
+         rig xong là sai — pose sync tự nhận xương thật mới theo
+         tên. Ghost riêng vẫn tắt mặc định khi có xương thật. */
       ArpSmart.saveSession();
       /* --- AUTO KHỚP (js/rig/arp-automatch.js): rig Smart có thể thiếu
          xương ngón (boneSet hy3d28 chỉ có Thumb1/Index1/Middle1, không

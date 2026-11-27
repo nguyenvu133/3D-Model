@@ -142,11 +142,10 @@
       return root.bones.filter(function (b) { return b && (b.isBone || (b.userData && b.userData.isCanonicalJoint)); });
     }
     if (root.traverse) {
-      /* VÒNG ĐỒNG BỘ SKELETON (2026-11-27): nhãn bám KHỚP CHUẨN
-         (cùng hierarchy với VP skeleton/select/IK/Animator) thay vì
-         xương thật — nếu không nhãn sẽ lệch khỏi skeleton display
-         (residual ghost vs thật tới 33cm ở tay). ensureCanonicalJoints
-         có cache nên lần sau rẻ; chưa có khớp chuẩn thì xương thật. */
+      /* VÒNG GIỮ XƯƠNG GỐC (2026-11-27 ~14:19): nhãn bám KHỚP CHUẨN
+         = XƯƠNG THẬT trong file gốc (cùng hierarchy với VP
+         skeleton/select/IK/Animator). ensureCanonicalJoints có cache
+         nên lần sau rẻ; chưa có khớp chuẩn thì xương thật. */
       try {
         var SH = PixiStudio.ArpSharedSkeleton;
         if (SH && typeof SH.ensureCanonicalJoints === 'function') {

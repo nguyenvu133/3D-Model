@@ -281,15 +281,159 @@
     var hipX = RATIO_X.hipX * H;
     if (legs) { hipX = (legs.left + legs.right) / 2; measured.hipX = true; }
 
-    return {
+    var out = {
       H: H, W: W, cx: cx, cz: cz, depthCz: depthCz, groundY: groundY, headTopY: headTopY,
       chinY: chinY, shoulderY: shoulderY, elbowY: elbowY, wristY: wristY,
       groinY: groinY, kneeY: kneeY, ankleY: ankleY,
       shoulderWidth: shoulderWidth, armX: armX, foreX: foreX, handX: handX, hipX: hipX,
-      measured: measured, sampleCount: pts.length
+      measured: measured, sampleCount: pts.length, landmarkSource: 'mesh'
     };
+    /* VÒNG SỬA GHOST LỆCH Y: model đã có rig → ghi đè landmark bằng
+       xương thật (xem landmarksFromBones) — ghost Y khớp nhân vật
+       thật thay vì tỉ lệ người thường. Chỉ ghi đè key đo được. */
+    var boneLm = null;
+    try { boneLm = landmarksFromBones(target, { H: H, cx: cx }); } catch (e) { boneLm = null; }
+    if (boneLm) {
+      Object.keys(boneLm).forEach(function (k) {
+        out[k] = boneLm[k];
+        if (k === 'groinY') measured.groin = true;
+        else if (k === 'chinY') measured.chin = true;
+        else if (k === 'shoulderY') measured.shoulder = true;
+        else if (k === 'elbowY') measured.elbow = true;
+        else if (k === 'wristY') measured.wrist = true;
+        else if (k === 'kneeY') measured.knee = true;
+        else if (k === 'ankleY') measured.ankle = true;
+        else if (k === 'shoulderWidth') measured.shoulderWidth = true;
+        else if (k === 'armX') measured.armX = true;
+        else if (k === 'foreX') measured.foreX = true;
+        else if (k === 'handX') measured.handX = true;
+        else if (k === 'hipX') measured.hipX = true;
+        else if (k === 'footX') measured.footX = true;
+      });
+      if (boneLm.groinY != null) out.landmarkSource = 'skeleton';
+    }
+    return out;
   }
   AutoRigPro.measureLandmarks = measureLandmarks;
+
+  /* ---------- Landmark từ XƯƠNG THẬT (model đã có rig) ----------
+     VÒNG SỬA GHOST LỆCH Y (2026-11-27 ~14:23). Model import vào đã
+     có skeleton thì xương thật là nguồn đo chính xác nhất — KHÔNG
+     hard-code số của file nào, chỉ đọc vị trí world của xương cùng
+     tên rồi đảo ngược công thức boneWorldPositions để landmark cho
+     ra đúng khớp đó:
+       groinY = Hips.y (ghost Hips = groinY)
+       chinY  = Head.y − 0.03H (ghost Head = chinY + 0.03H)
+       shoulderY = trung bình Arm.y + 0.02H (ghost Arm = shoulderY − 0.02H)
+       elbowY/wristY/kneeY/ankleY = trung bình ForeArm/Hand/Leg/Foot.y
+         (ghost ForeArm/Hand/Leg/Foot lấy thẳng landmark Y đó)
+       shoulderWidth/armX/foreX/handX/hipX = trung bình |x − cx| của
+         Shoulder/Arm/ForeArm/Hand/UpLeg 2 bên.
+     Trả về object chỉ gồm key đo được (thiếu xương nào thì key đó
+     vắng — caller chỉ ghi đè key có mặt), hoặc null khi model không
+     có xương nào dùng được. Vì sao không sửa quét mesh thay thế:
+     đo thật trên Thần Điêu/Thiếu Lâm/XBot cho thấy quét mesh KHÔNG
+     tách được háng của model mặc áo choàng — hasCenterGap báo GAP
+     ở MỌI dải Y (near/total 0,01–0,11 < 0,15), tỉ lệ giữa/trong
+     cửa sổ thân không có bước nhảy ở háng trên cả 3 file, Z-range
+     cũng không — đổi ngưỡng là đoán mò, có nguy cơ phá hành vi đã
+     kiểm chứng trên Coco/Lenhhosung. Model chưa rig vẫn đi đường
+     quét mesh cũ (không đổi). */
+  function _stripBoneName(name) {
+    return String(name == null ? '' : name).replace(/^.*:/, '').replace(/^mixamorig/i, '');
+  }
+  function landmarksFromBones(target, ctx) {
+    if (!target || !target.traverse || !ctx || !ctx.H) return null;
+    var bones = {};
+    target.traverse(function (o) {
+      if (o && o.isBone) {
+        var s = _stripBoneName(o.name);
+        if (s && !bones[s]) bones[s] = o;
+      }
+    });
+    var names = Object.keys(bones);
+    if (!names.length) return null;
+    var H = ctx.H, cx = ctx.cx;
+    var tmp = new THREE.Vector3();
+    function _wy(b) {
+      if (!b) return null;
+      try { b.getWorldPosition(tmp); return tmp.y; } catch (e) { return null; }
+    }
+    function _ax(b) {
+      if (!b) return null;
+      try { b.getWorldPosition(tmp); return Math.abs(tmp.x - cx); } catch (e) { return null; }
+    }
+    function _avgY(list) {
+      var s = 0, n = 0;
+      list.forEach(function (nm) { var v = _wy(bones[nm]); if (v != null && isFinite(v)) { s += v; n++; } });
+      return n ? s / n : null;
+    }
+    function _avgX(list) {
+      var s = 0, n = 0;
+      list.forEach(function (nm) { var v = _ax(bones[nm]); if (v != null && isFinite(v)) { s += v; n++; } });
+      return n ? s / n : null;
+    }
+    var out = {};
+    var hipsY = _wy(bones.Hips);
+    if (hipsY != null) out.groinY = hipsY;
+    var headY = _wy(bones.Head);
+    if (headY != null) out.chinY = headY - 0.03 * H;
+    var armY = _avgY(['LeftArm', 'RightArm']);
+    if (armY != null) out.shoulderY = armY + 0.02 * H;
+    var v;
+    v = _avgY(['LeftForeArm', 'RightForeArm']); if (v != null) out.elbowY = v;
+    v = _avgY(['LeftHand', 'RightHand']); if (v != null) out.wristY = v;
+    v = _avgY(['LeftLeg', 'RightLeg']); if (v != null) out.kneeY = v;
+    v = _avgY(['LeftFoot', 'RightFoot']); if (v != null) out.ankleY = v;
+    v = _avgX(['LeftShoulder', 'RightShoulder']);
+    if (v == null) v = _avgX(['LeftArm', 'RightArm']);
+    if (v != null) out.shoulderWidth = v;
+    v = _avgX(['LeftArm', 'RightArm']); if (v != null) out.armX = v;
+    v = _avgX(['LeftForeArm', 'RightForeArm']); if (v != null) out.foreX = v;
+    v = _avgX(['LeftHand', 'RightHand']); if (v != null) out.handX = v;
+    v = _avgX(['LeftUpLeg', 'RightUpLeg']); if (v != null) out.hipX = v;
+    /* Bàn chân X khác hông X (Thần Điêu: bàn chân |x|=0,170, hông
+       0,119; Thiếu Lâm: 0,080 so với 0,122) — đo riêng footX để
+       ghost Foot/ToeBase không bị kéo về X hông. */
+    v = _avgX(['LeftFoot', 'RightFoot']); if (v != null) out.footX = v;
+    /* Z theo nhóm xương (ghost dùng cz = tâm bbox Z, nhưng xương
+       thật lệch khỏi tâm bbox: Thần Điêu Hips Z=+0,171, tay
+       Z≈+0,186; XBot tay Z≈−5,5 đơn vị trong khi Hips Z≈+1,55).
+       boneZ để boneWorldPositions đặt đúng Z từng nhóm; không có
+       boneZ (model chưa rig) thì dùng cz + offset template như cũ. */
+    function _wz(b) {
+      if (!b) return null;
+      try { b.getWorldPosition(tmp); return tmp.z; } catch (e) { return null; }
+    }
+    function _avgZ(list) {
+      var s = 0, n = 0;
+      list.forEach(function (nm) { var z = _wz(bones[nm]); if (z != null && isFinite(z)) { s += z; n++; } });
+      return n ? s / n : null;
+    }
+    var boneZ = {};
+    [['Hips', ['Hips']], ['Head', ['Head']],
+     ['Shoulder', ['LeftShoulder', 'RightShoulder']],
+     ['Arm', ['LeftArm', 'RightArm']],
+     ['ForeArm', ['LeftForeArm', 'RightForeArm']],
+     ['Hand', ['LeftHand', 'RightHand']],
+     ['UpLeg', ['LeftUpLeg', 'RightUpLeg']],
+     ['Leg', ['LeftLeg', 'RightLeg']],
+     ['Foot', ['LeftFoot', 'RightFoot']]].forEach(function (e) {
+      var z = _avgZ(e[1]);
+      if (z != null) boneZ[e[0]] = z;
+    });
+    /* Z từng bên (không trung bình): tư thế file có thể lệch 2 bên
+       (Thiếu Lâm: bàn chân trái Z=+0,011, phải Z=−0,136 — trung bình
+       −0,063 lệch cả 2 chân ~7cm). boneWorldPositions ưu tiên key
+       từng bên, fallback về trung bình nhóm. */
+    Object.keys(bones).forEach(function (nm) {
+      var z = _wz(bones[nm]);
+      if (z != null) boneZ[nm] = z;
+    });
+    if (Object.keys(boneZ).length) out.boneZ = boneZ;
+    if (!Object.keys(out).length) return null;
+    return out;
+  }
 
   /* ---------- Vị trí world của từng xương, từ landmark ----------
      opts (mới, tab Smart — toàn bộ mặc định giữ hành vi cũ):
@@ -392,29 +536,43 @@
     var H = lm.H, cx = lm.cx;
     /* useDepth: tâm Z đo từ mesh; mặc định cz của bbox center (như cũ) */
     var cz = (opts.useDepth && lm.depthCz != null) ? lm.depthCz : lm.cz;
+    /* VÒNG SỬA GHOST LỆCH Y (2026-11-27 ~14:23): Z theo nhóm xương
+       thật (lm.boneZ, chỉ có khi model đã rig — đo ở
+       landmarksFromBones). Không có boneZ (model chưa rig) thì cz +
+       offset template như cũ, rigging không đổi. */
+    var bz = lm.boneZ || {};
+    var zOf = function (key, fallback) {
+      var z = bz[key];
+      return (z != null && isFinite(z)) ? z : fallback;
+    };
     var groin = lm.groinY, shoulder = lm.shoulderY, chin = lm.chinY;
     var elbow = lm.elbowY, wrist = lm.wristY, knee = lm.kneeY, ankle = lm.ankleY;
     var sw = lm.shoulderWidth, ax = lm.armX, fx = lm.foreX, hx = lm.handX, hipX = lm.hipX;
+    /* Bàn chân X đo riêng (footX, chỉ có khi đo từ xương) — không có
+       thì dùng X hông như cũ. */
+    var footX = (lm.footX != null && isFinite(lm.footX)) ? lm.footX : hipX;
     var V = function (x, y, z) { return new THREE.Vector3(x, y, z); };
     var fingerLen = Math.max(0.02, H * 0.035);
     var fwd = 0.02 * H;   /* ngón tay hơi chếch về trước (+Z) */
     var pos = {};
-    pos.Hips = V(cx, groin, cz);
-    pos.Spine = V(cx, groin + 0.06 * H, cz);
-    pos.Spine1 = V(cx, groin + 0.12 * H, cz);
-    pos.Spine2 = V(cx, shoulder - 0.03 * H, cz);
-    pos.Neck = V(cx, chin - 0.02 * H, cz);
-    pos.Head = V(cx, chin + 0.03 * H, cz);
-    pos.HeadTop_End = V(cx, lm.headTopY, cz);
-    /* tay trái (-X) / phải (+X) — mặt nhân vật hướng +Z */
-    pos.LeftShoulder = V(cx - sw, shoulder, cz);
-    pos.LeftArm = V(cx - ax, shoulder - 0.02 * H, cz);
-    pos.LeftForeArm = V(cx - fx, elbow, cz + 0.005 * H);
-    pos.LeftHand = V(cx - hx, wrist, cz + 0.01 * H);
-    pos.RightShoulder = V(cx + sw, shoulder, cz);
-    pos.RightArm = V(cx + ax, shoulder - 0.02 * H, cz);
-    pos.RightForeArm = V(cx + fx, elbow, cz + 0.005 * H);
-    pos.RightHand = V(cx + hx, wrist, cz + 0.01 * H);
+    pos.Hips = V(cx, groin, zOf('Hips', cz));
+    pos.Spine = V(cx, groin + 0.06 * H, zOf('Hips', cz));
+    pos.Spine1 = V(cx, groin + 0.12 * H, zOf('Hips', cz));
+    pos.Spine2 = V(cx, shoulder - 0.03 * H, zOf('Hips', cz));
+    pos.Neck = V(cx, chin - 0.02 * H, zOf('Head', cz));
+    pos.Head = V(cx, chin + 0.03 * H, zOf('Head', cz));
+    pos.HeadTop_End = V(cx, lm.headTopY, zOf('Head', cz));
+    /* tay trái (-X) / phải (+X) — mặt nhân vật hướng +Z.
+       Z ưu tiên từng bên (boneZ['LeftHand']...), fallback trung bình
+       nhóm rồi cz + offset template. */
+    pos.LeftShoulder = V(cx - sw, shoulder, zOf('LeftShoulder', zOf('Shoulder', cz)));
+    pos.LeftArm = V(cx - ax, shoulder - 0.02 * H, zOf('LeftArm', zOf('Arm', cz)));
+    pos.LeftForeArm = V(cx - fx, elbow, zOf('LeftForeArm', zOf('ForeArm', cz + 0.005 * H)));
+    pos.LeftHand = V(cx - hx, wrist, zOf('LeftHand', zOf('Hand', cz + 0.01 * H)));
+    pos.RightShoulder = V(cx + sw, shoulder, zOf('RightShoulder', zOf('Shoulder', cz)));
+    pos.RightArm = V(cx + ax, shoulder - 0.02 * H, zOf('RightArm', zOf('Arm', cz)));
+    pos.RightForeArm = V(cx + fx, elbow, zOf('RightForeArm', zOf('ForeArm', cz + 0.005 * H)));
+    pos.RightHand = V(cx + hx, wrist, zOf('RightHand', zOf('Hand', cz + 0.01 * H)));
     /* ngón tay: từ bàn tay đi xuống + hơi ra ngoài */
     var fingers = function (side, handPos, sgn) {
       var base = handPos;
@@ -440,14 +598,14 @@
     Object.keys(fl).forEach(function (k) { pos[k] = fl[k]; });
     Object.keys(fr).forEach(function (k) { pos[k] = fr[k]; });
     /* chân */
-    pos.LeftUpLeg = V(cx - hipX, groin - 0.03 * H, cz);
-    pos.LeftLeg = V(cx - hipX, knee, cz + 0.005 * H);
-    pos.LeftFoot = V(cx - hipX, ankle, cz + 0.01 * H);
-    pos.LeftToeBase = V(cx - hipX, ankle - 0.008 * H, cz + 0.06 * H);
-    pos.RightUpLeg = V(cx + hipX, groin - 0.03 * H, cz);
-    pos.RightLeg = V(cx + hipX, knee, cz + 0.005 * H);
-    pos.RightFoot = V(cx + hipX, ankle, cz + 0.01 * H);
-    pos.RightToeBase = V(cx + hipX, ankle - 0.008 * H, cz + 0.06 * H);
+    pos.LeftUpLeg = V(cx - hipX, groin - 0.03 * H, zOf('LeftUpLeg', zOf('UpLeg', cz)));
+    pos.LeftLeg = V(cx - hipX, knee, zOf('LeftLeg', zOf('Leg', cz + 0.005 * H)));
+    pos.LeftFoot = V(cx - footX, ankle, zOf('LeftFoot', zOf('Foot', cz + 0.01 * H)));
+    pos.LeftToeBase = V(cx - footX, ankle - 0.008 * H, zOf('LeftFoot', zOf('Foot', cz + 0.01 * H)) + 0.05 * H);
+    pos.RightUpLeg = V(cx + hipX, groin - 0.03 * H, zOf('RightUpLeg', zOf('UpLeg', cz)));
+    pos.RightLeg = V(cx + hipX, knee, zOf('RightLeg', zOf('Leg', cz + 0.005 * H)));
+    pos.RightFoot = V(cx + footX, ankle, zOf('RightFoot', zOf('Foot', cz + 0.01 * H)));
+    pos.RightToeBase = V(cx + footX, ankle - 0.008 * H, zOf('RightFoot', zOf('Foot', cz + 0.01 * H)) + 0.05 * H);
     /* Vị trí twist bones: luôn tính (dù opts.twist tắt thì skeleton
        không dùng tới) để SYMM_PAIRS (có cặp twist) không chạm phải
        vị trí undefined khi đối xứng hoá. */
@@ -1008,6 +1166,7 @@
   /* Test hooks */
   AutoRigPro._test = {
     measureLandmarks: measureLandmarks,
+    landmarksFromBones: landmarksFromBones,
     buildSkeleton: buildSkeleton,
     bindSkin: bindSkin,
     hasRig: hasRig,

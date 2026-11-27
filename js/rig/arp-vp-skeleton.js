@@ -510,13 +510,14 @@
       try { h.helper.visible = h.wasVisible; } catch (e) {}
     });
   }
-  /* VÒNG ĐỒNG BỘ SKELETON (2026-11-27): tập hiển thị = KHỚP CHUẨN
-   * (canonical — bộ trái/ghost làm chuẩn, đã mirror + căn Hips về
-   * Hips thật) thay vì xương thật. Nhờ đó VP skeleton / select /
-   * labels / IK / Animator đều hiện CÙNG 1 hierarchy, gắn vào model
-   * root qua attach() nên tự theo model (dời/xoay/scale), pose sync
-   * mỗi frame theo xương thật cùng tên. Fallback xương thật khi
-   * module chia sẻ chưa load hoặc chưa có khớp chuẩn. */
+  /* VÒNG GIỮ XƯƠNG GỐC (2026-11-27 ~14:19): tập hiển thị = KHỚP
+   * CHUẨN = XƯƠNG THẬT trong file gốc (không mirror, không template
+   * ghost). Nhờ đó VP skeleton / select / labels / IK / Animator
+   * đều hiện CÙNG 1 hierarchy, gắn vào model root qua attach() nên
+   * tự theo model (dời/xoay/scale), pose sync mỗi frame theo xương
+   * thật cùng tên. Fallback xương thật khi module chia sẻ chưa load
+   * hoặc chưa có khớp chuẩn. Ghost Smart là lớp RIÊNG (tắt mặc
+   * định), không đồng bộ cờ với display này nữa. */
   function _displayFound(target) {
     try {
       var PS = _PS();
@@ -953,18 +954,9 @@
     }
     _settings.visible = true;
     _state.visible = true;
-    /* VÒNG ĐỒNG BỘ: giữ cờ ghost của Smart tab đồng bộ với display
-       (nút Ghost trên toolbar đọc ghost.visible; phím B / nút Xương
-       đi qua show()/hide() này). Chỉ mirror ở mode ghost. */
-    try {
-      var PSm = _PS();
-      var SHm = PSm && PSm.ArpSharedSkeleton;
-      var SMm = PSm && PSm.ArpSmart;
-      if (SHm && SMm && SMm.ghost && typeof SHm.getCanonicalInfo === 'function') {
-        var infoM = SHm.getCanonicalInfo();
-        if (infoM && infoM.mode === 'ghost') SMm.ghost.visible = true;
-      }
-    } catch (e) {}
+    /* VÒNG GIỮ XƯƠNG GỐC: ghost Smart là lớp hiển thị RIÊNG (tắt
+       mặc định khi có xương thật) — KHÔNG đồng bộ cờ ghost với
+       display xương thật này nữa. */
     /* Hiện tay (toolbar/B/preset-show) → xóa cờ tắt-tay của model này. */
     if (resolved && resolved.uuid && _manualHiddenFor === resolved.uuid) _manualHiddenFor = null;
     _setPartsVisible(true);
@@ -998,16 +990,8 @@
     if (manual && _state.target && _state.target.uuid) _manualHiddenFor = _state.target.uuid;
     _settings.visible = false;
     _state.visible = false;
-    /* VÒNG ĐỒNG BỘ: mirror cờ ghost (chỉ mode ghost) — xem show(). */
-    try {
-      var PSh = _PS();
-      var SHh = PSh && PSh.ArpSharedSkeleton;
-      var SMh = PSh && PSh.ArpSmart;
-      if (SHh && SMh && SMh.ghost && typeof SHh.getCanonicalInfo === 'function') {
-        var infoH = SHh.getCanonicalInfo();
-        if (infoH && infoH.mode === 'ghost') SMh.ghost.visible = false;
-      }
-    } catch (e) {}
+    /* VÒNG GIỮ XƯƠNG GỐC: ghost Smart là lớp riêng — hide() display
+       xương thật không tắt ghost, và ngược lại. */
     _setPartsVisible(false);
     _restoreHelpers(); /* trả lại SkeletonHelper có sẵn cho user */
     _saveSettings();

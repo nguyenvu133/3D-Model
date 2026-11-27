@@ -30,44 +30,41 @@
  *    getMainModel; animator: _target→Anim→getMainModel) nên khi có
  *    nhiều model / control rig, các lớp có thể bám 2 model khác nhau.
  *
- * QUYẾT ĐỊNH CỦA USER (2026-11-27 ~13:09, coordinator chuyển):
- * lấy bộ TRÁI (ghost) làm CHUẨN (canonical) cho vòng này.
+ * QUYẾT ĐỊNH CỦA USER (2026-11-27 ~14:19, thay thế quyết định
+ * 13:09 lấy ghost làm chuẩn): GIỮ NGUYÊN XƯƠNG GỐC KHI IMPORT —
+ * chuẩn hiển thị = XƯƠNG THẬT trong file gốc, 0 biến dạng, không
+ * mirror, không re-root, không template. Ghost KHÔNG còn làm chuẩn.
  *
- * CÁCH ĐO ĐÚNG (theo phát hiện nhóm A + file chuẩn
- * ~/workspace/.test-fbx/skelsync-left-canonical.json):
- *  • Ghost và model CÙNG world frame → so world tuyệt đối được,
- *    NHƯNG phải tách sai số HỆ THỐNG khỏi sai số đồng bộ: phép biến
- *    đổi chuẩn = MIRROR X qua tâm model (ghost đặt tay trái ở -X,
- *    file Mixamo đặt tay trái ở +X) + CĂN Hips ghost về Hips thật.
- *    Sau phép đó mới đo: khớp ≤1mm = sai số ĐỒNG BỘ (display vs
- *    canonical); phần còn lại là SAI SỐ HỆ THỐNG đã ghi rõ (Head
- *    +3.6cm Y / +7.3cm Z do tỉ lệ template vs chibi; tay ±33cm do
- *    ghost T-pose còn xương thật tay xuôi; chân template dài hơn
- *    ~51cm do groinY theo tỉ lệ người thường, chibi Hips chỉ
- *    0.571m). Lấy ghost làm chuẩn = ép về tỉ lệ template (user đã
- *    được báo giới hạn này).
- *  • QUYẾT ĐỊNH MIRROR (ghi rõ): mirror X qua tâm model để xương
- *    CÙNG TÊN trùng phía giải phẫu (ghost-LeftHand ↔ file-LeftHand).
- *    Không mirror thì ghost-LeftHand sẽ nằm lên tay PHẢI nhân vật.
- *  • Target Head = 24.0cm (ghost Head→HeadTop_End), KHÔNG phải
- *    82.1cm (file). 7 xương ngón ghost không có đối tác thật
- *    (Middle1/2, Ring1/2, Pinky1 mỗi tay — file chỉ có Thumb +
- *    Index, nhưng Index/Thumb 4 đốt): VẪN HIỆN trong display
- *    canonical (vị trí từ ghost, theo chuyển động tay cha); 8 đốt
- *    ngón thừa của file (Thumb3/4, Index3/4 mỗi tay) + Toe_End ×2
- *    KHÔNG có trong display canonical (không có đối tác ghost) —
- *    vẫn nằm trong skeleton thật (skin/export).
+ * BỔ SUNG (2026-11-27 ~14:20): "ko bỏ ghost mà tắt đi thôi" —
+ * KHÔNG XÓA ghost: code + tính năng + group __arp_ghost__ + nút
+ * bật/tắt giữ nguyên; ghost chỉ TẮT HIỂN THỊ mặc định khi model đã
+ * có skeleton thật, user bật lại được bất cứ lúc nào bằng nút Ghost
+ * có sẵn; ghost là lớp hiển thị RIÊNG, không lái canonical nữa.
+ * CÁCH ĐO ĐÚNG (2026-11-27 ~14:19): khớp hiển thị so TRỰC TIẾP
+ * với vị trí world của XƯƠNG THẬT cùng tên trong file gốc, ≤1mm.
+ * Không mirror, không căn Hips: tay trái file ở +X thì hiển thị ở
+ * +X; Hips thật Y=0,571 thì hiển thị Y=0,571 (không kéo về 1,125
+ * của template). Dữ liệu gốc lỗi (HeadTop_End 82,06cm, ngón trỏ
+ * phải bay) HIỂN THỊ ĐÚNG NHƯ FILE, chỉ cảnh báo.
  *
  * THIẾT KẾ:
  *  • getSharedSkeleton(): 1 bộ xương thật (bone set) cho mọi module
  *    (skin/clip vẫn dùng xương thật — không đụng skinning).
- *  • getCanonicalReference(): dữ liệu chuẩn TRÁI — vị trí ghost đã
- *    qua mirror + căn Hips, kèm residuals vs xương thật (minh bạch).
+ *  • getCanonicalReference(): chuẩn = CHÍNH XƯƠNG THẬT (mode
+ *    'bones' duy nhất): vị trí khớp = vị trí world xương thật cùng
+ *    tên, residuals = 0, không mirror/re-root. Ghost template chỉ
+ *    được ĐO để báo cáo độ lệch (minh bạch), không dùng làm chuẩn.
+ *  • canonicalize(): IDENTITY đối với xương thật — giữ nguyên vị
+ *    trí đầu vào, mirrorApplied=false, reRoot=0. Giữ lại hàm để
+ *    harness/caller cũ không vỡ, nhưng không còn phép biến đổi nào.
  *  • ensureCanonicalJoints(): MỘT hierarchy Object3D duy nhất
  *    (__arp_canonical_skeleton__, con của model root qua attach()
  *    nên TỰ ĐI THEO model) — VP skeleton/select/labels/IK/trails
  *    đều đọc khớp từ đây; pose sync mỗi frame copy world quaternion
  *    của xương thật cùng tên (giữ đúng tư thế khi phát clip).
+ *  • Ghost (Smart, __arp_ghost__): lớp hiển thị RIÊNG, mặc định ẨN
+ *    khi model có xương thật (tắt ở model:loaded), bật lại bằng nút
+ *    Ghost; KHÔNG lái canonical, KHÔNG đổi vị trí xương thật.
  *  • detectMisplacedFingers()/fixMisplacedFingers(): ngón lệch
  *    >0.2m Y so với tay (file này: RightHandIndex1/2/3 ở Y 1.055 /
  *    1.135 / 1.202 thay vì ~0.73) — báo UI, mặc định GIỮ NGUYÊN
@@ -91,7 +88,7 @@
   };
   var _canonical = {
     targetUuid: null, group: null, joints: {}, /* stripped -> Object3D */
-    mode: null, /* 'ghost' | 'bones' */
+    mode: null, /* 'bones' (duy nhất — chuẩn = xương thật) */
     mirrorApplied: false, reRoot: null, residuals: {}, warnings: []
   };
   var _changeListeners = [];
@@ -278,14 +275,11 @@
     return true;
   }
 
-  /* ---------- dữ liệu ghost (bộ TRÁI) ----------
-   * Ưu tiên tính MỚI từ landmark hiện tại qua ArpSmart._ghostPositions
-   * (landmark đã được đo lại cho model mới qua refreshLandmarks khi
-   * model:loaded) — cache ghost.jointPositions có thể là số đo của
-   * MODEL CŨ (refreshLandmarks chỉ đổi landmarks, không đổi cache);
-   * dùng cache cho model mới sẽ cho tỉ lệ sai (vd model 1,5m vẫn lấy
-   * Head 24cm của model 2m). Cache chỉ là fallback khi chưa tính mới
-   * được (chưa có landmark). */
+  /* ---------- dữ liệu ghost (chỉ để ĐO + BÁO CÁO độ lệch) ----------
+   * VÒNG GIỮ XƯƠNG GỐC: ghost KHÔNG còn làm chuẩn — dữ liệu này chỉ
+   * dùng để tính warning "template lệch bao nhiêu so với xương thật"
+   * trong getCanonicalReference, và để Smart tab hiển thị ghost
+   * riêng. Không dùng vị trí ghost để dựng/dời khớp chuẩn nữa. */
   function _ghostData(target) {
     var S = null;
     try { S = (typeof window !== 'undefined' && window.PixiStudio && window.PixiStudio.ArpSmart) || PS.ArpSmart; } catch (e) {}
@@ -305,18 +299,21 @@
     return null;
   }
 
-  /* ---------- phép biến đổi chuẩn (PURE — harness test trực tiếp) ----------
-   * Vào: ghostPositions {name:{x,y,z}} (world, template), pairs,
-   *   cx (tâm X model, world), realHipsWorld {x,y,z} (hoặc null).
+  /* ---------- phép biến đổi chuẩn (PURE — harness test trực tiếp)
+   * VÒNG GIỮ XƯƠNG GỐC (2026-11-27 ~14:19): canonicalize() là
+   * IDENTITY — trả lại đúng vị trí đầu vào, KHÔNG mirror X, KHÔNG
+   * re-root Hips, KHÔNG đổi tỉ lệ. Đầu vào ở vòng này là vị trí
+   * world của XƯƠNG THẬT (không phải template ghost), nên identity
+   * = giữ nguyên xương gốc từng mm. Giữ nguyên chữ ký hàm (pos,
+   * pairs, cx, realHipsWorld) để caller/harness cũ không vỡ; các
+   * tham số cx/realHipsWorld được ghi nhận nhưng KHÔNG dùng để dời
+   * khớp nữa (reRoot luôn 0, mirrorApplied luôn false).
+   * Vào: positions {name:{x,y,z}} (world, xương thật), pairs.
    * Ra: joints {name:{x,y,z,parent,child,length,hasReal}},
-   *   mirrorApplied (luôn true khi có cx), reRoot {x,y,z} (độ dời
-   *   Hips ghost → Hips thật; 0 khi không có xương thật),
-   *   residuals chỉ là dữ liệu (tính ở getCanonicalReference).
-   * Mirror X qua cx: x' = 2*cx - x (ghost-Left ↔ file-Left).
-   * Re-root: + (realHips - mirroredGhostHips) cho mọi khớp. */
-  function canonicalize(ghostPositions, pairs, cx, realHipsWorld) {
-    var pos = ghostPositions || {};
-    var out = { joints: {}, mirrorApplied: true, reRoot: { x: 0, y: 0, z: 0 }, cx: cx };
+   *   mirrorApplied=false, reRoot={0,0,0}, cx (chỉ để tham khảo). */
+  function canonicalize(positions, pairs, cx, realHipsWorld) {
+    var pos = positions || {};
+    var out = { joints: {}, mirrorApplied: false, reRoot: { x: 0, y: 0, z: 0 }, cx: cx };
     var parentOf = {};
     var childOf = {};
     (pairs || []).forEach(function (pr) {
@@ -324,30 +321,16 @@
     });
     var names = Object.keys(pos);
     if (!names.length) return out;
-    var mx = (typeof cx === 'number' && isFinite(cx)) ? cx : 0;
-    var mirrored = {};
     names.forEach(function (n) {
       var p = pos[n];
       if (!p) return;
-      mirrored[n] = { x: 2 * mx - (+p.x || 0), y: +p.y || 0, z: +p.z || 0 };
-    });
-    var hips = mirrored.Hips || mirrored[names[0]];
-    if (realHipsWorld && hips) {
-      out.reRoot = {
-        x: (+realHipsWorld.x || 0) - hips.x,
-        y: (+realHipsWorld.y || 0) - hips.y,
-        z: (+realHipsWorld.z || 0) - hips.z
-      };
-    }
-    names.forEach(function (n) {
-      var m = mirrored[n];
       var j = {
-        x: m.x + out.reRoot.x, y: m.y + out.reRoot.y, z: m.z + out.reRoot.z,
-        parent: parentOf[n] || null, child: childOf[n] || null, length: null, hasReal: false
+        x: +p.x || 0, y: +p.y || 0, z: +p.z || 0,
+        parent: parentOf[n] || null, child: childOf[n] || null, length: null, hasReal: true
       };
-      if (j.child && mirrored[j.child]) {
-        var c = mirrored[j.child];
-        var dx = (c.x + out.reRoot.x) - j.x, dy = (c.y + out.reRoot.y) - j.y, dz = (c.z + out.reRoot.z) - j.z;
+      if (j.child && pos[j.child]) {
+        var c = pos[j.child];
+        var dx = (+c.x || 0) - j.x, dy = (+c.y || 0) - j.y, dz = (+c.z || 0) - j.z;
         j.length = Math.sqrt(dx * dx + dy * dy + dz * dz);
       }
       out.joints[n] = j;
@@ -388,63 +371,22 @@
     return null;
   }
 
-  /* ---------- canonical reference (bộ TRÁI làm chuẩn) ---------- */
+  /* ---------- canonical reference: CHUẨN = XƯƠNG THẬT (duy nhất)
+   * VÒNG GIỮ XƯƠNG GỐC (2026-11-27 ~14:19): không còn mode 'ghost'.
+   * Khớp chuẩn = vị trí world của xương thật cùng tên trong file
+   * gốc (không mirror, không re-root, không template): residuals
+   * luôn 0, ghostOnly/realOnly luôn rỗng. Ghost template (nếu có)
+   * chỉ được ĐO để báo cáo độ lệch cho minh bạch — KHÔNG dùng làm
+   * chuẩn, KHÔNG hiện thay xương thật. */
   function getCanonicalReference(target) {
     var shared = getSharedSkeleton(target);
     var resolved = (shared && shared.target) || resolveTarget(target);
     if (!resolved) return { ok: false, reason: 'no-target' };
     var realBones = (shared && shared.ok) ? shared.bones : [];
-    var realByName = {};
-    realBones.forEach(function (b) { realByName[stripName(b.name)] = b; });
-    var realHips = realByName.Hips ? _worldPosOf(realByName.Hips) : null;
-    var cx = _modelCenterX(resolved);
-    var gd = _ghostData(resolved);
-    var warnings = [];
-    if (gd && gd.pos && Object.keys(gd.pos).length >= 5) {
-      var canon = canonicalize(gd.pos, gd.pairs, cx, realHips);
-      var residuals = {};
-      Object.keys(canon.joints).forEach(function (n) {
-        var rb = realByName[n];
-        canon.joints[n].hasReal = !!rb;
-        if (rb) {
-          var rw = _worldPosOf(rb);
-          var j = canon.joints[n];
-          var dx = j.x - rw.x, dy = j.y - rw.y, dz = j.z - rw.z;
-          residuals[n] = {
-            dx: dx, dy: dy, dz: dz,
-            dist: Math.sqrt(dx * dx + dy * dy + dz * dz),
-            /* residual sau phép chuẩn (mirror + căn Hips): đo theo
-               frame Hips-tương-đối, không phải world tuyệt đối. */
-            relDx: (j.x - canon.joints.Hips.x) - (rw.x - (realHips ? realHips.x : 0)),
-            relDy: (j.y - canon.joints.Hips.y) - (rw.y - (realHips ? realHips.y : 0)),
-            relDz: (j.z - canon.joints.Hips.z) - (rw.z - (realHips ? realHips.z : 0))
-          };
-        }
-      });
-      /* Ghost-only (không đối tác thật) + real-only (không đối tác ghost). */
-      var ghostOnly = [], realOnly = [];
-      Object.keys(canon.joints).forEach(function (n) { if (!realByName[n]) ghostOnly.push(n); });
-      realBones.forEach(function (b) {
-        var s = stripName(b.name);
-        if (!canon.joints[s]) realOnly.push(s);
-      });
-      if (ghostOnly.length) warnings.push('Ghost có ' + ghostOnly.length + ' xương không có đối tác thật (' + ghostOnly.slice(0, 6).join(', ') + (ghostOnly.length > 6 ? '…' : '') + ') — vẫn hiện theo tay cha.');
-      if (realOnly.length) warnings.push('File có ' + realOnly.length + ' xương không có đối tác ghost (' + realOnly.slice(0, 6).join(', ') + (realOnly.length > 6 ? '…' : '') + ') — vẫn nằm trong skeleton thật, không hiện ở display chuẩn.');
-      if (residuals.Head && residuals.Head.dist > 0.05) {
-        warnings.push('Head ghost dài ' + (canon.joints.Head.length != null ? (canon.joints.Head.length * 100).toFixed(1) : '?') +
-          'cm, file dài ' + ((realByName.HeadTop_End || realByName.Head) && realByName.Head && _boneChildLen(realByName.Head)) +
-          ' — đoạn 82cm của file là dữ liệu gốc lỗi (xương bay trên đầu).');
-      }
-      return {
-        ok: true, mode: 'ghost', target: resolved, targetUuid: resolved.uuid,
-        joints: canon.joints, mirrorApplied: true, cx: cx, reRoot: canon.reRoot,
-        residuals: residuals, warnings: warnings, ghostOnly: ghostOnly, realOnly: realOnly,
-        boneCount: Object.keys(canon.joints).length
-      };
-    }
-    /* Không có ghost: chuẩn = chính xương thật (bones mode). */
     if (!realBones.length) return { ok: false, reason: 'no-skeleton', target: resolved };
+    var cx = _modelCenterX(resolved);
     var joints = {};
+    var residuals = {};
     realBones.forEach(function (b) {
       var s = stripName(b.name);
       var w = _worldPosOf(b);
@@ -461,11 +403,32 @@
         child: kids.length ? stripName(kids[0].name) : null,
         length: len, hasReal: true
       };
+      /* Chuẩn = xương thật nên residual = 0 theo định nghĩa. */
+      residuals[s] = { dx: 0, dy: 0, dz: 0, dist: 0, relDx: 0, relDy: 0, relDz: 0 };
     });
+    var warnings = [];
+    /* Đo ghost template (nếu có) CHỈ để báo cáo độ lệch — ghost
+       không còn làm chuẩn nên lệch bao nhiêu cũng không dời xương. */
+    var gd = null;
+    try { gd = _ghostData(resolved); } catch (e) { gd = null; }
+    if (gd && gd.pos) {
+      var maxGhostDiff = 0, worstGhost = '';
+      Object.keys(gd.pos).forEach(function (n) {
+        var j = joints[n];
+        var g = gd.pos[n];
+        if (!j || !g) return;
+        var d = Math.sqrt(Math.pow(g.x - j.x, 2) + Math.pow(g.y - j.y, 2) + Math.pow(g.z - j.z, 2));
+        if (d > maxGhostDiff) { maxGhostDiff = d; worstGhost = n; }
+      });
+      if (maxGhostDiff > 0.001) {
+        warnings.push('Ghost template lệch tối đa ' + (maxGhostDiff * 100).toFixed(1) + 'cm so với xương thật (@' + worstGhost +
+          ') — ghost KHÔNG làm chuẩn nữa, đã tắt mặc định (bật lại bằng nút Ghost); xương hiển thị = xương thật trong file gốc.');
+      }
+    }
     return {
       ok: true, mode: 'bones', target: resolved, targetUuid: resolved.uuid,
       joints: joints, mirrorApplied: false, cx: cx, reRoot: { x: 0, y: 0, z: 0 },
-      residuals: {}, warnings: ['Chưa có ghost (chưa Guess Markers) — chuẩn tạm = xương thật.'], ghostOnly: [], realOnly: [],
+      residuals: residuals, warnings: warnings, ghostOnly: [], realOnly: [],
       boneCount: Object.keys(joints).length
     };
   }
@@ -618,34 +581,14 @@
     };
   }
 
-  /* Cập nhật vị trí khớp chuẩn từ dữ liệu ghost mới (kéo marker /
-   * regenerate) — KHÔNG dựng lại hierarchy (giữ mesh VP đang gắn). */
+  /* Cập nhật vị trí khớp chuẩn từ dữ liệu ghost — KHÔNG CÒN ÁP DỤNG:
+   * VÒNG GIỮ XƯƠNG GỐC: ghost không lái canonical nữa nên hàm này
+   * luôn từ chối (không dời khớp nào). Kéo marker / regenerate chỉ
+   * đổi GHOST (lớp riêng của Smart, qua ArpSmart.updateGhost
+   * fallback dời khớp cầu __arp_ghost__), xương thật giữ nguyên.
+   * Giữ lại hàm + chữ ký để caller cũ không vỡ. */
   function updateCanonicalFromGhost(ghostPositions, pairs) {
-    if (!_canonical.group || !_canonical.joints) return { ok: false, reason: 'no-canonical' };
-    var THREE = _THREE();
-    if (!THREE) return { ok: false, reason: 'no-three' };
-    var ref = getCanonicalReference(_cache.target);
-    if (!ref.ok || ref.mode !== 'ghost') return { ok: false, reason: 'not-ghost-mode' };
-    var canon = canonicalize(ghostPositions || {}, pairs || [], ref.cx,
-      ref.joints.Hips ? { x: ref.joints.Hips.x, y: ref.joints.Hips.y, z: ref.joints.Hips.z } : null);
-    /* canonicalize đã căn Hips về Hips thật; ở đây chỉ đổi offset
-       cha→con (Hips giữ nguyên vị trí hiện tại trong model). */
-    Object.keys(canon.joints).forEach(function (n) {
-      var o = _canonical.joints[n];
-      var j = canon.joints[n];
-      if (!o || !j) return;
-      if (j.parent && canon.joints[j.parent]) {
-        var p = canon.joints[j.parent];
-        /* Offset trong frame local của cha (như lúc dựng): dùng world
-           quat hiện tại của khớp cha. */
-        var pq = new THREE.Quaternion();
-        try { _canonical.joints[j.parent].getWorldQuaternion(pq); } catch (e) { pq.identity(); }
-        var d = new THREE.Vector3(j.x - p.x, j.y - p.y, j.z - p.z);
-        d.applyQuaternion(pq.invert());
-        o.position.copy(d);
-      }
-    });
-    return { ok: true, updated: Object.keys(canon.joints).length };
+    return { ok: false, reason: 'ghost-not-canonical' };
   }
 
   /* Đồng bộ tư thế: khớp chuẩn copy world quaternion của xương thật
@@ -821,7 +764,20 @@
     return { ok: true, fixed: fixed, count: fixed.length };
   }
 
-  /* ---------- bus: model đổi / rig xong / dời model ---------- */
+  /* ---------- bus: model đổi / rig xong / dời model ----------
+   * VÒNG GIỮ XƯƠNG GỐC: model mới có xương thật → TẮT ghost mặc
+   * định (ArpSmart.hideGhost — chỉ ẩn group __arp_ghost__, KHÔNG
+   * xóa group/code; user bật lại bằng nút Ghost bất cứ lúc nào). */
+  function _hideSmartGhostIfReal() {
+    try {
+      var S = PS.ArpSmart;
+      if (!S || typeof S.hideGhost !== 'function') return false;
+      var shared = getSharedSkeleton();
+      if (!shared || !shared.ok || !shared.bones.length) return false;
+      S.hideGhost();
+      return true;
+    } catch (e) { return false; }
+  }
   function _bindBus() {
     if (_busBound) return true;
     var b = _bus();
@@ -846,6 +802,9 @@
           }
           /* Báo ngón lệch cho model mới (mặc định giữ nguyên). */
           try { checkFingerWarnings(resolveTarget()); } catch (e) {}
+          /* Ghost tắt mặc định khi model có xương thật (giữ xương
+             gốc làm chuẩn hiển thị duy nhất; ghost vẫn bật lại được). */
+          try { _hideSmartGhostIfReal(); } catch (e) {}
           /* Animator wire ở arp-animator.js (nó tự nghe model:loaded);
              ở đây chỉ emit lại để các lớp VP rebuild. */
           _emit('arp:shared-skeleton-changed', { reason: 'model:loaded', data: data || null });
