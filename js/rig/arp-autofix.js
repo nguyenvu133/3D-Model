@@ -10,7 +10,9 @@
  *       của Manager.normalize: cao chuẩn 2.0m, đáy y=0, giữa XZ —
  *       nhưng BAKE vào geometry/xương/clip để file FBX xuất ra
  *       giữ nguyên, vì Manager.normalize chỉ đổi scale/position
- *       của object root mà writer không bake theo).
+ *       của object root mà writer không bake theo). File xuất giữ
+ *       CHIỀU CAO GỐC (fixAxes ghi vào userData._autoFixSourceHeight,
+ *       lowPolyExport truyền targetHeight cho writer — sửa 2026-11-27).
  *   (b) Pivot về điểm đất giữa 2 bàn chân (từ 2 xương mắt cá
  *       Ankle L/R — Mixamo dùng LeftFoot/RightFoot; chưa rig thì
  *       từ 2 cụm đỉnh thấp nhất của mesh, chia theo X).
@@ -21,7 +23,8 @@
  *       pass tinh chỉnh dày 48Hz: Hips Y nội suy tuyến tính giữa
  *       2 key trong khi bàn chân cong phi tuyến nên ngón chân có
  *       thể lún ~3cm GIỮA 2 key — pass này chèn key Hips Y tại
- *       các mẫu 48Hz còn lún (key cũ không mất, X/Z không đổi).
+ *       các mẫu 48Hz còn lún (key cũ không mất, X/Z không đổi);
+ *       từ 2026-11-27 pass này CŨNG hạ Hips tại mẫu chân bay >+0,02m.
  *   (d) Low poly ~15.000 tris bằng MeshoptSimplifier (như nút
  *       "Tối ưu FBX": weld → decimate → compact → weld lại),
  *       GIỮ skeleton + skin weights + clips + texture; clip được
@@ -88,6 +91,50 @@
     } catch (e) { /* no bus: im lặng */ }
   }
   function san(name) { return String(name || '').replace(/^mixamorig:?/i, '').replace(/:/g, ''); }
+  /* F1 (2026-11-27): khớp track theo tên ĐÃ CHUẨN HOÁ — tên xương
+     'mixamorig:Hips' và tên track 'mixamorigHips' (clip từ Animator/
+     kênh load khác) phải khớp nhau; so sánh chính xác làm mọi thao
+     tác clip im lặng không làm gì. */
+  function trackNodeName(t) { var n = String((t && t.name) || ''); var d = n.lastIndexOf('.'); return d < 0 ? n : n.slice(0, d); }
+  function trackPropName(t) { var n = String((t && t.name) || ''); var d = n.lastIndexOf('.'); return d < 0 ? '' : n.slice(d + 1); }
+  function isRootTrack(t, rootBone) { return !!rootBone && san(trackNodeName(t)) === san(rootBone.name); }
+  /* CLIPBIND (2026-11-27): vá findNode của r128 để tên xương
+     'mixamorig:' bind đúng trong mixer (xem js/rig/arp-clipbind.js —
+     tự cài lúc load trong studio; gọi lại phòng hờ để groundClip /
+     refineGround đo đúng khi patch chưa kịp cài, vd Animator chưa
+     chạy). Không có ArpClipBind thì no-op; idempotent. */
+  function ensureClipBind() {
+    try {
+      var P = (typeof window !== 'undefined') ? window.PixiStudio : null;
+      if (P && P.ArpClipBind && typeof P.ArpClipBind.install === 'function') P.ArpClipBind.install();
+    } catch (e) {}
+  }
+  /* F1b (2026-11-27): đổi TÊN TRACK về tên xương thật — khớp tên chuẩn
+     hoá chỉ đủ cho thao tác trong module; three.js PropertyBinding
+     (và Blender/Mixamo khi đọc file xuất) tìm node theo tên CHÍNH
+     XÁC nên track 'mixamorigHips.position' KHÔNG bind được xương
+     'mixamorig:Hips' mà fallback im lặng về model root (cả model
+     xoay/trượt như vật cứng, Hips world xuống dưới đất). Đổi tên track
+     sang tên xương khi tên chuẩn hoá khớp nhau; tên đã khớp thì no-op.
+     Gọi ở đầu fixAxes + groundClips (trước mọi mixer). */
+  function normalizeTrackNames(clips, bones) {
+    if (!clips || !clips.length || !bones || !bones.length) return 0;
+    var bySan = {};
+    bones.forEach(function (b) { var s = san(b.name); if (s && !bySan[s]) bySan[s] = b.name; });
+    var renamed = 0;
+    clips.forEach(function (clip) {
+      (clip.tracks || []).forEach(function (t) {
+        var dot = String(t.name || '').lastIndexOf('.');
+        if (dot < 0) return;
+        var node = t.name.slice(0, dot);
+        var real = bySan[san(node)];
+        if (!real || real === node) return;
+        t.name = real + t.name.slice(dot);
+        renamed++;
+      });
+    });
+    return renamed;
+  }
   function r4(v) { return Math.round(v * 10000) / 10000; }
   function fmt3(v) { return '[' + r4(v[0]) + ', ' + r4(v[1]) + ', ' + r4(v[2]) + ']'; }
   function sanitizeName(name) {
@@ -181,7 +228,7 @@
     (clips || []).forEach(function (clip) {
       clip.tracks = clip.tracks.map(function (t) {
         var dot = t.name.lastIndexOf('.');
-        if (t.name.slice(0, dot) !== rootBone.name) return t;
+        if (!isRootTrack(t, rootBone)) return t; /* F1: khớp tên chuẩn hoá */
         var prop = t.name.slice(dot + 1);
         var times = Array.prototype.slice.call(t.times);
         if (prop === 'position') {
@@ -211,7 +258,7 @@
     (clips || []).forEach(function (clip) {
       clip.tracks.forEach(function (t) {
         var dot = t.name.lastIndexOf('.');
-        if (t.name.slice(0, dot) === rootBone.name && t.name.slice(dot + 1) === 'position') {
+        if (isRootTrack(t, rootBone) && t.name.slice(dot + 1) === 'position') { /* F1 */
           for (var i = 0; i < t.times.length; i++) {
             t.values[i * 3] += dx; t.values[i * 3 + 1] += dy; t.values[i * 3 + 2] += dz;
           }
@@ -223,7 +270,7 @@
     (clips || []).forEach(function (clip) {
       clip.tracks.forEach(function (t) {
         var dot = t.name.lastIndexOf('.');
-        if (t.name.slice(0, dot) === rootBone.name && t.name.slice(dot + 1) === 'position') {
+        if (isRootTrack(t, rootBone) && t.name.slice(dot + 1) === 'position') { /* F1 */
           for (var i = 0; i < t.times.length; i++) {
             t.values[i * 3] *= s; t.values[i * 3 + 1] *= s; t.values[i * 3 + 2] *= s;
           }
@@ -374,8 +421,14 @@
     var bones = findBones(model);
     var rootBone = findRootBone(bones);
     var clips = getClips(model);
+    var tracksRenamed = normalizeTrackNames(clips, bones); /* F1b */
     var det = detectUpAxis(mesh, bones);
     var heightBefore = det.up === 'Z' ? det.extents[2] : det.extents[1];
+    /* F2 (2026-11-27): giữ chiều cao GỐC để file xuất không bị ép về
+       2,0m — chỉ ghi lần đầu (chạy lại lần 2 heightBefore đã là 2,0m
+       nên không ghi đè); model trong scene vẫn hiển thị 2,0m. */
+    if (!model.userData) model.userData = {};
+    if (model.userData._autoFixSourceHeight == null) model.userData._autoFixSourceHeight = r4(heightBefore);
     var applied = false, angleDeg = 0, why = '';
     if (det.up === 'Z') {
       /* Hướng xoay: đầu ở -Z -> Rx(+90°); đầu ở +Z -> Rx(-90°) để đầu lên +Y */
@@ -408,6 +461,17 @@
     }
     var normHow = normalizeObject(model);
     var bake = bakeRootTransform(model, mesh, rootBone, clips);
+    /* F7 (2026-11-27): bake fail thì DỪNG TO — chạy tiếp sẽ xuất file
+       sai scale/offset im lặng (runAll đã dừng khi axes fail). */
+    if (!bake.baked) {
+      return {
+        ok: false, step: 'axes', reason: 'bake-failed',
+        detectedUp: det.up, detectHow: det.how,
+        heightBefore: r4(heightBefore), sourceHeight: model.userData._autoFixSourceHeight,
+        normalizeHow: normHow, baked: false, bakeReason: bake.reason || null,
+        message: 'Dừng ở bước (a): không bake được transform của root vào geometry/xương/clip (' + (bake.reason || 'bake-failed') + ') — file xuất sẽ sai scale/offset nên không chạy tiếp. Hãy kiểm tra lại cấu trúc model (root bone phải nằm dưới model root, chuỗi cha không chứa xương khác).'
+      };
+    }
     var adj = contentAdjust(model, mesh, bones, rootBone, clips);
     mesh.geometry.computeBoundingBox();
     var bb2 = mesh.geometry.boundingBox;
@@ -415,8 +479,10 @@
       ok: true, step: 'axes',
       detectedUp: det.up, detectHow: det.how,
       applied: applied, angleDeg: angleDeg, rotateWhy: why,
+      tracksRenamed: tracksRenamed,
       heightBefore: r4(heightBefore),
       heightAfter: r4(bb2.max.y - bb2.min.y),
+      sourceHeight: model.userData._autoFixSourceHeight,
       minYAfter: r4(bb2.min.y),
       normalizeHow: normHow, baked: bake.baked, bakeReason: bake.reason || null,
       contentAdjust: adj,
@@ -541,6 +607,7 @@
     var bones = findBones(model);
     var rootBone = findRootBone(bones);
     var clips = getClips(model);
+    normalizeTrackNames(clips, bones); /* F1b */
     var feet = findFeet(model, mesh, bones);
     if (!feet.ok) {
       return {
@@ -583,12 +650,21 @@
     var toe = bones.filter(function (b) { return /toe/i.test(san(b.name)); });
     return { foot: foot, toe: toe, all: foot.concat(toe) };
   }
-  function buildFootClass(mesh, footBones) {
+  /* Bán kính phân lớp bàn chân (m, như recipe Standard Character —
+     hiệu chuẩn cho nhân vật cao ~2.0m). Khi đo trên file đã xuất
+     (cao = chiều cao GỐC, vd 1.13m — xem F2), bán kính phải scale
+     theo cao (radius = 0.15 * height/2.0) nếu không sẽ nhặt cả đỉnh
+     cẳng chân/robe dính weight bàn chân (lỗi skinning gốc, đỉnh đó
+     lún tới -0.11m trong clip Attack ngồi xổm — không phải lỗi
+     ground; đo ở vòng fix 2026-11-27). Trong module, model luôn
+     được chuẩn hoá về 2.0m trước khi ground nên mặc định 0.15. */
+  function buildFootClass(mesh, footBones, radius) {
     var geo = mesh.geometry;
     var posA = geo.attributes.position.array;
     var nVerts = geo.attributes.position.count;
     var wp = new (getThree()).Vector3();
     var joints = footBones.map(function (b) { b.getWorldPosition(wp); return wp.clone(); });
+    var R = (typeof radius === 'number' && radius > 0) ? radius : FOOT_CLASS_RADIUS;
     var footClass = new Uint8Array(nVerts);
     var cnt = 0;
     for (var vi = 0; vi < nVerts; vi++) {
@@ -596,7 +672,7 @@
       for (var j = 0; j < joints.length; j++) {
         var d = joints[j];
         var ddx = px - d.x, ddy = py - d.y, ddz = pz - d.z;
-        if (ddx * ddx + ddy * ddy + ddz * ddz <= FOOT_CLASS_RADIUS * FOOT_CLASS_RADIUS) { footClass[vi] = 1; cnt++; break; }
+        if (ddx * ddx + ddy * ddy + ddz * ddz <= R * R) { footClass[vi] = 1; cnt++; break; }
       }
     }
     return { footClass: footClass, count: cnt };
@@ -652,7 +728,7 @@
     var T = getThree();
     var newTracks = clip.tracks.map(function (t) {
       var dot = t.name.lastIndexOf('.');
-      if (t.name.slice(0, dot) !== rootBone.name || t.name.slice(dot + 1) !== 'position') return t;
+      if (!isRootTrack(t, rootBone) || t.name.slice(dot + 1) !== 'position') return t; /* F1 */
       var times = Array.prototype.slice.call(t.times);
       var vals = Array.prototype.slice.call(t.values);
       fixes.forEach(function (fx) {
@@ -673,10 +749,14 @@
      tính giữa 2 key trong khi bàn chân cong phi tuyến → ngón chân có
      thể lún ~3cm GIỮA 2 key (đo được ở Attack t≈1.15s). Quét dày
      48Hz, chèn key Hips Y tại mẫu còn lún < -0.008m, lặp tối đa
-     3 pass. Chỉ NÂNG Y (không hạ) nên không tạo thêm điểm lún mới. */
+     3 pass. Chỉ NÂNG Y (không hạ) nên không tạo thêm điểm lún mới.
+     F4 (2026-11-27): mirror cho trường hợp BAY — mẫu nào sole
+     > +0.02m (chân bay giữa 2 key do nội suy) thì chèn key HẠ Hips Y
+     để sole về 0 (cùng cơ chế insertRootKeys, chung cap key/pass);
+     nếu không, file v2f còn 12/287 frame bay +0,021..+0,078m. */
   function refineGround(model, mesh, rootBone, clip, footClass, skinnedMinY) {
     var T = getThree();
-    var cur = clip, inserted = 0, passes = 0;
+    var cur = clip, inserted = 0, passes = 0, insertedFloat = 0;
     for (var pass = 0; pass < 3; pass++) {
       var mixer = new T.AnimationMixer(model);
       var action = mixer.clipAction(cur);
@@ -686,8 +766,19 @@
       for (var s = 0; s <= nSteps; s++) {
         var t = Math.min(cur.duration, s / 48);
         mixer.setTime(t); model.updateMatrixWorld(true);
-        var f = footClass ? skinnedMinY(5, true) : skinnedMinY(5, false);
+        /* F9 (2026-11-27): đo stride 1, KHÔNG stride 5 — stride 5 làm
+           refine MÙ đỉnh thấp nhất thật: trên AttackRun decimate, min
+           stride-5 = +0,053 (chân tưởng bay) trong khi min thật (stride
+           1) chỉ +0,017 (đỉnh mu bàn chân) → hạ Hips theo +0,053 đẩy
+           đỉnh đó xuống -0,036 (file -0,0206, vượt spec ±0,02) mà pass
+           sau + dense check (cùng stride 5) đều không thấy. Đo stride 1
+           thì lift = min thật → sau hạ, đỉnh thấp nhất về đúng 0, không
+           bao giờ tạo lún (chứng minh: mọi đỉnh ≥ min; hạ đúng min thì
+           đỉnh thấp nhất = 0). Chậm hơn ~5× ở bước này nhưng đúng.
+           Nhánh không-footClass giữ stride 5 (đo toàn mesh, chỉ dự phòng). */
+        var f = footClass ? skinnedMinY(1, true) : skinnedMinY(5, false);
         if (f < -0.008) fixes.push({ t: t, lift: -f });
+        else if (f > 0.02) { fixes.push({ t: t, lift: -f }); insertedFloat++; } /* F4: hạ Hips khi chân bay */
       }
       mixer.stopAllAction();
       mesh.skeleton.pose(); model.updateMatrixWorld(true);
@@ -697,13 +788,14 @@
       inserted += fixes.length;
       if (inserted > 96) break;
     }
-    return { clip: cur, inserted: inserted, passes: passes };
+    return { clip: cur, inserted: inserted, passes: passes, insertedFloat: insertedFloat };
   }
   function groundClip(model, mesh, rootBone, clip, footClass, skinnedMinY) {
     var T = getThree();
+    ensureClipBind(); /* r128: tên xương 'mixamorig:' chỉ bind đúng khi patch clipbind đã cài */
     var rootPos = null;
     for (var i = 0; i < clip.tracks.length; i++) {
-      if (clip.tracks[i].name === rootBone.name + '.position') { rootPos = clip.tracks[i]; break; }
+      if (isRootTrack(clip.tracks[i], rootBone) && trackPropName(clip.tracks[i]) === 'position') { rootPos = clip.tracks[i]; break; } /* F1 */
     }
     if (!rootPos) return { clip: clip, skipped: 'no ' + rootBone.name + '.position track', stats: null };
     var keyTimes = Array.prototype.slice.call(rootPos.times);
@@ -724,7 +816,7 @@
     var newTracks = clip.tracks.map(function (t) {
       var dot = t.name.lastIndexOf('.');
       var nodeName = t.name.slice(0, dot), prop = t.name.slice(dot + 1);
-      if (nodeName === rootBone.name && prop === 'position') {
+      if (san(nodeName) === san(rootBone.name) && prop === 'position') { /* F1 */
         var times = Array.prototype.slice.call(t.times);
         var vals = Array.prototype.slice.call(t.values);
         for (var j = 0; j < times.length; j++) vals[j * 3 + 1] = vals[j * 3 + 1] - offsets[j];
@@ -748,7 +840,7 @@
       var t = Math.min(grounded.duration, s / 48);
       mixer2.setTime(t);
       model.updateMatrixWorld(true);
-      var f1 = footClass ? skinnedMinY(5, true) : skinnedMinY(5, false);
+      var f1 = footClass ? skinnedMinY(1, true) : skinnedMinY(5, false); /* F9: stride 1 (xem refineGround) — stride 5 báo min -0,004 trong khi min thật -0,036, cờ grounded nói dối */
       var a1 = skinnedMinY(5, false);
       if (f1 < gFootMin) gFootMin = f1;
       if (f1 > gFootMax) gFootMax = f1;
@@ -764,14 +856,18 @@
       name: clip.name, duration: r4(clip.duration), tracks: clip.tracks.length, keys: keyTimes.length,
       framesFixed: keyTimes.length,
       refineInserted: refined.inserted, refinePasses: refined.passes,
-      rootKeysAfter: grounded.tracks.filter(function (t) { return t.name === rootBone.name + '.position'; })[0].times.length,
+      refineInsertedFloat: refined.insertedFloat || 0,
+      rootKeysAfter: (function () { var f = grounded.tracks.filter(function (t) { return isRootTrack(t, rootBone) && trackPropName(t) === 'position'; })[0]; return f ? f.times.length : 0; })(), /* F1 */
       maxOffset: r4(maxOff),
       offsetMin: r4(Math.min.apply(null, offsets)),
       offsetMax: r4(Math.max.apply(null, offsets)),
       dense48Hz: {
         minSoleFoot: [r4(gFootMin), r4(gFootMax)],
         minSoleAll: [r4(gAllMin), r4(gAllMax)],
-        grounded: gFootMin >= -0.02 && gFootMax <= 0.02
+        /* F5: cờ grounded CHỈ tính LÚN (min >= -0.02) — chân nhấc lên
+           (bay, max) là chuyển động thật của Run/Attack, chỉ ghi vào
+           report dạng thông tin, không làm fail. */
+        grounded: gFootMin >= -0.02
       }
     };
     return { clip: grounded, skipped: null, stats: stats };
@@ -789,6 +885,8 @@
     var bones = findBones(model);
     var rootBone = findRootBone(bones);
     if (!rootBone) return { ok: false, step: 'ground', reason: 'no-root-bone', clipsFixed: 0 };
+    normalizeTrackNames(clips, bones); /* F1b: track phải khớp tên xương thật trước khi ground */
+    ensureClipBind(); /* r128: tên xương 'mixamorig:' chỉ bind đúng khi patch clipbind đã cài */
     mesh.skeleton.pose();
     model.updateMatrixWorld(true);
     var footInfo = findFootBones(bones);
@@ -810,13 +908,21 @@
     setClips(model, newClips);
     mesh.skeleton.pose();
     model.updateMatrixWorld(true);
-    var allGrounded = stats.every(function (s) { return !s.dense48Hz || s.dense48Hz.grounded; });
+    /* F1: clip nào bị skip (không tìm được root position track) thì
+       allGrounded=false — không được báo thành công giả khi 0 clip
+       được sửa. F5: grounded chỉ tính lún (xem groundClip). */
+    var skippedNames = stats.filter(function (s) { return s.skipped; }).map(function (s) { return s.name; });
+    var allGrounded = stats.length > 0 && stats.every(function (s) { return s.dense48Hz ? s.dense48Hz.grounded : false; });
+    var fixedCount = stats.filter(function (s) { return !s.skipped; }).length;
     return {
       ok: true, step: 'ground',
-      clips: stats, clipsFixed: stats.filter(function (s) { return !s.skipped; }).length,
+      clips: stats, clipsFixed: fixedCount,
       framesFixed: framesTotal, maxOffset: r4(maxOffset),
       footClassVerts: footCnt, allGrounded: allGrounded,
-      message: 'Đã ground ' + stats.filter(function (s) { return !s.skipped; }).length + '/' + clips.length + ' clip, ' + framesTotal + ' keyframe; độ lệch Y lớn nhất đã khử ' + r4(maxOffset) + 'm; kiểm chứng 48Hz: ' + (allGrounded ? 'chân chạm đất mọi frame (±0.02m).' : 'CÒN frame lệch >0.02m (xem chi tiết từng clip — thường do robe/tà áo).')
+      skippedClips: skippedNames,
+      message: 'Đã ground ' + fixedCount + '/' + clips.length + ' clip, ' + framesTotal + ' keyframe; độ lệch Y lớn nhất đã khử ' + r4(maxOffset) + 'm;' +
+        (skippedNames.length ? ' BỊ SKIP (không tìm được root position track — tên xương/track lệch nhau?): ' + skippedNames.join(', ') + '.' : '') +
+        ' kiểm chứng 48Hz: ' + (allGrounded ? 'chân không còn lún >0.02m mọi frame (chân bay tối đa chỉ là chuyển động nhấc chân, không tính fail).' : 'CÒN frame lún >0.02m (xem chi tiết từng clip — chân bay/lún giữa 2 keyframe do nội suy Hips tuyến tính).')
     };
   }
 
@@ -955,7 +1061,7 @@
     });
     var total = 0;
     meshes.forEach(function (m) { total += triCountOf(m.geometry); });
-    var trisAfter = total, done = 0;
+    var trisAfter = total, done = 0, degenRemoved = 0;
     if (total > triBudget) {
       meshes.forEach(function (m, i) {
         var t = triCountOf(m.geometry);
@@ -964,12 +1070,67 @@
           : Math.max(1, Math.floor(triBudget * t / Math.max(1, total)));
         var welded = weldGeometry(m.geometry);
         var d = MSE.decimateMeshopt(welded, share, targetError);
-        if (d) { m.geometry = weldGeometry(compactGeometry(d.geometry)); done += d.trisAfter; }
-        else { m.geometry = welded; done += t; }
+        if (d) {
+          /* F8: lọc tris suy biến (area=0) do meshopt/weld sinh ra —
+             skin theo đỉnh nên bỏ triangle không đụng skin weights.
+             Lọc SAU weld cuối (chính weld cũng có thể gộp 2 đỉnh của
+             1 triangle thành degenerate). Bù budget 1 lần: decimate
+             lại từ welded gốc với budget tăng theo tỉ lệ hao hụt để
+             số tris CUỐI vẫn đạt mục tiêu share (giữ kết quả nào
+             gần share hơn); tối đa 2 lần meshopt/mesh. */
+          var g1 = weldGeometry(compactGeometry(d.geometry));
+          var f1 = filterDegenerateTriangles(g1);
+          var best = f1.geometry, bestCount = triCountOf(best), bestRemoved = f1.removed;
+          if (f1.removed > 0 && bestCount > 0 && bestCount < share) {
+            var share2 = Math.min(triCountOf(welded), Math.ceil(share * share / bestCount));
+            if (share2 > share) {
+              var d2 = MSE.decimateMeshopt(welded, share2, targetError);
+              if (d2) {
+                var f2 = filterDegenerateTriangles(weldGeometry(compactGeometry(d2.geometry)));
+                var c2 = triCountOf(f2.geometry);
+                if (Math.abs(c2 - share) < Math.abs(bestCount - share)) {
+                  best = f2.geometry; bestCount = c2; bestRemoved = f2.removed;
+                }
+              }
+            }
+          }
+          m.geometry = compactGeometry(best);
+          degenRemoved += bestRemoved;
+          done += triCountOf(m.geometry);
+        }
+        else { m.geometry = welded; done += triCountOf(m.geometry); }
       });
       trisAfter = done;
     }
-    return { ok: true, trisBefore: total, trisAfter: trisAfter };
+    return { ok: true, trisBefore: total, trisAfter: trisAfter, degenerateRemoved: degenRemoved };
+  }
+  /* F8 (2026-11-27): lọc bỏ triangle area=0 khỏi index. Skin theo
+     đỉnh nên an toàn (không đụng vertices/weights). Trả geometry mới
+     (attributes dùng chung tham chiếu) + số triangle đã bỏ. */
+  function filterDegenerateTriangles(geometry) {
+    var T = getThree();
+    if (!geometry || !geometry.attributes || !geometry.attributes.position) return { geometry: geometry, removed: 0 };
+    var pos = geometry.attributes.position.array;
+    var index = geometry.index ? geometry.index.array : null;
+    var nTri = index ? Math.floor(index.length / 3) : Math.floor(pos.length / 9);
+    var keep = [];
+    var removed = 0;
+    for (var t = 0; t < nTri; t++) {
+      var a = index ? index[t * 3] : t * 3, b = index ? index[t * 3 + 1] : t * 3 + 1, c = index ? index[t * 3 + 2] : t * 3 + 2;
+      var ax = pos[a * 3], ay = pos[a * 3 + 1], az = pos[a * 3 + 2];
+      var ux = pos[b * 3] - ax, uy = pos[b * 3 + 1] - ay, uz = pos[b * 3 + 2] - az;
+      var vx = pos[c * 3] - ax, vy = pos[c * 3 + 1] - ay, vz = pos[c * 3 + 2] - az;
+      var cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
+      if (cx * cx + cy * cy + cz * cz === 0) { removed++; continue; }
+      keep.push(a, b, c);
+    }
+    if (!removed) return { geometry: geometry, removed: 0 };
+    var g = new T.BufferGeometry();
+    Object.keys(geometry.attributes).forEach(function (name) { g.setAttribute(name, geometry.attributes[name]); });
+    g.setIndex(new T.BufferAttribute(new Uint32Array(keep), 1));
+    g.computeBoundingBox();
+    g.computeBoundingSphere();
+    return { geometry: g, removed: removed };
   }
   function collectTextureBytes(root) {
     /* Trình duyệt: lấy map (JPEG q0.9, tối đa 1024) + normalMap (PNG,
@@ -1046,7 +1207,7 @@
       return Promise.resolve({ ok: false, step: 'lowpoly', reason: 'fbx-writer-missing', trisBefore: trisBefore, message: 'FBXBinary.write chưa sẵn sàng.' });
     }
     var targetTris = opts.targetTris || TARGET_TRIS;
-    var needReduce = trisBefore > MAX_TRIS;
+    var needReduce = trisBefore >= MAX_TRIS; /* F6: '>' để lọt file đúng 16.000 tris */
     return waitMeshoptReady(10000).then(function (ready) {
       if (needReduce && !ready) {
         return { ok: false, step: 'lowpoly', reason: 'meshopt-unavailable', trisBefore: trisBefore, message: 'Meshopt chưa sẵn sàng (WASM chưa load) nên không giảm được tris. Thử lại sau vài giây.' };
@@ -1073,13 +1234,25 @@
       var texCount = 0;
       Object.keys(textureBytes).forEach(function (k) { texCount += Object.keys(textureBytes[k]).length; });
       var animEntries = exportClips.map(function (c) { return { name: c.name, clip: c }; });
+      /* F2: file xuất giữ CHIỀU CAO GỐC (ghi ở fixAxes vào
+         model.userData._autoFixSourceHeight) thay vì 2,0m chuẩn hiển
+         thị. LƯU Ý writer: opts.targetHeight chỉ có tác dụng khi
+         autoScale !== false (fbx-binary.js ~526-534) — lowPolyExport
+         trước đây truyền autoScale:false nên targetHeight sẽ bị bỏ
+         qua; vì vậy chỉ khi có targetHeight > 0 mới bật autoScale
+         (clone đã ở 2,0m, trong band 1.2..3.5 nên không có targetHeight
+         thì writer cũng không scale gì thêm — hành vi cũ giữ nguyên). */
+      var targetHeight = opts.targetHeight || (model.userData && model.userData._autoFixSourceHeight) || 0;
+      var writeOpts = {
+        version: 7300, upAxis: 'keep', fps: 30,
+        embedTextures: true, textureBytes: textureBytes,
+        keepSkeleton: true, animations: animEntries
+      };
+      if (targetHeight > 0) { writeOpts.targetHeight = targetHeight; writeOpts.autoScale = true; }
+      else { writeOpts.autoScale = false; }
       var res;
       try {
-        res = FBX.write(clone, {
-          version: 7300, upAxis: 'keep', autoScale: false, fps: 30,
-          embedTextures: true, textureBytes: textureBytes,
-          keepSkeleton: true, animations: animEntries
-        });
+        res = FBX.write(clone, writeOpts);
       } catch (e) {
         return { ok: false, step: 'lowpoly', reason: 'export-error', trisBefore: trisBefore, message: 'Xuất FBX lỗi: ' + (e && e.message ? e.message : e) };
       }
@@ -1091,9 +1264,10 @@
         ok: true, step: 'lowpoly',
         needed: needReduce, skippedReduce: !needReduce,
         trisBefore: trisBefore, trisAfter: dec.trisAfter,
+        degenerateRemoved: dec.degenerateRemoved || 0,
         bones: bones.length, skeletonBones: skinned[0].skeleton.bones.length,
         clips: exportClips.length, clipNames: exportClips.map(function (c) { return c.name; }),
-        textures: texCount,
+        textures: texCount, targetHeight: targetHeight > 0 ? targetHeight : null,
         bytes: res.bytes, size: res.bytes.length,
         estSizeMB: r4(res.bytes.length / 1048576),
         filename: filename, report: res.report, skinCheck: skinCheck,
@@ -1320,6 +1494,7 @@
     cloneModelForExport: cloneModelForExport,
     weldGeometry: weldGeometry,
     compactGeometry: compactGeometry,
+    filterDegenerateTriangles: filterDegenerateTriangles,
     decimateCloneToBudget: decimateCloneToBudget,
     checkSkinWeights: checkSkinWeights,
     collectTextureBytes: collectTextureBytes,

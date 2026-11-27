@@ -1364,6 +1364,67 @@ tỉ lệ.
     return res.report.textures;
   }
 
+  /* Chieu dai nhat cua model NHU TRONG FILE (don vi cua geometry,
+     chua scale cua root) — dung lam targetHeight cho FBXBinary.write
+     trong nut "Toi uu FBX" (xem ghi chu o targetHeight trong
+     fbx-binary.js). Studio normalize (Manager.normalize) scale root
+     len 2.0m de hien thi; neu chi do bbox world thi file 1.8m xuat ra
+     thanh 2.0m — xuong lech ~11% (Hips +67mm, Head +132mm, da do
+     2026-11-27). QUAN TRONG: phai do tren CLONE SAU DECIMATE (moi
+     attempt), khong phai tren root goc — decimate lam bbox co lai
+     chut it (err 0.05: dai nhat giam ~0.3%); neu lay targetHeight tu
+     root goc roi chia cho h cua clone da decimate thi unitScale lech
+     ~1.003 (xuong lech them ~3mm + file to them do nen zlib kem).
+     Do bang bbox cua geometry trong khong gian local cua root (loai
+     bo root.matrixWorld, dung cho ca mesh long nhau duoi xuong), lay
+     hop cua cac mesh (uu tien skinned, giong writer). Chi tra ve gia
+     tri khi o don vi met hop ly (1.2..3.5, cung band cua writer):
+     file cm/mm (vd dai 180) thi tra 0 de writer tu quyet theo band
+     cu. Root scale = 1 thi local == world, tra ve dung chieu dai do
+     — writer se co unitScale = 1 (khong doi gi). */
+  function fileTargetHeight(root) {
+    var THREE = window.THREE;
+    if (!root || !root.traverse || !THREE) return 0;
+    try {
+      root.updateMatrixWorld(true);
+      var meshes = [], skinned = [];
+      root.traverse(function (o) {
+        if (o.isMesh && o.geometry && o.geometry.attributes && o.geometry.attributes.position) {
+          if (o.userData && o.userData.isBoneVisual) return;
+          meshes.push(o);
+          if (o.isSkinnedMesh) skinned.push(o);
+        }
+      });
+      var list = skinned.length ? skinned : meshes;
+      if (!list.length) return 0;
+      var invRoot = new THREE.Matrix4().copy(root.matrixWorld).invert();
+      var min = new THREE.Vector3(Infinity, Infinity, Infinity);
+      var max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+      var v = new THREE.Vector3();
+      list.forEach(function (m) {
+        var g = m.geometry;
+        if (!g.boundingBox) g.computeBoundingBox();
+        var bb = g.boundingBox;
+        if (!bb) return;
+        var rel = new THREE.Matrix4().copy(invRoot).multiply(m.matrixWorld);
+        var corners = [
+          [bb.min.x, bb.min.y, bb.min.z], [bb.min.x, bb.min.y, bb.max.z],
+          [bb.min.x, bb.max.y, bb.min.z], [bb.min.x, bb.max.y, bb.max.z],
+          [bb.max.x, bb.min.y, bb.min.z], [bb.max.x, bb.min.y, bb.max.z],
+          [bb.max.x, bb.max.y, bb.min.z], [bb.max.x, bb.max.y, bb.max.z]
+        ];
+        corners.forEach(function (c) {
+          v.set(c[0], c[1], c[2]).applyMatrix4(rel);
+          min.min(v); max.max(v);
+        });
+      });
+      var s = new THREE.Vector3().subVectors(max, min);
+      var local = Math.max(s.x, s.y, s.z);
+      if (!isFinite(local) || local < 1.2 || local > 3.5) return 0;
+      return local;
+    } catch (e) { return 0; }
+  }
+
   /* Vòng lặp tối ưu trên root đã cho (KHÔNG sửa root gốc — clone +
      decimate + ghi thử từng mức). textureProvider(maxDim, quality,
      dropNormal) -> textureBytes map; mặc định dùng canvas (trình
@@ -1385,12 +1446,14 @@ tỉ lệ.
       try { texBytes = textureProvider ? textureProvider(att.tex, att.q, att.dropNormal) : null; } catch (e) { texBytes = null; }
       var clone = cloneModelForExport(root);
       var dec = decimateCloneToBudget(clone, att.tris, att.err);
+      var targetHeight = fileTargetHeight(clone); /* sau decimate — xem ghi chu o fileTargetHeight */
       var res = null;
       try {
         res = PixiStudio.FBXBinary.write(clone, {
           version: 7300, upAxis: 'Y', autoScale: true,
           prepareMixamo: true, keepSkeleton: true,
-          embedTextures: true, textureBytes: texBytes
+          embedTextures: true, textureBytes: texBytes,
+          targetHeight: targetHeight
         });
       } catch (e) { res = null; }
       if (!res || !res.bytes || !res.bytes.length) continue;
@@ -1545,6 +1608,7 @@ tỉ lệ.
     lastOptError = null;
     var texLost = 0;
     var chain = Promise.resolve();
+    var chain = Promise.resolve();
     for (var a = 0; a < attempts.length; a++) {
       (function (a) {
         chain = chain.then(function () {
@@ -1561,13 +1625,15 @@ tỉ lệ.
               if (onProgress) onProgress(5 + (a / attempts.length) * 90 + 10 + f * 20, msg);
             }).then(function (dec) {
               if (cancelFlag && cancelFlag.cancelled) return null;
+              var targetHeight = fileTargetHeight(clone); /* sau decimate — xem ghi chu o fileTargetHeight */
               var res = null;
               try {
                 /* FBXBinary.write VẪN main thread (cần THREE.Object3D). */
                 res = PixiStudio.FBXBinary.write(clone, {
                   version: 7300, upAxis: 'Y', autoScale: true,
                   prepareMixamo: true, keepSkeleton: true,
-                  embedTextures: true, textureBytes: texBytes
+                  embedTextures: true, textureBytes: texBytes,
+                  targetHeight: targetHeight
                 });
               } catch (e) { res = null; }
               if (!res || !res.bytes || !res.bytes.length) return null;
@@ -1748,6 +1814,7 @@ tỉ lệ.
     OPT_ATTEMPTS_300K: OPT_ATTEMPTS_300K,
     OPT_TARGETS: OPT_TARGETS, optTargetFor: optTargetFor,
     cloneModelForExport: cloneModelForExport,
+    fileTargetHeight: fileTargetHeight,
     compactGeometry: compactGeometry,
     weldGeometry: weldGeometry,
     decimateCloneToBudget: decimateCloneToBudget,

@@ -523,7 +523,15 @@
     if (srcBox && opts.autoScale !== false) {
       const size = srcBox.getSize(new THREE.Vector3());
       const h = Math.max(size.x, size.y, size.z);
-      if (h > 0 && (h < 1.2 || h > 3.5)) unitScale = 1.8 / h;
+      /* opts.targetHeight (nut "Toi uu FBX", 2026-11-27): chieu dai nhat
+         cua model NHU TRONG FILE (do tu geometry, chua scale cua root) —
+         studio normalize scale root len 2.0m de hien thi, neu writer chi
+         do bbox world thi file 1.8m xuat ra thanh 2.0m (xuong lech ~11%,
+         Hips +67mm). targetHeight chi tin khi > 0; neu khong thi giu
+         hanh vi cu (band 1.2..3.5 -> 1.8m, ngoai band moi scale). */
+      if (opts.targetHeight && isFinite(opts.targetHeight) && opts.targetHeight > 0 && h > 0) {
+        unitScale = opts.targetHeight / h;
+      } else if (h > 0 && (h < 1.2 || h > 3.5)) unitScale = 1.8 / h;
     }
     xform.premultiply(new THREE.Matrix4().makeScale(unitScale, unitScale, unitScale));
     const useSkin = !noSkeleton && hasSkin;
@@ -996,6 +1004,14 @@
      * T/R/S (clip ra 0 track — đã chứng minh với XBot-Mixamo.fbx).
      * Tên bare vẫn đúng chuẩn FBX (tên chỉ là nhãn, SDK nhận diện object
      * theo loại node, không theo prefix) và Blender/Unity/Unreal đọc được.
+     * NGOẠI LỆ (sửa 2026-11-27, F3): 4 node animation (Stack/Layer/
+     * CurveNode/Curve) ghi bằng oname(name, 'AnimStack'/'AnimLayer'/
+     * 'AnimCurveNode'/'AnimCurve') — tức 'Name\x00\x01Class' trong file
+     * binary — vì Blender 4.2 import trực tiếp fail ValueError tại
+     * elem_split_name_class khi tên thiếu hậu tố này. BinaryParser của
+     * three cắt chuỗi tại byte 0x00 nên FBXLoader vẫn thấy tên bare
+     * như cũ (clip bind đủ). Các tham chiếu tên thường (Takes.Current,
+     * ActiveAnimStackName) GIỮ tên gốc, không đổi.
      * CHUYỂN ĐỔI: track quaternion (local TUYỆT ĐỐI, như three.js) →
      * Euler XYZ ĐỘ (FBX lưu độ, thứ tự XYZ mặc định); track position
      * cùng đơn vị với bone Lcl Translation của writer — xform là
@@ -1122,7 +1138,7 @@
         const stackId = id();
         const layerId = id();
         if (!firstStackName) firstStackName = stackName;
-        objects.push(node('AnimationStack', [pL(stackId), pS(stackName), pS('')], [
+        objects.push(node('AnimationStack', [pL(stackId), pS(oname(stackName, 'AnimStack')), pS('')], [
           node('Properties70', [], [
             node('P', [pS('LocalStart'), pS('KTime'), pS('Time'), pS(''), pL(0)]),
             node('P', [pS('LocalStop'), pS('KTime'), pS('Time'), pS(''), pL(durK)]),
@@ -1130,7 +1146,7 @@
             node('P', [pS('ReferenceStop'), pS('KTime'), pS('Time'), pS(''), pL(durK)])
           ])
         ]));
-        objects.push(node('AnimationLayer', [pL(layerId), pS(stackName), pS('')], [
+        objects.push(node('AnimationLayer', [pL(layerId), pS(oname(stackName, 'AnimLayer')), pS('')], [
           node('Properties70', [], [
             node('P', [pS('Weight'), pS('Number'), pS(''), pS('A'), pD(100)]),
             node('P', [pS('Mute'), pS('bool'), pS(''), pS(''), pB(false)]),
@@ -1149,7 +1165,7 @@
             trackCount++;
             const cnId = id();
             const def = attr === 'T' ? lx.p : attr === 'R' ? lx.e : lx.s;
-            objects.push(node('AnimationCurveNode', [pL(cnId), pS(attr), pS('')], [
+            objects.push(node('AnimationCurveNode', [pL(cnId), pS(oname(attr, 'AnimCurveNode')), pS('')], [
               node('Properties70', [], [
                 node('P', [pS('d|X'), pS('Number'), pS(''), pS('A'), pD(def[0])]),
                 node('P', [pS('d|Y'), pS('Number'), pS(''), pS('A'), pD(def[1])]),
@@ -1178,7 +1194,7 @@
               const dataFloats = [];
               for (let i = 0; i < vals.length; i++) dataFloats.push(0, 0, 0, 0);
               const refCounts = vals.map(function () { return 1; });
-              objects.push(node('AnimationCurve', [pL(cuId), pS(String(bone.name).replace(/[^A-Za-z0-9_]/g, '_') + '_' + attr + axis.toUpperCase()), pS('')], [
+              objects.push(node('AnimationCurve', [pL(cuId), pS(oname(String(bone.name).replace(/[^A-Za-z0-9_]/g, '_') + '_' + attr + axis.toUpperCase(), 'AnimCurve')), pS('')], [
                 node('Default', [pD(vals[0])]),
                 node('KeyVer', [pI(4009)]),
                 node('KeyTime', [arrL(keyTimes)]),

@@ -1,5 +1,25 @@
 /* ============================================================
  * rig/arp-clipbind.js — CLIPBIND-A (vòng clip-binding, bug a)
+ * + CLIPBIND-C (2026-11-27 — khớp hiển thị "che" xương thật):
+ *   Sau khi import, app.js autoShow dựng nhóm '__arp_canonical_skeleton__'
+ *   (js/rig/arp-shared-skeleton.js ensureCanonicalJoints) NGAY DƯỚI model
+ *   root: 41 Object3D thường tên NGẮN ('Hips','Spine',…,
+ *   userData.isCanonicalJoint=true) — KHÔNG isBone. Track clip sau
+ *   canonicalize là 'mixamorig:Hips.quaternion' → r128 parse ra nodeName
+ *   'Hips' → findNode gốc (DFS theo tên) gặp khớp hiển thị tên 'Hips'
+ *   TRƯỚC khi tới xương thật 'mixamorig:Hips' → CẢ 82 track bind vào
+ *   khớp hiển thị, 0 track vào xương thật (đo thật trên trình duyệt:
+ *   nToCanon=82, nToBone=0; mixer.time chạy 0.3→8.6s mà mọi khớp đứng
+ *   yên tới 4 chữ số thập phân; syncCanonicalPose() sau đó còn ghi đè
+ *   khớp hiển thị về pose xương thật đã đông cứng nên cả hai đều đứng
+ *   yên). Lớp 1 (vá findNode) trước đây gọi orig() trước rồi tin kết
+ *   quả — nên bị khớp hiển thị "che" mất.
+ *   SỬA: mọi điểm khớp tên trong file này đều BỎ QUA node hiển thị
+ *   (userData.isCanonicalJoint / isBoneVisual — cờ chỉ VP display mới
+ *   đặt, không bao giờ là target animation thật): patchedFindNode coi
+ *   hit hiển thị là miss rồi rơi xuống resolveNode; findExact +
+ *   fallback không phân biệt hoa/thường cũng bỏ qua chúng. Track trỏ
+ *   xương thật sự không có vẫn rơi về root như hành vi gốc.
  *
  * VẤN ĐỀ (đo thật trên clip Run Thiếu Lâm, file
  * thieulam-Rigged-AttackRun.fbx — xem harness
@@ -136,6 +156,17 @@
   };
 
   /* ---------- Tìm node trong scene theo tên đã strip ---------- */
+  /* CLIPBIND-C: node hiển thị (khớp canonical '__arp_canonical_skeleton__'
+     tên ngắn 'Hips', joint/bone visual '__arp_vp_*') KHÔNG BAO GIỜ là
+     target animation thật — findNode gốc gặp chúng trước xương thật vì
+     trùng tên ngắn. Mọi điểm khớp tên dưới đây đều bỏ qua chúng. */
+  function isDisplayNode(o) {
+    try {
+      return !!(o && o.userData && (o.userData.isCanonicalJoint || o.userData.isBoneVisual));
+    } catch (e) { return false; }
+  }
+  ArpClipBind.isDisplayNode = isDisplayNode;
+
   function findExact(root, name) {
     if (!root || !name) return null;
     var hit = null;
@@ -146,7 +177,7 @@
       }
     } catch (e) {}
     try {
-      root.traverse(function (o) { if (!hit && o.name === name) hit = o; });
+      root.traverse(function (o) { if (!hit && o.name === name && !isDisplayNode(o)) hit = o; });
     } catch (e) {}
     return hit;
   }
@@ -173,7 +204,7 @@
     var hit2 = null;
     try {
       root.traverse(function (o) {
-        if (!hit2 && o && o.name && lower.indexOf(String(o.name).toLowerCase()) >= 0) hit2 = o;
+        if (!hit2 && o && o.name && !isDisplayNode(o) && lower.indexOf(String(o.name).toLowerCase()) >= 0) hit2 = o;
       });
     } catch (e) {}
     return hit2;
@@ -195,6 +226,9 @@
     function patchedFindNode(root, nodeName) {
       var hit = null;
       try { hit = orig(root, nodeName); } catch (e) { hit = null; }
+      /* CLIPBIND-C: orig có thể trả khớp hiển thị tên ngắn ('Hips') —
+         không phải xương thật → coi như miss, rơi xuống resolveNode. */
+      if (hit && hit !== root && isDisplayNode(hit)) hit = null;
       if (hit) return hit;
       /* orig trả root cho ''/tên root/uuid, null khi không thấy —
          tới đây là trường hợp không thấy: thử khớp theo tên lõi. */
@@ -303,6 +337,7 @@
     normalizeTrackName: ArpClipBind.normalizeTrackName,
     parseNodeName: ArpClipBind.parseNodeName,
     resolveNode: ArpClipBind.resolveNode,
+    isDisplayNode: ArpClipBind.isDisplayNode,
     install: ArpClipBind.install,
     uninstall: ArpClipBind.uninstall,
     isInstalled: ArpClipBind.isInstalled,
