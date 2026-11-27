@@ -3177,6 +3177,7 @@
   Animator.listClips = listClips;
   Animator.getClip = getClip;
   Animator.refreshClips = refreshClips;
+  Animator.getEntries = function(){ return Animator._clips || []; };
   Animator.registerClip = registerClip;
   Animator.deleteClip = deleteClip;
   Animator.play = play;
