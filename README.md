@@ -206,23 +206,39 @@ python -m http.server 8080
 npx serve -l 8080 .
 ```
 
-### Cách 2 — Mở trực tiếp `index.html`
+### Cách 2 — Mở trực tiếp `index.html` (offline / `file://`, không cần internet)
 
-App vẫn chạy được (UI, viewport chibi mẫu, mọi module) nhưng:
-- ❌ Không auto-load được `kiemhiep.glb` (CORS của `file://`)
+Từ 2026-11-27 mọi thư viện đã **vendor-local trong `js/vendor/`** — mở
+`file:///…/3D-Model/index.html` bằng double-click là boot được, không cần
+mạng (CDN jsdelivr chỉ là fallback khi file local lỗi/thiếu). Lưu ý:
+- ❌ Không auto-load được `kiemhiep.glb` (CORS của `file://` — giới hạn của
+  trình duyệt, không phải do thiếu thư viện; nhóm boot resilient đang xử lý
+  để màn hình boot không kẹt ở "Initializing engine…" trong trường hợp này)
 - ✅ Vẫn import được GLB bằng **kéo-thả file** hoặc nút Import (FileReader, không cần HTTP)
 - ✅ Engine tự động fallback sang **chibi võ hya procedural** dựng bằng primitives và thông báo rõ cho người dùng.
 
-### Thư viện ngoài (CDN, có fallback)
+### Thư viện ngoài (vendor-local, CDN làm fallback)
 
-| Thư viện | Bản | Nguồn chính | Fallback |
+Từ 2026-11-27, `index.html` tải thư viện từ `js/vendor/` làm **nguồn chính**,
+CDN jsdelivr chỉ là fallback (`onerror`). Toàn bộ là **text UTF-8** nên đẩy
+được lên GitHub bằng snapshot push; GitHub Pages chạy y như trước.
+
+| Thư viện | Bản | Nguồn chính (`js/vendor/`) | Fallback |
 |---|---|---|---|
-| three.js | r128 | cdn.jsdelivr.net | unpkg.com |
-| GLTFLoader/OBJLoader/STLLoader | r128 examples | cdn.jsdelivr.net | unpkg.com |
-| TransformControls / GLTFExporter / OBJExporter / STLExporter | r128 examples | cdn.jsdelivr.net | unpkg.com |
-| pixi.js | v7.3.2 (UMD) | cdn.jsdelivr.net | unpkg.com |
+| three.js | r128 | `three.min.js` | cdn.jsdelivr.net/npm/three@0.128.0 |
+| GLTFLoader / OBJLoader / MTLLoader / STLLoader / FBXLoader | r128 examples/js | `*Loader.js` | jsdelivr three@0.128.0 |
+| TransformControls | r128 examples/js | `TransformControls.js` | jsdelivr three@0.128.0 |
+| GLTFExporter / OBJExporter / STLExporter | r128 examples/js | `*Exporter.js` | jsdelivr three@0.128.0 |
+| BufferGeometryUtils | r128 examples/js | `BufferGeometryUtils.js` | jsdelivr three@0.128.0 |
+| pixi.js (studio) | v7.4.3 (UMD) | `pixi-7.4.3.min.js` | jsdelivr pixi.js@7.4.3 |
+| pixi.js (MapEditor) | v8.23.0 (UMD) | `pixi.min.js` — chỉ MapEditor dùng, **không đổi tên** | — |
+| meshoptimizer decoder + simplifier | 0.18.1 | `meshopt_decoder.js`, `meshopt_simplifier.js` | jsdelivr meshoptimizer@0.18.1 |
+| fflate | 0.6.10 (UMD) | `fflate.js` | jsdelivr fflate@0.6.10 |
 
-Nếu muốn chạy **offline hoàn toàn**: tải các file trên vào `js/vendor/` và sửa `<script src>` trong `index.html` (đã ghi chú sẵn vị trí).
+Chi tiết từng file + cách tải lại: xem `js/vendor/README.md`.
+⚠️ **Đừng trỏ studio sang `pixi.min.js`**: file đó là pixi v8.23.0 của
+MapEditor; studio dùng API v7 (`new PIXI.Application({...})`, `PIXI.Text`…)
+nên phải dùng `pixi-7.4.3.min.js`.
 
 ---
 

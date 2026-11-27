@@ -2,11 +2,26 @@
  * ui/arp-vp-toolbar.js — PHẦN 5 (vòng mở rộng Viewport):
  * THANH CÔNG CỤ VIEWPORT cho Auto Rig Pro Blend.
  *
- * 1 thanh overlay riêng trong viewport (góc trên-trái, dễ thấy,
- * không che model): 11 nút bật/tắt nhanh cho đủ 11 layer registry
- * (Skeleton, Nhãn xương, IK, Markers, Ghost, Grid, Control helpers,
- * Trails, Onion, Đo đạc, Tham chiếu) + "Hiện tất cả" / "Ẩn tất cả".
+ * DỜI XUỐNG TIMELINE (2026-11-27): thanh KHÔNG còn mount trong
+ * viewport (góc trên-trái) vì che bảng Camera (#ix-camera-panel,
+ * cũng góc trên-trái). Mount mới: 1 hàng riêng
+ * #arp-vp-timeline-row ngay dưới #timeline-toolbar trong
+ * #timeline-panel — thành dải ngang trong luồng, không che gì.
+ * Fallback: cuối #timeline-toolbar → #viewport-canvas-wrap cũ
+ * (giữ nguyên hành vi cũ khi timeline chưa có trong DOM, vd
+ * harness cũ / index.html cache cũ).
+ *
+ * 11 nút bật/tắt nhanh cho đủ 11 layer registry (Skeleton, Nhãn
+ * xương, IK, Markers, Ghost, Grid, Control helpers, Trails,
+ * Onion, Đo đạc, Tham chiếu) + "Hiện tất cả" / "Ẩn tất cả".
  * Mỗi nút có trạng thái RÕ RÀNG: bật = nền tím sáng, tắt = mờ.
+ *
+ * Popover nhóm xương: #timeline-panel có overflow:hidden nên
+ * popover KHÔNG thể mở lên/xuống trong panel (bị cắt). Vì vậy
+ * popover được append vào document.body với position:fixed —
+ * ở timeline mở HƯỚNG LÊN (neo bottom theo nút Nhóm xương),
+ * ở viewport mở xuống như cũ (neo top theo nút). Xem
+ * positionGroupsPop().
  *
  * Mọi nút bấm gọi PixiStudio.ArpViewport (js/rig/arp-vp-core.js) —
  * KHÔNG gọi trực tiếp module hiển thị. Layer nào chưa đăng ký
@@ -77,10 +92,17 @@
   ];
 
   var TOOLBAR_ID = 'arp-vp-toolbar';
+  var TIMELINE_ROW_ID = 'arp-vp-timeline-row';
+  var TIMELINE_TOOLBAR_ID = 'timeline-toolbar';
+  var TIMELINE_PANEL_ID = 'timeline-panel';
+  var VIEWPORT_WRAP_ID = 'viewport-canvas-wrap';
   var _el = null;          /* root div của toolbar */
   var _btns = {};          /* key -> button element */
   var _unsubscribe = null; /* hủy onLayerChange khi destroy */
   var _builtinsRegistered = false;
+  /* DỜI XUỐNG TIMELINE (2026-11-27): 'timeline' | 'viewport' | 'other' */
+  var _mountMode = null;
+  var _resizeHandler = null;
   /* VIEW2 — hàng nút phụ (xem ghi chú đầu file). */
   var EXTRA_BUTTONS = [
     { key: 'xray', label: 'X-ray', icon: '🔍', title: 'X-ray: làm mờ mesh để xương hiện xuyên qua' },
@@ -244,12 +266,31 @@
 
   /* ---------- DOM ---------- */
 
+  /* DỜI XUỐNG TIMELINE (2026-11-27): thứ tự ưu tiên mount —
+     1) hàng riêng #arp-vp-timeline-row (ngay dưới #timeline-toolbar),
+     2) cuối #timeline-toolbar, 3) #viewport-canvas-wrap cũ. */
+  function findTimelineMount() {
+    if (typeof document === 'undefined') return null;
+    var row = document.getElementById(TIMELINE_ROW_ID);
+    if (row) return row;
+    return document.getElementById(TIMELINE_TOOLBAR_ID);
+  }
+
+  function mountModeFor(wrap) {
+    if (!wrap) return 'other';
+    if (wrap.id === TIMELINE_ROW_ID || wrap.id === TIMELINE_TOOLBAR_ID) return 'timeline';
+    if (typeof wrap.closest === 'function' && wrap.closest('#' + TIMELINE_PANEL_ID)) return 'timeline';
+    if (wrap.id === VIEWPORT_WRAP_ID) return 'viewport';
+    return 'other';
+  }
+
   function findWrap(container) {
     if (container) {
       if (typeof container === 'string') return document.getElementById(container) || document.querySelector(container);
       if (container.nodeType === 1) return container;
     }
-    return document.getElementById('viewport-canvas-wrap') || document.body;
+    return findTimelineMount() ||
+      document.getElementById(VIEWPORT_WRAP_ID) || document.body;
   }
 
   function buildToolbar() {
@@ -358,7 +399,13 @@
     var pop = document.createElement('div');
     pop.id = 'arp-vp-groups-pop';
     pop.className = 'arp-vp-groups-pop';
-    pop.style.cssText = 'position:absolute;left:0;top:100%;margin-top:6px;z-index:40;' +
+    /* DỜI XUỐNG TIMELINE (2026-11-27): popover KHÔNG còn absolute
+       trong toolbar (top:100% cũ) — #timeline-panel có
+       overflow:hidden nên mở lên hay xuống trong panel đều bị cắt.
+       Popover append vào document.body, position:fixed, vị trí
+       left/top/bottom do positionGroupsPop() đặt theo nút Nhóm
+       xương (timeline: mở HƯỚNG LÊN; viewport: mở xuống). */
+    pop.style.cssText = 'position:fixed;z-index:60;' +
       'background:rgba(10,18,32,0.96);color:#e8f0ff;border:1px solid #7b61ff;border-radius:8px;' +
       'padding:8px 10px;font-size:12px;line-height:1.7;min-width:210px;display:none;' +
       'box-shadow:0 2px 12px rgba(0,0,0,0.5);';
@@ -427,14 +474,39 @@
     });
   }
 
+  /* DỜI XUỐNG TIMELINE (2026-11-27): định vị popover theo nút
+     Nhóm xương. Timeline: thanh ở dưới cùng → mở HƯỚNG LÊN
+     (style.bottom neo theo mép trên nút); viewport: mở xuống như
+     cũ (style.top neo theo mép dưới nút). jsdom trả rect 0 — vẫn
+     đặt được bottom/top (kiểm chứng được bằng style), không crash. */
+  function positionGroupsPop() {
+    if (!_groupsPop || !_groupsOpen) return;
+    var btn = _extraBtns.groups;
+    if (!btn || typeof btn.getBoundingClientRect !== 'function') return;
+    var r = btn.getBoundingClientRect();
+    var vw = (typeof window !== 'undefined' && window.innerWidth) || 1024;
+    var vh = (typeof window !== 'undefined' && window.innerHeight) || 768;
+    var left = Math.max(4, Math.min(r.left || 0, vw - 220));
+    _groupsPop.style.left = left + 'px';
+    if (_mountMode === 'timeline') {
+      _groupsPop.style.top = '';
+      _groupsPop.style.bottom = Math.max(4, vh - (r.top || 0) + 6) + 'px';
+    } else {
+      _groupsPop.style.bottom = '';
+      _groupsPop.style.top = ((r.bottom || 0) + 6) + 'px';
+    }
+  }
+
   function toggleGroupsPop() {
     if (!_el) return;
     if (!_groupsPop) {
       _groupsPop = buildGroupsPop();
-      _el.appendChild(_groupsPop);
+      /* Append vào body (không phải _el) để thoát overflow:hidden
+         của #timeline-panel — xem ghi chú ở buildGroupsPop(). */
+      (document.body || _el).appendChild(_groupsPop);
     }
     _groupsOpen = !_groupsOpen;
-    if (_groupsOpen) refreshGroupsPop();
+    if (_groupsOpen) { refreshGroupsPop(); positionGroupsPop(); }
     _groupsPop.style.display = _groupsOpen ? 'block' : 'none';
     ArpVpToolbar.refresh();
   }
@@ -544,7 +616,7 @@
       gb.classList.toggle('arp-vp-btn-missing', missingG);
       gb.setAttribute('aria-pressed', _groupsOpen ? 'true' : 'false');
     }
-    if (_groupsOpen) refreshGroupsPop();
+    if (_groupsOpen) { refreshGroupsPop(); positionGroupsPop(); }
   }
 
   /* ---------- API ---------- */
@@ -559,13 +631,22 @@
     registerBuiltinLayers();
     var wrap = findWrap(container);
     if (!wrap) return false;
+    _mountMode = mountModeFor(wrap);
     _el = buildToolbar();
-    /* Thanh overlay nằm trong viewport wrap (position:relative sẵn
-       trong css/layout.css) — góc trên-trái, không che model ở giữa. */
+    /* DỜI XUỐNG TIMELINE (2026-11-27): class theo nơi mount — CSS
+       .arp-vp-in-timeline đổi thanh thành dải ngang trong luồng
+       (position:relative); mặc định còn lại giữ overlay absolute
+       cũ trong viewport. */
+    _el.classList.add(_mountMode === 'timeline' ? 'arp-vp-in-timeline' : 'arp-vp-in-viewport');
     wrap.appendChild(_el);
     var core = getCore();
     if (core && typeof core.onLayerChange === 'function') {
       _unsubscribe = core.onLayerChange(function () { ArpVpToolbar.refresh(); });
+    }
+    /* Popover fixed theo nút — resize cửa sổ thì định vị lại. */
+    if (typeof window !== 'undefined' && window.addEventListener) {
+      _resizeHandler = function () { positionGroupsPop(); };
+      window.addEventListener('resize', _resizeHandler);
     }
     ArpVpToolbar.refresh();
     return true;
@@ -573,6 +654,16 @@
 
   ArpVpToolbar.destroy = function () {
     if (_unsubscribe) { try { _unsubscribe(); } catch (e) {} _unsubscribe = null; }
+    if (typeof window !== 'undefined' && window.removeEventListener && _resizeHandler) {
+      try { window.removeEventListener('resize', _resizeHandler); } catch (e) {}
+      _resizeHandler = null;
+    }
+    /* Popover nay ở document.body (không còn là con của _el) nên
+       phải gỡ riêng — harness view2 (8k) kiểm tra destroy gỡ cả
+       #arp-vp-toolbar lẫn #arp-vp-groups-pop. */
+    if (_groupsPop && _groupsPop.parentNode) {
+      try { _groupsPop.parentNode.removeChild(_groupsPop); } catch (e) {}
+    }
     if (_el && _el.parentNode) _el.parentNode.removeChild(_el);
     _el = null;
     _btns = {};
@@ -580,6 +671,7 @@
     _presetBtns = {};
     _groupsPop = null;
     _groupsOpen = false;
+    _mountMode = null;
     return true;
   };
 
@@ -608,6 +700,12 @@
   /* Test hooks (harness dùng, không dùng trong studio). */
   ArpVpToolbar._test = {
     TOOLBAR_ID: TOOLBAR_ID,
+    TIMELINE_ROW_ID: TIMELINE_ROW_ID,
+    TIMELINE_TOOLBAR_ID: TIMELINE_TOOLBAR_ID,
+    VIEWPORT_WRAP_ID: VIEWPORT_WRAP_ID,
+    getMountMode: function () { return _mountMode; },
+    isInTimeline: function () { return _mountMode === 'timeline'; },
+    positionGroupsPop: positionGroupsPop,
     BUILTIN_LAYERS: BUILTIN_LAYERS,
     registerBuiltinLayers: registerBuiltinLayers,
     getButtons: function () { return _btns; },
@@ -631,12 +729,13 @@
 
   PS.ArpVpToolbar = ArpVpToolbar;
 
-  /* Tự mount khi load (script đặt cuối body nên wrap thường đã có);
-     nếu DOM chưa sẵn thì chờ DOMContentLoaded. */
+  /* Tự mount khi load (script đặt cuối body nên DOM thường đã có);
+     mount() tự tìm hàng timeline trước, fallback viewport wrap.
+     Nếu DOM chưa sẵn thì chờ DOMContentLoaded. */
   function autoMount() {
     try {
       if (typeof document === 'undefined') return;
-      if (document.getElementById('viewport-canvas-wrap')) ArpVpToolbar.mount();
+      ArpVpToolbar.mount();
     } catch (e) { /* mount thủ công sau vẫn được */ }
   }
   if (typeof document !== 'undefined') {

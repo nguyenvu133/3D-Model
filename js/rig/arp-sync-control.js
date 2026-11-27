@@ -680,8 +680,9 @@
     if (SyncControl._origAnimatorTick) return { ok: true, alreadyWrapped: true };
     var orig = AN.tick;
     SyncControl._origAnimatorTick = orig;
-    AN.tick = function (dt) {
-      var r = orig(dt);
+    /* CLIPBIND-B: forward frameId cho guard chống double-update trong Animator.tick. */
+    AN.tick = function (dt, frameId) {
+      var r = orig(dt, frameId);
       if (r && r.ok) {
         try { applyControlState(); } catch (e) {}
       }

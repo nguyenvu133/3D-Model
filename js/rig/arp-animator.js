@@ -15,9 +15,17 @@
  *   • Clip user tạo bằng chỉnh sửa (trim/retime/reverse/mirror)
  *     lưu trong Animator._userClips, chỉ clip này mới xóa được.
  *
- * PHÁT LẠI: Animator.tick(dt) đồng bộ — UI trình duyệt gọi bằng
- * requestAnimationFrame, harness gọi trực tiếp. KHÔNG dùng timer
- * thật trong module. Clip THREE.AnimationClip phát qua
+ * PHÁT LẠI: Animator.tick(dt) đồng bộ — vòng lặp chính của studio
+ * (App.startLoop trong js/core/app.js) gọi tick(dt, frameId) ĐÚNG 1 LẦN
+ * mỗi frame, ngay sau PixiStudio.Anim.update(dt), trước render;
+ * harness gọi trực tiếp tick(dt) (không kèm frameId). KHÔNG dùng timer
+ * thật trong module. (CLIPBIND-B — bug b: trước vòng này KHÔNG AI gọi
+ * tick() mỗi frame nên _mixer kẹt ở time 0 dù play() đã tạo action;
+ * Anim.mixer thì được tick nhưng có 0 action. Không gộp vào Anim.mixer:
+ * Animator có registry/layers/blend/root-motion/events riêng gắn với
+ * _mixer, còn Anim.mixer bị setTarget() tạo lại mỗi lần load model.)
+ * Guard chống double-update: tick(dt, frameId) bỏ qua lần gọi thứ 2
+ * trong cùng 1 frameId (trả reason 'already-ticked-this-frame'). Clip THREE.AnimationClip phát qua
  * THREE.AnimationMixer riêng của tab (không đụng Anim.mixer);
  * clip keyframe ủy thác cho Keyframe.tick; clip autogen ủy thác
  * cho AnimAutoGen.play (chỉ phát, không scrub/step được).
@@ -209,6 +217,9 @@
     _extraClips: [],           /* clip đăng ký ngoài (harness/nguồn khác) có
                                  userCreated:false — KHÔNG xóa được */
     _mixer: null,
+    /* CLIPBIND-B: frame id của lần tick() gần nhất (app.js truyền App._frame).
+       Guard chống double-update: tick 2 lần cùng frameId thì lần 2 bỏ qua. */
+    _lastTickFrame: null,
     _target: null,
     _actions: {},              /* clipId -> THREE.AnimationAction */
     _currentAction: null,
@@ -241,6 +252,15 @@
   function getTarget() {
     var t = Animator._target;
     if (t) return t;
+    /* VÒNG ĐỒNG BỘ SKELETON (2026-11-27): 1 thứ tự resolve duy nhất
+       cho mọi module (ArpSharedSkeleton.resolveTarget). */
+    try {
+      var SH = PS.ArpSharedSkeleton;
+      if (SH && typeof SH.resolveTarget === 'function') {
+        var shared = SH.resolveTarget(null);
+        if (shared) return shared;
+      }
+    } catch (e) {}
     var Anim = getAnim();
     if (Anim && Anim.targetObject) return Anim.targetObject;
     if (PS.Viewport && typeof PS.Viewport.getMainModel === 'function') {
@@ -410,6 +430,51 @@
     } catch (e) { Animator._clipChangedSubscribed = false; }
   }
 
+  /* VÒNG ĐỒNG BỘ SKELETON (2026-11-27): wire setTarget vào model đổi /
+     selection đổi — TRƯỚC ĐÂY setTarget KHÔNG CÓ caller nào trong repo
+     (phát hiện vòng clip-binding): đổi model ngoài mà không gọi
+     setTarget thì mixer vẫn bám model cũ; live đo được Animator._target
+     = null, _mixer không tồn tại trong khi Rigging giữ xương thật.
+     Đăng ký 1 lần duy nhất (gọi lúc load module + lúc mở tab, vì bus
+     có thể chưa sẵn lúc load). setTarget() đã có CLIPBIND-FIX reset
+     AN.time/playing/paused/firedLog/_firedIds — giữ nguyên, không
+     chạm play(). */
+  function _bindTargetSync() {
+    if (Animator._targetSyncBound) return;
+    var b = (window.PixiStudio && window.PixiStudio.bus) || null;
+    if (!b || typeof b.on !== 'function') return;
+    Animator._targetSyncBound = true;
+    b.on('model:loaded', function (data) {
+      try {
+        var t = null;
+        var P = window.PixiStudio || {};
+        if (data && data.id && P.Models && P.Models.models) {
+          var entry = P.Models.models[data.id];
+          if (entry && entry.object3D) t = entry.object3D;
+        }
+        if (!t) {
+          var SH = P.ArpSharedSkeleton;
+          if (SH && typeof SH.resolveTarget === 'function') t = SH.resolveTarget(null);
+        }
+        if (t && t !== Animator._target) Animator.setTarget(t);
+      } catch (e) {}
+    });
+    b.on('arp:shared-skeleton-changed', function (data) {
+      try {
+        if (data && data.target && data.target !== Animator._target) Animator.setTarget(data.target);
+      } catch (e) {}
+    });
+    b.on('state:changed', function (data) {
+      try {
+        if (!data || data.key !== 'selection') return;
+        var SH2 = (window.PixiStudio || {}).ArpSharedSkeleton;
+        var t2 = null;
+        if (SH2 && typeof SH2.resolveTarget === 'function') t2 = SH2.resolveTarget(null);
+        if (t2 && t2 !== Animator._target) Animator.setTarget(t2);
+      } catch (e) {}
+    });
+  }
+
   function listClips(filter) {
     refreshClips();
     var q = String(filter || '').trim().toLowerCase();
@@ -551,6 +616,10 @@
     if (!window.THREE) return { ok: false, error: 'THREE chưa sẵn sàng.' };
     var target = getTarget();
     if (!target) return { ok: false, error: 'Chưa có model — load/rig model trước.' };
+    /* CLIPBIND-A: cài lớp 1 (vá THREE.PropertyBinding.findNode) trước
+       khi tạo mixer — mọi clipAction sau đó đều bind đúng xương
+       'mixamorig:' (xem js/rig/arp-clipbind.js). Idempotent. */
+    try { if (window.PixiStudio && PixiStudio.ArpClipBind) PixiStudio.ArpClipBind.install(); } catch (e) {}
     if (!Animator._mixer || Animator._target !== target) {
       try { if (Animator._mixer) Animator._mixer.stopAllAction(); } catch (e) {}
       Animator._mixer = new window.THREE.AnimationMixer(target);
@@ -560,6 +629,26 @@
       Animator._blendAction = null;
     }
     return { ok: true, mixer: Animator._mixer };
+  }
+
+  /* CLIPBIND-A: lấy module bind + clip đã chuẩn hóa tên track cho 1
+     entry / 1 clip (lớp 2 — prepareClip clone, cache theo clip gốc;
+     clip gốc không bao giờ bị sửa). Lớp 1 (findNode) đã cài ở
+     ensureMixer nên cả clip chưa chuẩn hóa cũng bind đúng. */
+  function getClipBind() {
+    try { return (window.PixiStudio && window.PixiStudio.ArpClipBind) || null; } catch (e) { return null; }
+  }
+  function boundClipFor(entry) {
+    if (!entry || !entry.clip) return entry ? entry.clip : null;
+    var CB = getClipBind();
+    if (!CB || typeof CB.prepareClip !== 'function') return entry.clip;
+    try { return CB.prepareClip(entry.clip).clip; } catch (e) { return entry.clip; }
+  }
+  function boundClipOf(clip) {
+    if (!clip) return clip;
+    var CB = getClipBind();
+    if (!CB || typeof CB.prepareClip !== 'function') return clip;
+    try { return CB.prepareClip(clip).clip; } catch (e) { return clip; }
   }
 
   function captureBindHips() {
@@ -912,7 +1001,9 @@
         if (!eff.ok) { skipped.push(layer.id + ':' + (eff.error || 'eff-fail')); return; }
         var action;
         try {
-          action = Animator._mixer.clipAction(eff.clip);
+          /* CLIPBIND-A: layer clip qua lớp 2 (chuẩn hóa tên track);
+             lớp 1 (findNode) đã cài ở ensureMixer. */
+          action = Animator._mixer.clipAction(boundClipOf(eff.clip));
           action.reset();
           action.setLoop(window.THREE.LoopRepeat);
           action.setEffectiveTimeScale(1);
@@ -1315,7 +1406,9 @@
     if (!mx.ok) return mx;
     var action = Animator._actions[entry.id];
     if (!action) {
-      try { action = mx.mixer.clipAction(entry.clip); } catch (err) { return { ok: false, error: 'clipAction lỗi: ' + (err && err.message) }; }
+      /* CLIPBIND-A: bind clip đã chuẩn hóa tên track (lớp 2);
+         lớp 1 (findNode) đã cài ở ensureMixer. */
+      try { action = mx.mixer.clipAction(boundClipFor(entry)); } catch (err) { return { ok: false, error: 'clipAction lỗi: ' + (err && err.message) }; }
       Animator._actions[entry.id] = action;
     }
     try {
@@ -1332,6 +1425,8 @@
       }
     } catch (err) { return { ok: false, error: 'Phát clip lỗi: ' + (err && err.message) }; }
     Animator._currentAction = action;
+    Animator.time = 0; /* CLIPBIND-FIX: đồng bộ AN.time với action.reset() */
+    Animator._firedIds = {};
     Animator.playing = true;
     Animator.paused = false;
     captureBindHips();
@@ -1431,7 +1526,9 @@
         var mx2 = ensureMixer();
         if (mx2.ok) {
           try {
-            var a0 = mx2.mixer.clipAction(entry.clip);
+            /* CLIPBIND-A: scrub tạo action trên clip đã chuẩn hóa
+               tên track (lớp 2); lớp 1 đã cài ở ensureMixer. */
+            var a0 = mx2.mixer.clipAction(boundClipFor(entry));
             Animator._actions[entry.id] = a0;
             a0.reset();
             a0.setLoop(Animator.loopMode === 'loop' ? window.THREE.LoopRepeat : window.THREE.LoopOnce);
@@ -1511,10 +1608,19 @@
     return { ok: true, loopMode: mode };
   }
 
-  function tick(dt) {
+  function tick(dt, frameId) {
     if (!Animator.playing || Animator.paused) return { ok: false, reason: 'not-playing' };
     var entry = Animator.currentId ? getClip(Animator.currentId) : null;
     if (!entry) return { ok: false, error: 'Chưa chọn clip.' };
+    /* CLIPBIND-B: guard chống double-update — cùng 1 frameId chỉ tick 1 lần
+       (tick 2 lần/frame sẽ làm clip chạy nhanh gấp đôi). tick(dt) không kèm
+       frameId (harness / gọi tay) thì không bị guard, gọi bao nhiêu lần cũng
+       được. Wrapper sync (arp-sync-control / arp-sync-viewport) phải forward
+       frameId thì guard mới có tác dụng qua chúng. */
+    if (frameId !== undefined && frameId !== null) {
+      if (Animator._lastTickFrame === frameId) return { ok: false, reason: 'already-ticked-this-frame', time: round3(Animator.time) };
+      Animator._lastTickFrame = frameId;
+    }
     var dtEff = (dt || 0) * Animator.speed;
     var prevTime = Animator.time;
     var fired = [];
@@ -1628,7 +1734,8 @@
     if (!bEntry || !bEntry.clip) return { ok: false, error: 'Clip B không có THREE.AnimationClip.' };
     var action = Animator._actions[bEntry.id];
     if (!action) {
-      try { action = Animator._mixer.clipAction(bEntry.clip); } catch (e) { return { ok: false, error: 'clipAction B lỗi: ' + (e && e.message) }; }
+      /* CLIPBIND-A: clip B qua lớp 2 (chuẩn hóa tên track). */
+      try { action = Animator._mixer.clipAction(boundClipFor(bEntry)); } catch (e) { return { ok: false, error: 'clipAction B lỗi: ' + (e && e.message) }; }
       Animator._actions[bEntry.id] = action;
     }
     try {
@@ -1834,6 +1941,29 @@
     return { ok: true, clip: out, duration: round3(clip.duration), trackCount: tracks.length, synthesizedTwins: synthesized, note: 'Mirror đúng qua YZ: đổi cặp Left/Right + quat (x,−y,−z,w) / vị trí (−x,y,z).' + (synthesized.length ? ' Tạo thêm ' + synthesized.length + ' track bên kia.' : '') };
   }
 
+  /* Phát 'arp:animator-clip-changed' khi Animator tự tạo/xóa clip
+     (vòng Export-sync): sync module chỉ bọc editClip (keyframe) /
+     retargetClip, còn editCurrentClip / deleteClip trực tiếp thì
+     không ai emit — tab Export không biết để cập nhật danh sách.
+     Ưu tiên ArpSyncClips.emitClipChanged, fallback bus trực tiếp.
+     KHÔNG tạo event mới 'arp:animator-clip-edited' (nó không tồn tại). */
+  function emitAnimatorClipChanged(kind, detail) {
+    var SC = (window.PixiStudio && window.PixiStudio.ArpSyncClips) || null;
+    if (SC && typeof SC.emitClipChanged === 'function') {
+      try { SC.emitClipChanged(kind, detail); return true; } catch (e) {}
+    }
+    var b = (window.PixiStudio && window.PixiStudio.bus) || null;
+    if (b && typeof b.emit === 'function') {
+      try {
+        var data = { kind: kind, at: Date.now() };
+        if (detail) Object.keys(detail).forEach(function (k) { data[k] = detail[k]; });
+        b.emit('arp:animator-clip-changed', data);
+        return true;
+      } catch (e) {}
+    }
+    return false;
+  }
+
   /* Áp 1 phép chỉnh sửa lên clip đang chọn, lưu thành clip MỚI. */
   function editCurrentClip(op, opts) {
     opts = opts || {};
@@ -1860,6 +1990,7 @@
           var kname = (opts.name || (entry.name + '_mirror')).trim();
           var ksaved = registerClip({ name: kname, keys: kr.clip.keys, duration: kr.clip.duration, fps: kr.clip.fps, loop: kr.clip.loop, source: 'user', userCreated: true });
           if (!ksaved.ok) return ksaved;
+          emitAnimatorClipChanged('clip-edited', { name: kname, op: op, source: 'keyframe', duration: ksaved.duration, id: ksaved.id });
           return { ok: true, id: ksaved.id, name: kname, duration: ksaved.duration, op: op, note: 'Mirror keyframe (Euler + FK giữ nguyên).', via: 'anim-mirror' };
         }
         return kr;
@@ -1877,6 +2008,7 @@
     var name = (opts.name || (entry.name + '_' + op)).trim();
     var saved = registerClip({ name: name, clip: r.clip, loop: entry.loop, source: 'user', userCreated: true });
     if (!saved.ok) return saved;
+    emitAnimatorClipChanged('clip-edited', { name: name, op: op, source: entry.source, duration: saved.duration, id: saved.id });
     return { ok: true, id: saved.id, name: name, duration: saved.duration, op: op, note: r.note || '' };
   }
 
@@ -1889,6 +2021,7 @@
     if (Animator._actions[id]) { try { Animator._actions[id].stop(); } catch (e) {} delete Animator._actions[id]; }
     Animator._userClips.splice(idx, 1);
     refreshClips();
+    emitAnimatorClipChanged('clip-deleted', { name: name, id: id });
     return { ok: true, id: id, name: name };
   }
 
@@ -2475,6 +2608,7 @@
     if (!container) return;
     Animator._bodyEl = container;
     subscribeClipChanged();
+    _bindTargetSync(); /* VÒNG ĐỒNG BỘ: wire setTarget (bus có thể chưa sẵn lúc load) */
     container.innerHTML = '';
     var msg = el('div', { class: 'arp-anim-msg', id: 'arp-anim-msg' });
     function say(text, ok) {
@@ -2991,12 +3125,24 @@
       var r = exportClipFBX();
       say(r.ok ? ('Đã xuất FBX: ' + r.filename + ' (' + r.bytes + ' B). ' + (r.note || '')) : ('Lỗi: ' + r.error), r.ok);
     });
+    /* Xuất qua Export (vòng Export-sync): xuất clip đang chọn qua
+       pipeline Export đầy đủ (preflight / preset / version / texture /
+       lịch sử) thay vì ghi FBX trực tiếp như nút trên. */
+    var expSyncBtn = el('button', { class: 'arp-btn', text: '⬇ Xuất qua Export' });
+    expSyncBtn.addEventListener('click', function () {
+      var ES = (window.PixiStudio && window.PixiStudio.ArpExportSync) || null;
+      if (!ES || typeof ES.exportCurrentAnimatorClip !== 'function') { say('ArpExportSync chưa load — hard-refresh trang.', false); return; }
+      say('Đang xuất qua pipeline Export…', true);
+      ES.exportCurrentAnimatorClip().then(function (r) {
+        say(r.ok ? ('Đã xuất qua Export: ' + r.filename + ' (' + (r.sizeBytes || 0) + ' B) — preflight/preset/version/texture/lịch sử đầy đủ.') : ('Lỗi: ' + (r.error || 'lỗi không rõ.')), r.ok);
+      });
+    });
     container.appendChild(el('div', { class: 'arp-anim-sec' }, [
       el('div', { class: 'arp-sec-title', text: '8 · Xuất clip đang chọn' }),
-      el('div', { class: 'arp-row' }, [expJsonBtn, expFbxBtn, cmpTryBtn]),
+      el('div', { class: 'arp-row' }, [expJsonBtn, expFbxBtn, expSyncBtn, cmpTryBtn]),
       el('div', { class: 'arp-row' }, [cmpChk, el('span', { text: 'Nén khi xuất JSON' }), el('span', { text: 'ngưỡng vị trí (mm):' }), cmpPos, el('span', { text: 'xoay (°):' }), cmpRot]),
       cmpStats,
-      el('div', { class: 'arp-note', text: 'JSON đúng format clip studio (tracks .quaternion/.position). FBX qua FBXBinary.write, version 7300 — FBX luôn dùng clip gốc (không nén). Nén: loại key thừa + quantize quaternion float16 / vị trí theo mm; file nén vẫn đọc được bằng import cũ (cờ compressed:true).' })
+      el('div', { class: 'arp-note', text: 'JSON đúng format clip studio (tracks .quaternion/.position). FBX qua FBXBinary.write, version 7300 — FBX luôn dùng clip gốc (không nén). Nén: loại key thừa + quantize quaternion float16 / vị trí theo mm; file nén vẫn đọc được bằng import cũ (cờ compressed:true). Nút "Xuất qua Export" đi qua pipeline Export đầy đủ (preflight/preset/version/texture/lịch sử, mặc định preset Unity + FBX 7300) thay vì ghi FBX trực tiếp.' })
     ]));
 
     /* --- 9. Hiển thị viewport --- */
@@ -3103,6 +3249,9 @@
   Animator.setTarget = function (root) {
     Animator._target = root || null;
     Animator._mixer = null;
+    Animator._lastTickFrame = null; /* CLIPBIND-B: đổi model thì reset guard frame */
+    Animator.time = 0; Animator.playing = false; Animator.paused = false;
+    Animator.firedLog = []; Animator._firedIds = {};
     Animator._actions = {};
     Animator._currentAction = null;
     Animator._blendAction = null;
@@ -3136,6 +3285,11 @@
   };
 
   PS.ArpAnimator = Animator;
+
+  /* VÒNG ĐỒNG BỘ SKELETON (2026-11-27): wire setTarget vào model:loaded
+     / selection change ngay lúc load (render() gọi lại để chắc chắn
+     khi bus chưa sẵn lúc load). */
+  try { _bindTargetSync(); } catch (e) {}
 
   /* Đăng ký tab Animator (sau 'plugins' — panel liệt kê tab ngoài
      TAB_ORDER theo thứ tự đăng ký). Không sửa arp-panel.js. */

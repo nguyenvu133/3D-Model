@@ -1116,6 +1116,7 @@
     if (AIPanel._meshyTimer) clearInterval(AIPanel._meshyTimer);
     const scanMeshy = function () {
       if (!AIPanel.autoUpdate.meshy) return;
+      if (location.protocol === 'file:') return; /* file://: không có Node bridge server — bỏ qua hẳn, tránh request rác file:///api/fbx-list */
       fetch('/api/fbx-list').then(function (r) { return r.json(); }).then(function (j) {
         if (!j.ok || !j.files) return;
         j.files.forEach(function (f) {
@@ -1133,13 +1134,15 @@
         });
       }).catch(function () { });
     };
-    /* seed known files lần đầu (không toast) */
-    fetch('/api/fbx-list').then(function (r) { return r.json(); }).then(function (j) {
-      if (j.ok && j.files) {
-        j.files.forEach(function (f) { AIPanel.autoUpdate._knownFbx[f.url] = { name: f.name }; });
-      }
-    }).catch(function () { });
-    AIPanel._meshyTimer = setInterval(scanMeshy, 20000);
+    /* seed known files lần đầu (không toast) — bỏ qua trên file:// (không có server) */
+    if (location.protocol !== 'file:') {
+      fetch('/api/fbx-list').then(function (r) { return r.json(); }).then(function (j) {
+        if (j.ok && j.files) {
+          j.files.forEach(function (f) { AIPanel.autoUpdate._knownFbx[f.url] = { name: f.name }; });
+        }
+      }).catch(function () { });
+      AIPanel._meshyTimer = setInterval(scanMeshy, 20000);
+    }
   };
 
   AIPanel.setAutoUpdate = function (which, on) {

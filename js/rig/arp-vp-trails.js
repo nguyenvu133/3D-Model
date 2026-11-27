@@ -234,6 +234,16 @@
     return s.replace(/^(model:{1,2})+/i, '').replace(/^mixamorig:?/i, '').replace(/__proxy$/i, '');
   }
   function getTarget() {
+    /* VÒNG ĐỒNG BỘ SKELETON (2026-11-27): 1 thứ tự resolve duy nhất
+       cho mọi module (ArpSharedSkeleton.resolveTarget). Chỉ khi module
+       chia sẻ vắng mới rơi xuống chain cũ của module này. */
+    try {
+      var SHg = PS.ArpSharedSkeleton;
+      if (SHg && typeof SHg.resolveTarget === 'function') {
+        var shared = SHg.resolveTarget(null);
+        if (shared) { var cs0 = climbToRigged(shared); return cs0 || shared; }
+      }
+    } catch (e) {}
     /* FIX (ARP View vòng 1): thứ tự cũ — QuickRig.current rồi
        getMainModel() (model mẫu Hero_001, 0 xương) rồi mới
        Anim.targetObject (FBX, fallback thứ 3, không bao giờ tới) —
@@ -330,6 +340,19 @@
         if (!map[k]) map[k] = o;
       });
     }
+    /* VÒNG ĐỒNG BỘ: trails bám khớp chuẩn (cùng hierarchy với VP
+       skeleton) — ghi đè map theo tên khi có khớp chuẩn. */
+    try {
+      var SH = PS.ArpSharedSkeleton;
+      if (SH && typeof SH.ensureCanonicalJoints === 'function' && target) {
+        var r = SH.ensureCanonicalJoints(target);
+        if (r && r.ok && r.joints) {
+          Object.keys(r.joints).forEach(function (n) {
+            map[stripName(n).toLowerCase()] = r.joints[n];
+          });
+        }
+      }
+    } catch (e) {}
     return { map: map, target: target };
   }
   function resolveTrailBones() {

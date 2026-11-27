@@ -135,12 +135,33 @@
   function collectBones(root) {
     var out = [];
     if (!root) return out;
-    if (Array.isArray(root)) return root.filter(function (b) { return b && b.isBone; });
+    if (Array.isArray(root)) return root.filter(function (b) { return b && (b.isBone || (b.userData && b.userData.isCanonicalJoint)); });
     if (root.isBone) return [root];
+    if (root.userData && root.userData.isCanonicalJoint) return [root];
     if (root.bones && Array.isArray(root.bones)) {
-      return root.bones.filter(function (b) { return b && b.isBone; });
+      return root.bones.filter(function (b) { return b && (b.isBone || (b.userData && b.userData.isCanonicalJoint)); });
     }
-    if (root.traverse) root.traverse(function (o) { if (o.isBone) out.push(o); });
+    if (root.traverse) {
+      /* VÒNG ĐỒNG BỘ SKELETON (2026-11-27): nhãn bám KHỚP CHUẨN
+         (cùng hierarchy với VP skeleton/select/IK/Animator) thay vì
+         xương thật — nếu không nhãn sẽ lệch khỏi skeleton display
+         (residual ghost vs thật tới 33cm ở tay). ensureCanonicalJoints
+         có cache nên lần sau rẻ; chưa có khớp chuẩn thì xương thật. */
+      try {
+        var SH = PixiStudio.ArpSharedSkeleton;
+        if (SH && typeof SH.ensureCanonicalJoints === 'function') {
+          var r = SH.ensureCanonicalJoints(root);
+          if (r && r.ok && r.joints) {
+            var names = Object.keys(r.joints);
+            if (names.length) return names.map(function (n) { return r.joints[n]; });
+          }
+        }
+      } catch (e) {}
+      var canon = [];
+      root.traverse(function (o) { if (o && o.userData && o.userData.isCanonicalJoint) canon.push(o); });
+      if (canon.length) return canon;
+      root.traverse(function (o) { if (o.isBone) out.push(o); });
+    }
     return out;
   }
   ArpVpLabels.collectBones = collectBones;
@@ -168,6 +189,16 @@
       var c0 = climbToRigged(target);
       return c0 || target; /* target truyền thẳng thì thắng, dù không xương (báo rõ) */
     }
+    /* VÒNG ĐỒNG BỘ SKELETON (2026-11-27): 1 thứ tự resolve duy nhất
+       cho mọi module (ArpSharedSkeleton.resolveTarget). Chỉ khi module
+       chia sẻ vắng mới rơi xuống chain cũ của module này. */
+    try {
+      var SHg = PixiStudio.ArpSharedSkeleton;
+      if (SHg && typeof SHg.resolveTarget === 'function') {
+        var shared = SHg.resolveTarget(null);
+        if (shared) { var cs0 = climbToRigged(shared); return cs0 || shared; }
+      }
+    } catch (e) {}
     /* FIX (ARP View vòng 1): thứ tự cũ đặt State.selection ĐẦU TIÊN và
        TRẢ NGAY cả khi selection là 1 SkinnedMesh trần (xương là
        sibling → collectBones = 0) nên nhãn không bao giờ hiện; đồng
@@ -647,13 +678,17 @@
     if (cam && window.THREE) {
       try { camUp = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion); } catch (e) { camUp = null; }
     }
-    /* Pass 1: vị trí world gốc + hệ số bù cỡ của từng nhãn đang hiện. */
+    /* Pass 1: vị trí world gốc + hệ số bù cỡ của từng nhãn đang hiện.
+       VÒNG ĐỒNG BỘ (fix phát hiện phụ nhóm A): nhãn ẨN cũng phải được
+       position — nếu không khi đổi mode hiện lại, nó kẹt ở (0,0,0) từ
+       lúc build (nhóm A thấy __arp_label_LeftToeBase ở (0,0,0)).
+       Chỉ stacking/scale mới dành cho nhãn đang hiện. */
     var items = [];
     ArpVpLabels._labels.forEach(function (L, idx) {
-      if (!L.sprite.visible) { L.stackOffset = 0; return; }
       L.bone.getWorldPosition(v);
       var wp = v.clone();
       wp.y += L.height * 0.55;
+      if (!L.sprite.visible) { L.stackOffset = 0; items.push({ L: L, idx: idx, wp: wp, stack: 0, hidden: true }); return; }
       var dist = cam ? cam.position.distanceTo(wp) : refDist;
       var factor = clamp(dist / refDist, 0.6, 2.5);
       L._factor = factor;
@@ -662,14 +697,16 @@
       L.sprite.scale.set(bw * factor, bh * factor, 1);
       items.push({ L: L, idx: idx, wp: wp, stack: 0 });
     });
-    /* Pass 2: chống chồng chéo trên màn hình (chỉ khi chiếu được). */
-    if (cam && canvas && camUp && items.length > 1) {
+    /* Pass 2: chống chồng chéo trên màn hình (chỉ khi chiếu được).
+       Chỉ nhãn ĐANG HIỆN tham gia stacking (nhãn ẩn không tranh chỗ). */
+    var visibleItems = items.filter(function (it) { return !it.hidden; });
+    if (cam && canvas && camUp && visibleItems.length > 1) {
       var placed = [];
-      items.sort(function (a, b) {
+      visibleItems.sort(function (a, b) {
         var pa = labelPriority(a.L), pb = labelPriority(b.L);
         return (pa - pb) || (a.idx - b.idx);
       });
-      items.forEach(function (it) {
+      visibleItems.forEach(function (it) {
         var stepH = (it.L.baseH || it.L.height) * (it.L._factor || 1);
         var tries = 0;
         while (tries < 4) {
@@ -690,7 +727,10 @@
     } else {
       items.forEach(function (it) { it.L.stackOffset = 0; });
     }
-    /* Pass 3: đặt vị trí cuối (world → local nếu group là con target). */
+    /* Pass 3: đặt vị trí cuối (world → local nếu group là con target).
+       Trả về số nhãn ĐANG HIỆN đã cập nhật (nhãn ẩn vẫn được position
+       để không kẹt (0,0,0) nhưng không tính vào số trả về — hợp đồng
+       cũ của update()). */
     var n = 0;
     var inTarget = ArpVpLabels._group.parent === ArpVpLabels._target && ArpVpLabels._target && ArpVpLabels._target.worldToLocal;
     items.forEach(function (it) {
@@ -698,7 +738,7 @@
       if (it.stack > 0 && camUp) p.addScaledVector(camUp, it.stack * ((it.L.baseH || it.L.height) * (it.L._factor || 1)));
       if (inTarget) it.L.sprite.position.copy(ArpVpLabels._target.worldToLocal(p));
       else it.L.sprite.position.copy(p);
-      n++;
+      if (!it.hidden) n++;
     });
     return n;
   }
@@ -711,6 +751,25 @@
     } catch (e) { return null; }
   }
 
+  /* VÒNG ĐỒNG BỘ: leo lên đỉnh model (child trực tiếp của modelRoot)
+     để so sánh "cùng model" — khớp chuẩn nằm dưới model root qua
+     canonical group, xương thật nằm dưới Armature; chain trong model
+     khác nhau nhưng cùng đỉnh thì vẫn là 1 model. */
+  function _topLevel(obj) {
+    if (!obj) return null;
+    var root = null;
+    try { root = (PixiStudio.Viewport && PixiStudio.Viewport.modelRoot) || null; } catch (e) {}
+    var o = obj, guard = 0;
+    while (o && o.parent && guard < 64) {
+      if (o.isScene || (root && o === root)) return null;
+      if (root && o.parent === root) return o;
+      if (!root && !o.parent.parent) return o;
+      o = o.parent;
+      guard++;
+    }
+    return o || obj;
+  }
+
   ArpVpLabels.update = function (dt) {
     /* Rẻ: không hiện thì không làm gì cả (không traverse, không
        getWorldPosition). dt không dùng để nội suy — vị trí bám
@@ -720,9 +779,18 @@
     var root = ArpVpLabels._labels.length ? ArpVpLabels._labels[0].bone : null;
     var detached = false;
     if (root) {
-      var o = root, depth = 0;
-      while (o && depth < 64) { if (o === ArpVpLabels._target) break; o = o.parent; depth++; }
-      if (!o) detached = true;
+      /* (1) Walk gốc: khớp còn nằm dưới _target không (vd _target là
+         scene hoặc model root — khớp thật lẫn khớp chuẩn đều đi qua). */
+      var o = root, depth = 0, foundTarget = false;
+      while (o && depth < 64) { if (o === ArpVpLabels._target) { foundTarget = true; break; } o = o.parent; depth++; }
+      if (!foundTarget) {
+        /* (2) VÒNG ĐỒNG BỘ: khớp chuẩn không nằm dưới _target khi
+           _target là Armature (khớp chuẩn nằm dưới model root qua
+           canonical group) — so sánh theo đỉnh model thay vì _target. */
+        var topBone = _topLevel(root);
+        var topTarget = _topLevel(ArpVpLabels._target);
+        if (!topBone || !topTarget || topBone !== topTarget) detached = true;
+      }
     }
     if (detached) {
       var r = ArpVpLabels.refresh();

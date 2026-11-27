@@ -364,6 +364,16 @@
   BoneShape.build = buildBoneShapes;
 
   function getTarget() {
+    /* VÒNG ĐỒNG BỘ SKELETON (2026-11-27): 1 thứ tự resolve duy nhất
+       cho mọi module (ArpSharedSkeleton.resolveTarget). BoneShape vẫn
+       shaping trên xương THẬT (tool shaping), chỉ đổi nguồn target. */
+    try {
+      var SH = window.PixiStudio && PixiStudio.ArpSharedSkeleton;
+      if (SH && typeof SH.resolveTarget === 'function') {
+        var shared = SH.resolveTarget(null);
+        if (shared) return shared;
+      }
+    } catch (e) {}
     if (window.PixiStudio && PixiStudio.State && PixiStudio.State.get) {
       try { var sel = PixiStudio.State.get('selection'); if (sel) return sel; } catch (e) {}
     }

@@ -163,6 +163,7 @@
   var _registered = false;
   var _toolbarBtn = null;
   var _panelRow = null;
+  var _fingerBtn = null; /* VÒNG ĐỒNG BỘ: nút sửa ngón lệch trong file gốc */
   /* FIX persisted-state (ARP View vòng 1): "user đã tắt tay" được tách
    * khỏi "state khôi phục từ lần trước" bằng cờ IN-MEMORY này — uuid
    * của model mà user đã tắt skeleton BẰNG TAY (nút toolbar / phím B /
@@ -420,6 +421,19 @@
   function _resolveTarget(arg) {
     if (arg && arg.traverse) { var c0 = _climbToRigged(arg); if (c0) return c0; return arg; }
     if (arg && arg.isBone) return arg; /* truyền thẳng rootBone cũng được */
+    /* VÒNG ĐỒNG BỘ SKELETON (2026-11-27): 1 thứ tự resolve duy nhất
+       cho mọi module (ArpSharedSkeleton.resolveTarget) — selection →
+       Models.current → Anim.targetObject → QuickRig/RigAutoGen →
+       getMainModel() → AutoRigPro.lastResult. Chỉ khi module chia sẻ
+       vắng mới rơi xuống chain cũ của module này. */
+    try {
+      var PS0 = _PS();
+      var SH0 = PS0 && PS0.ArpSharedSkeleton;
+      if (SH0 && typeof SH0.resolveTarget === 'function') {
+        var shared = SH0.resolveTarget(null);
+        if (shared) { var cS = _climbToRigged(shared); return cS || shared; }
+      }
+    } catch (e) {}
     if (_state.target && _state.target.traverse) return _state.target;
     var PS = _PS();
     if (PS) {
@@ -496,6 +510,31 @@
       try { h.helper.visible = h.wasVisible; } catch (e) {}
     });
   }
+  /* VÒNG ĐỒNG BỘ SKELETON (2026-11-27): tập hiển thị = KHỚP CHUẨN
+   * (canonical — bộ trái/ghost làm chuẩn, đã mirror + căn Hips về
+   * Hips thật) thay vì xương thật. Nhờ đó VP skeleton / select /
+   * labels / IK / Animator đều hiện CÙNG 1 hierarchy, gắn vào model
+   * root qua attach() nên tự theo model (dời/xoay/scale), pose sync
+   * mỗi frame theo xương thật cùng tên. Fallback xương thật khi
+   * module chia sẻ chưa load hoặc chưa có khớp chuẩn. */
+  function _displayFound(target) {
+    try {
+      var PS = _PS();
+      var SH = PS && PS.ArpSharedSkeleton;
+      if (SH && typeof SH.ensureCanonicalJoints === 'function') {
+        var r = SH.ensureCanonicalJoints(target);
+        if (r && r.ok && r.joints) {
+          var names = Object.keys(r.joints);
+          if (names.length) {
+            var list = names.map(function (n) { return r.joints[n]; });
+            var root = r.joints.Hips || list[0];
+            return { rootBone: root, bones: list, skeleton: null, canonical: true, mode: r.mode };
+          }
+        }
+      }
+    } catch (e) {}
+    return _findSkeleton(target);
+  }
   function _buildDisplay(target, found) {
     var THREE = _THREE();
     if (!THREE) return { ok: false, reason: 'no-three' };
@@ -550,8 +589,10 @@
         _state.parts.push(jm);
         jointCount++;
       } catch (e) {}
-      /* --- cylinder tới từng xương con (hoặc stub nếu là lá) --- */
-      var kids = (bone.children || []).filter(function (c) { return c && c.isBone; });
+      /* --- cylinder tới từng xương con (hoặc stub nếu là lá) ---
+         VÒNG ĐỒNG BỘ: con của khớp chuẩn là Object3D thường
+         (userData.isCanonicalJoint), không phải isBone — chấp nhận cả 2. */
+      var kids = (bone.children || []).filter(function (c) { return c && (c.isBone || (c.userData && c.userData.isCanonicalJoint)); });
       var segs = [];
       kids.forEach(function (kid) {
         segs.push({ dir: kid.position.clone(), len: kid.position.length(), child: kid });
@@ -657,6 +698,29 @@
         btn.addEventListener('click', function () { ArpVpSkeleton.toggle(); });
         row.appendChild(span);
         row.appendChild(btn);
+        /* VÒNG ĐỒNG BỘ: nút sửa ngón lệch trong file gốc (hiện chỉ
+           khi có cảnh báo) — mặc định giữ nguyên, bấm mới sửa. */
+        var fbtn = document.createElement('button');
+        fbtn.id = 'arp-vp-skeleton-fix-fingers';
+        fbtn.type = 'button';
+        fbtn.textContent = 'Sửa ngón phải lệch';
+        fbtn.title = 'Đưa xương ngón lệch về gần tay (mirror ngón tay trái) — mặc định file gốc được giữ nguyên.';
+        fbtn.addEventListener('click', function () {
+          try {
+            var SH = _PS() && _PS().ArpSharedSkeleton;
+            if (!SH || typeof SH.fixMisplacedFingers !== 'function') return;
+            var res = SH.fixMisplacedFingers(_state.target);
+            if (res && res.ok && res.fixed && res.fixed.length) {
+              _notify('success', 'Sửa ngón lệch', 'Đã đưa ' + res.fixed.length + ' xương ngón về gần tay (mirror ngón trái). Mesh không đổi (đã tính lại boneInverses).');
+              ArpVpSkeleton.refresh();
+            } else if (res && res.ok) {
+              _notify('info', 'Sửa ngón lệch', 'Không có xương ngón lệch.');
+            }
+          } catch (e) {}
+          _syncPanelRow();
+        });
+        row.appendChild(fbtn);
+        _fingerBtn = fbtn;
         body.insertBefore(row, body.firstChild);
         _panelRow = row;
       }
@@ -664,6 +728,19 @@
       if (st) st.textContent = ArpVpSkeleton.statusText();
       var tb = document.getElementById('arp-vp-skeleton-toggle');
       if (tb) tb.disabled = _state.boneCount === 0 && !_state.rootBone;
+      /* Hiện nút sửa ngón chỉ khi có cảnh báo ngón lệch. */
+      if (_fingerBtn) {
+        var showFix = false;
+        try {
+          var SH2 = _PS() && _PS().ArpSharedSkeleton;
+          if (SH2 && typeof SH2.detectMisplacedFingers === 'function' && _state.target) {
+            var det = SH2.detectMisplacedFingers(_state.target);
+            showFix = !!(det && det.ok && det.warnings && det.warnings.length);
+            if (showFix) _fingerBtn.textContent = 'Sửa ' + det.warnings.length + ' ngón lệch';
+          }
+        } catch (e) {}
+        _fingerBtn.style.display = showFix ? '' : 'none';
+      }
     } catch (e) {}
   }
   /* Toolbar ARP View (#arp-vp-toolbar) chỉ tự refresh khi layer đổi QUA
@@ -698,12 +775,12 @@
            user tắt tay thì chỉ dựng display ở trạng thái ẩn. */
         var r = ArpVpSkeleton.autoShow(resolved);
         if (!r.ok && r.reason === 'manual-hidden') {
-          var found = _findSkeleton(resolved);
+          var found = _displayFound(resolved) || _findSkeleton(resolved);
           if (found) { _buildDisplay(resolved, found); _setPartsVisible(false); _state.visible = false; _syncUI(); }
         }
       } else {
         /* autoShow tắt: chỉ dựng display ở trạng thái ẩn để toggle sau có sẵn. */
-        var found2 = _findSkeleton(resolved);
+        var found2 = _displayFound(resolved) || _findSkeleton(resolved);
         if (found2) { _buildDisplay(resolved, found2); _setPartsVisible(false); _state.visible = false; _syncUI(); }
       }
       _tryRegister();
@@ -719,6 +796,24 @@
       bus.on('arpquickrig:converted', _onRigComplete);
       bus.on('arpquickrig:autogen-done', _onRigComplete);
       bus.on('arpquickrig:mixamo-done', _onRigComplete);
+      /* VÒNG ĐỒNG BỘ: tự hiện khi load model mới (app.js cũng gọi
+         autoShow — gọi 2 lần là idempotent, show() cùng rootBone chỉ
+         bật lại part). Trước đây module này KHÔNG nghe model:loaded. */
+      bus.on('model:loaded', function (data) {
+        try {
+          var t = null;
+          var PSm = _PS();
+          if (data && data.id && PSm && PSm.Models && PSm.Models.models) {
+            var entry = PSm.Models.models[data.id];
+            if (entry && entry.object3D) t = entry.object3D;
+          }
+          var r = ArpVpSkeleton.autoShow(t);
+          if (!r.ok && r.reason === 'manual-hidden') {
+            var found = _displayFound(t) || _findSkeleton(t);
+            if (found) { _buildDisplay(t, found); _setPartsVisible(false); _state.visible = false; _syncUI(); }
+          }
+        } catch (e) {}
+      });
       /* Đồng bộ Bone Shape → viewport: đổi hình trong panel Bone Shape
          thì dựng lại hình VP ngay (chỉ gọi refresh() có sẵn; không
          sửa logic update/event/visibility của module này). */
@@ -837,12 +932,16 @@
       _syncUI();
       return { ok: false, reason: 'no-target', message: NO_SKELETON_MSG };
     }
-    var found = _findSkeleton(resolved);
-    if (!found || !found.bones.length) {
+    /* Kiểm tra xương THẬT tồn tại (không có rig thì báo trung thực),
+       nhưng hiển thị KHỚP CHUẨN (canonical) — xem _displayFound. */
+    var realFound = _findSkeleton(resolved);
+    if (!realFound || !realFound.bones.length) {
       _notify('warning', 'Skeleton', NO_SKELETON_MSG + ' — model hiện tại chưa có xương.');
       _syncUI();
       return { ok: false, reason: 'no-skeleton', message: NO_SKELETON_MSG };
     }
+    var found = _displayFound(resolved) || realFound;
+    if (!found || !found.bones.length) found = realFound;
     /* Dựng lại nếu đổi model/root, hoặc lần đầu. */
     if (_state.rootBone !== found.rootBone || !_state.parts.length) {
       var built = _buildDisplay(resolved, found);
@@ -854,6 +953,18 @@
     }
     _settings.visible = true;
     _state.visible = true;
+    /* VÒNG ĐỒNG BỘ: giữ cờ ghost của Smart tab đồng bộ với display
+       (nút Ghost trên toolbar đọc ghost.visible; phím B / nút Xương
+       đi qua show()/hide() này). Chỉ mirror ở mode ghost. */
+    try {
+      var PSm = _PS();
+      var SHm = PSm && PSm.ArpSharedSkeleton;
+      var SMm = PSm && PSm.ArpSmart;
+      if (SHm && SMm && SMm.ghost && typeof SHm.getCanonicalInfo === 'function') {
+        var infoM = SHm.getCanonicalInfo();
+        if (infoM && infoM.mode === 'ghost') SMm.ghost.visible = true;
+      }
+    } catch (e) {}
     /* Hiện tay (toolbar/B/preset-show) → xóa cờ tắt-tay của model này. */
     if (resolved && resolved.uuid && _manualHiddenFor === resolved.uuid) _manualHiddenFor = null;
     _setPartsVisible(true);
@@ -887,6 +998,16 @@
     if (manual && _state.target && _state.target.uuid) _manualHiddenFor = _state.target.uuid;
     _settings.visible = false;
     _state.visible = false;
+    /* VÒNG ĐỒNG BỘ: mirror cờ ghost (chỉ mode ghost) — xem show(). */
+    try {
+      var PSh = _PS();
+      var SHh = PSh && PSh.ArpSharedSkeleton;
+      var SMh = PSh && PSh.ArpSmart;
+      if (SHh && SMh && SMh.ghost && typeof SHh.getCanonicalInfo === 'function') {
+        var infoH = SHh.getCanonicalInfo();
+        if (infoH && infoH.mode === 'ghost') SMh.ghost.visible = false;
+      }
+    } catch (e) {}
     _setPartsVisible(false);
     _restoreHelpers(); /* trả lại SkeletonHelper có sẵn cho user */
     _saveSettings();
@@ -916,7 +1037,10 @@
   ArpVpSkeleton.refresh = function () {
     if (!_state.rootBone) return { ok: false, reason: 'no-skeleton', message: NO_SKELETON_MSG };
     var wasVisible = _state.visible;
-    var built = _buildDisplay(_state.target, { rootBone: _state.rootBone, bones: _state.bones });
+    /* VÒNG ĐỒNG BỘ: dựng lại từ khớp chuẩn hiện tại (canonical có
+       thể đã rebuild sau khi đổi model / regenerate ghost). */
+    var found = _displayFound(_state.target) || { rootBone: _state.rootBone, bones: _state.bones };
+    var built = _buildDisplay(_state.target, found);
     if (!built.ok) return built;
     _setPartsVisible(wasVisible);
     _syncUI();

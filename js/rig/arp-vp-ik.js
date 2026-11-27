@@ -59,6 +59,21 @@
 
   function getQR() { return (window.PixiStudio && window.PixiStudio.ArpQuickRig) || null; }
   function getRig() { var QR = getQR(); return QR ? QR.current : null; }
+
+  /* VÒNG ĐỒNG BỘ SKELETON (2026-11-27): xương của chain IK hiển thị
+     lấy từ KHỚP CHUẨN trước (cùng hierarchy với VP skeleton) — control
+     rig thật chỉ là fallback. Solver IK (trong QuickRig) vẫn dùng
+     xương thật, không đụng tới. */
+  function boneFor(cur, name) {
+    try {
+      var SH = PS.ArpSharedSkeleton;
+      if (SH && typeof SH.getJoint === 'function') {
+        var cj = SH.getJoint(name, cur && cur.target);
+        if (cj) return cj;
+      }
+    } catch (e) {}
+    return cur && cur.bones ? cur.bones[name] : null;
+  }
   function bus() { return (window.PixiStudio && window.PixiStudio.bus) || null; }
   function emit(ev, data) {
     try { var b = bus(); if (b && typeof b.emit === 'function') b.emit(ev, data); } catch (e) {}
@@ -251,7 +266,7 @@
     LIMB_KEYS.forEach(function (limbKey) {
       var def = defs[limbKey];
       if (!def) { skipped.push(limbKey + ':không có định nghĩa limb'); return; }
-      var rootBone = cur.bones[def.root], midBone = cur.bones[def.mid], endBone = cur.bones[def.end];
+      var rootBone = boneFor(cur, def.root), midBone = boneFor(cur, def.mid), endBone = boneFor(cur, def.end);
       if (!rootBone || !midBone || !endBone) { skipped.push(limbKey + ':thiếu xương'); return; }
       var sideColor = colorFor(limbKey);
       /* --- đường chain root->mid->end --- */
@@ -355,7 +370,7 @@
       var L = state.limbs[limbKey];
       if (!L) return;
       var def = L.def || defs[limbKey];
-      var rootBone = cur.bones[def.root], midBone = cur.bones[def.mid], endBone = cur.bones[def.end];
+      var rootBone = boneFor(cur, def.root), midBone = boneFor(cur, def.mid), endBone = boneFor(cur, def.end);
       if (!rootBone || !midBone || !endBone) return;
       /* vị trí world -> local của target */
       var pRoot = toLocal(cur.target, worldPosOf(rootBone));
@@ -472,7 +487,7 @@
     return {
       ok: true, limb: limbKey, kind: def.kind, mode: limbMode(limbKey),
       blend: limbBlend(limbKey), ikFactor: ikFactor(limbKey),
-      root: w(cur.bones[def.root]), mid: w(cur.bones[def.mid]), end: w(cur.bones[def.end]),
+      root: w(boneFor(cur, def.root)), mid: w(boneFor(cur, def.mid)), end: w(boneFor(cur, def.end)),
       target: ctrl ? w(ctrl) : null,
       pole: pole ? w(pole) : null,
       drawn: !!state.limbs[limbKey]

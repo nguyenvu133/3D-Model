@@ -407,6 +407,62 @@
 }
 
 /* ============================================================
+ * DỜI XUỐNG TIMELINE (2026-11-27) — thanh ARP View không còn
+ * che bảng Camera (#ix-camera-panel, góc trên-trái viewport).
+ * Mount mới: #arp-vp-timeline-row (ngay dưới #timeline-toolbar
+ * trong #timeline-panel). Thanh thành dải ngang trong luồng
+ * (position: relative, flex row + wrap), vừa chiều rộng timeline.
+ * Mount cũ trong viewport vẫn được hỗ trợ (fallback) — CSS
+ * absolute gốc ở trên chỉ áp khi KHÔNG có class
+ * .arp-vp-in-timeline.
+ *
+ * Popover nhóm xương: #timeline-panel có overflow:hidden nên
+ * popover KHÔNG thể mở lên/xuống trong panel (bị cắt). Vì vậy
+ * popover được append vào document.body với position:fixed —
+ * ở timeline mở HƯỚNG LÊN (bottom neo theo nút Nhóm xương),
+ * ở viewport mở xuống như cũ. Xem positionGroupsPop() trong
+ * js/ui/arp-vp-toolbar.js.
+ * ============================================================ */
+#arp-vp-timeline-row {
+  flex: none;
+  display: flex;
+  padding: 4px 8px 0;
+  min-width: 0;
+  overflow-x: auto;
+}
+#arp-vp-timeline-row:empty { display: none; }
+.arp-vp-toolbar.arp-vp-in-timeline {
+  position: relative;
+  top: auto;
+  left: auto;
+  z-index: 5;
+  flex-direction: row;
+  /* Dải ngang 1 dòng + cuộn ngang (KHÔNG wrap): 22 nút mà wrap thì
+     thanh cao ~170px, chèn ép #timeline-body còn ~14px trong panel
+     cao 224px. 1 dòng cao ~44px, timeline vẫn dùng được bình thường. */
+  flex-wrap: nowrap;
+  align-items: center;
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
+}
+.arp-vp-toolbar.arp-vp-in-timeline .arp-vp-btns { flex-wrap: nowrap; }
+.arp-vp-toolbar.arp-vp-in-timeline .arp-vp-collapse { align-self: center; }
+.arp-vp-groups-pop { z-index: 60; }
+@media (max-width: 767px) {
+  /* Điện thoại (720px): dải ARP cuộn ngang, không vỡ layout,
+     không che nút Play của timeline (nút Play ở .playback-row
+     nằm DƯỚI hàng này trong luồng); nút đủ lớn để bấm bằng tay. */
+  #arp-vp-timeline-row { overflow-x: auto; padding: 4px 4px 0; }
+  .arp-vp-toolbar.arp-vp-in-timeline { flex-wrap: nowrap; }
+  .arp-vp-toolbar.arp-vp-in-timeline .arp-vp-btn {
+    min-height: 36px;
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+}
+
+/* ============================================================
  * FIX chữ trắng (2026-11-27) — chỉ ảnh hưởng HIỂN THỊ, không
  * ảnh hưởng dữ liệu đã xuất / giá trị đã chọn / file FBX.
  *

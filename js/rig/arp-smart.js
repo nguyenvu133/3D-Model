@@ -907,23 +907,16 @@
     return (AP && AP.boneDefs) ? AP.boneDefs(id) : null;
   };
 
-  ArpSmart._updateGhostLines = function (pos) {
-    var g = ArpSmart.ghost;
-    if (!g.lines || !g.pairs.length || !pos) return;
-    var attr = g.lines.geometry.attributes.position;
-    for (var i = 0; i < g.pairs.length; i++) {
-      var a = pos[g.pairs[i][0]], b = pos[g.pairs[i][1]];
-      if (!a || !b) continue;
-      attr.array[i * 6] = a.x; attr.array[i * 6 + 1] = a.y; attr.array[i * 6 + 2] = a.z;
-      attr.array[i * 6 + 3] = b.x; attr.array[i * 6 + 4] = b.y; attr.array[i * 6 + 5] = b.z;
-    }
-    attr.needsUpdate = true;
-  };
-
-  ArpSmart.buildGhost = function () {
-    if (!ArpSmart.landmarks) return false;
+  /* VÒNG ĐỒNG BỘ SKELETON (2026-11-27): tách phần TÍNH vị trí ghost
+     khỏi phần DỰNG group — dữ liệu ghost (vị trí/độ dài/hierarchy)
+     là CHUẨN cho canonical display (ArpSharedSkeleton); group
+     scene-level cũ là nguyên nhân "bộ trái lơ lửng" (nướng cứng ở
+     gốc, không theo model) nên không dựng nữa khi module chia sẻ có
+     mặt. Trả {pos, jointPositions, pairs, defs, H} hoặc null. */
+  ArpSmart._ghostPositions = function () {
+    if (!ArpSmart.landmarks) return null;
     var ARP = PixiStudio.AutoRigPro;
-    if (!ARP || !ARP._test || !ARP._test.boneWorldPositions) return false;
+    if (!ARP || !ARP._test || !ARP._test.boneWorldPositions) return null;
     var eff = effectiveLandmarks();
     var vOpts = rigOptsToVariantOpts();
     var pos = ARP._test.boneWorldPositions(eff, {
@@ -940,19 +933,80 @@
       (ARP._test.variantBoneDefs ? ARP._test.variantBoneDefs(vOpts) : ARP.BONE_DEFS);
     var pairs = [];
     defs.forEach(function (d) { if (d.parent) pairs.push([d.parent, d.name]); });
-    ArpSmart.ghost.jointPositions = {};
+    var jointPositions = {};
     Object.keys(pos).forEach(function (k) {
-      ArpSmart.ghost.jointPositions[k] = { x: pos[k].x, y: pos[k].y, z: pos[k].z };
+      jointPositions[k] = { x: pos[k].x, y: pos[k].y, z: pos[k].z };
     });
+    return { pos: pos, jointPositions: jointPositions, pairs: pairs, defs: defs, H: eff.H };
+  };
+
+  /* Đo lại landmark cho model (đổi model / dời model — ghost không
+     dùng số đo cũ của model trước). Dùng bởi ArpSharedSkeleton khi
+     model:loaded / transform:changed. */
+  ArpSmart.refreshLandmarks = function (target) {
+    var ARP = window.PixiStudio && PixiStudio.AutoRigPro;
+    if (!ARP || typeof ARP.measureLandmarks !== 'function') return null;
+    target = getTarget(target || ArpSmart.target);
+    if (!target) return null;
+    try {
+      var lm = ARP.measureLandmarks(target);
+      if (lm) { ArpSmart.landmarks = lm; ArpSmart.target = target; }
+      return lm || null;
+    } catch (e) { return null; }
+  };
+
+  ArpSmart._updateGhostLines = function (pos) {
+    var g = ArpSmart.ghost;
+    if (!g.lines || !g.pairs.length || !pos) return;
+    var attr = g.lines.geometry.attributes.position;
+    for (var i = 0; i < g.pairs.length; i++) {
+      var a = pos[g.pairs[i][0]], b = pos[g.pairs[i][1]];
+      if (!a || !b) continue;
+      attr.array[i * 6] = a.x; attr.array[i * 6 + 1] = a.y; attr.array[i * 6 + 2] = a.z;
+      attr.array[i * 6 + 3] = b.x; attr.array[i * 6 + 4] = b.y; attr.array[i * 6 + 5] = b.z;
+    }
+    attr.needsUpdate = true;
+  };
+
+  ArpSmart.buildGhost = function () {
+    var gp = ArpSmart._ghostPositions();
+    if (!gp) return false;
+    var pos = gp.pos, defs = gp.defs, pairs = gp.pairs;
+    ArpSmart.ghost.jointPositions = gp.jointPositions;
     ArpSmart.ghost.pairs = pairs;
     if (!window.THREE) return true;
+    /* VÒNG ĐỒNG BỘ SKELETON (2026-11-27): KHÔNG dựng group ghost
+       scene-level riêng nữa — group cũ nướng cứng vị trí world ở
+       gốc scene, model dời đi thì ghost đứng yên ("bộ trái lơ
+       lửng"). Dữ liệu ghost (vị trí/độ dài/hierarchy) là CHUẨN;
+       hiển thị duy nhất là canonical display (ArpSharedSkeleton)
+       qua VP skeleton layer — gắn vào model root, tự theo model.
+       ghost.group trỏ alias tới canonical group để toolbar fallback
+       (S.ghost.group.visible) vẫn chạy. */
+    var SH = window.PixiStudio && PixiStudio.ArpSharedSkeleton;
+    if (SH && typeof SH.ensureCanonicalJoints === 'function') {
+      var target = getTarget();
+      var r = null;
+      try { r = SH.ensureCanonicalJoints(target); } catch (e) { r = null; }
+      if (r && r.ok) {
+        ArpSmart.ghost.group = r.group;
+        ArpSmart.ghost.joints = r.joints;
+        ArpSmart.ghost.lines = null;
+        if (ArpSmart.ghost.visible) {
+          var VS = window.PixiStudio && PixiStudio.ArpVpSkeleton;
+          if (VS && typeof VS.show === 'function') { try { VS.show(target); } catch (e) {} }
+        }
+        return true;
+      }
+    }
+    /* Fallback (module chia sẻ chưa load): dựng group ghost cũ. */
     var scene = getScene();
     if (!scene) return true;
     /* hideGhost() đặt visible=false — giữ lại cờ trước khi dọn group cũ. */
     var wasVisible = ArpSmart.ghost.visible;
     ArpSmart.hideGhost();
     ArpSmart.ghost.visible = wasVisible;
-    var H = eff.H;
+    var H = gp.H;
     var group = new THREE.Group();
     group.name = '__arp_ghost__';
     var jointMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.9, depthTest: false });
@@ -988,26 +1042,25 @@
 
   ArpSmart.updateGhost = function () {
     if (!ArpSmart.ghost.visible || !ArpSmart.ghost.group) return false;
-    var ARP = PixiStudio.AutoRigPro;
-    if (!ArpSmart.landmarks || !ARP || !ARP._test || !ARP._test.boneWorldPositions) return false;
-    var eff = effectiveLandmarks();
-    var vOpts = rigOptsToVariantOpts();
-    var pos = ARP._test.boneWorldPositions(eff, {
-      symmetrical: ArpSmart.settings.symmetrical !== false,
-      useDepth: !!ArpSmart.settings.useDepth,
-      twist: vOpts.twist, neckSegments: vOpts.neckSegments, pose: vOpts.pose
-    });
-    /* NHÓM 6 — Animal presets: suy vị trí khớp preset từ vị trí humanoid. */
-    if (ArpSmart.getActivePresetId() !== 'humanoid') {
-      var APu = window.PixiStudio && PixiStudio.ArpAnimalPresets;
-      if (APu && APu.resolvePositions) pos = APu.resolvePositions(pos, ArpSmart.getActivePresetId());
+    var gp = ArpSmart._ghostPositions();
+    if (!gp) return false;
+    ArpSmart.ghost.jointPositions = gp.jointPositions;
+    ArpSmart.ghost.pairs = gp.pairs;
+    /* VÒNG ĐỒNG BỘ: cập nhật khớp chuẩn tại chỗ (giữ mesh VP đang
+       gắn) thay vì dời khớp cầu scene-level. */
+    var SH = window.PixiStudio && PixiStudio.ArpSharedSkeleton;
+    if (SH && typeof SH.updateCanonicalFromGhost === 'function') {
+      try {
+        var r = SH.updateCanonicalFromGhost(gp.jointPositions, gp.pairs);
+        if (r && r.ok) return true;
+      } catch (e) {}
     }
-    Object.keys(pos).forEach(function (k) {
-      ArpSmart.ghost.jointPositions[k] = { x: pos[k].x, y: pos[k].y, z: pos[k].z };
+    /* Fallback cũ (group ghost scene-level): dời khớp cầu + đường nối. */
+    Object.keys(gp.pos).forEach(function (k) {
       var j = ArpSmart.ghost.joints[k];
-      if (j) j.position.copy(pos[k]);
+      if (j && j.isMesh) j.position.copy(gp.pos[k]);
     });
-    ArpSmart._updateGhostLines(pos);
+    ArpSmart._updateGhostLines(gp.pos);
     return true;
   };
 
@@ -1023,6 +1076,19 @@
   ArpSmart.showGhost = function () {
     if (!ArpSmart.landmarks) { notify('warning', 'Tab Smart', 'Chưa có marker — bấm Guess Markers trước rồi mới xem ghost.'); return false; }
     ArpSmart.ghost.visible = true;
+    /* VÒNG ĐỒNG BỘ SKELETON (2026-11-27): ghost = canonical display
+       duy nhất — hiện qua VP skeleton layer (gắn vào model), không
+       bật group scene-level riêng. */
+    var SH = window.PixiStudio && PixiStudio.ArpSharedSkeleton;
+    if (SH && typeof SH.ensureCanonicalJoints === 'function') {
+      if (!ArpSmart.ghost.group || !ArpSmart.ghost.jointPositions || !Object.keys(ArpSmart.ghost.jointPositions).length) ArpSmart.buildGhost();
+      else { try { SH.ensureCanonicalJoints(getTarget()); } catch (e) {} }
+      var VS = window.PixiStudio && PixiStudio.ArpVpSkeleton;
+      if (VS && typeof VS.show === 'function') { try { VS.show(getTarget()); } catch (e) {} }
+      ArpSmart._syncControls();
+      ArpSmart.refreshReadout();
+      return true;
+    }
     if (!ArpSmart.ghost.group) ArpSmart.buildGhost();
     else ArpSmart.ghost.group.visible = true;
     ArpSmart._syncControls();
@@ -1032,6 +1098,23 @@
 
   ArpSmart.hideGhost = function () {
     ArpSmart.ghost.visible = false;
+    /* VÒNG ĐỒNG BỘ SKELETON (2026-11-27): ẩn canonical display qua
+       VP layer — chỉ khi đang ở mode ghost; ở mode bones, display là
+       xương thật nên ghost ẩn không được tắt nó. Group alias KHÔNG
+       dispose (canonical hierarchy thuộc shared module; VP layer
+       quản lý mesh của nó). */
+    var SH = window.PixiStudio && PixiStudio.ArpSharedSkeleton;
+    if (SH && typeof SH.getCanonicalInfo === 'function') {
+      try {
+        var info = SH.getCanonicalInfo();
+        if (info && info.mode === 'ghost') {
+          var VS = window.PixiStudio && PixiStudio.ArpVpSkeleton;
+          if (VS && typeof VS.hide === 'function') { try { VS.hide(); } catch (e) {} }
+        }
+      } catch (e) {}
+      return true;
+    }
+    /* Fallback cũ (module chia sẻ chưa load): dọn group ghost scene-level. */
     if (ArpSmart.ghost.group) {
       var scene = getScene();
       if (scene) scene.remove(ArpSmart.ghost.group);
@@ -1445,7 +1528,10 @@
     }
     var result = ARP.run(target, ArpSmart.buildRunOpts(extra));
     if (result && result.ok) {
-      ArpSmart.hideGhost();   /* rig thật đã có SkeletonHelper — ẩn ghost */
+      /* VÒNG ĐỒNG BỘ SKELETON (2026-11-27): KHÔNG hideGhost() nữa —
+         ghost/canonical display CHÍNH LÀ skeleton display (VP layer
+         dựng mesh trên khớp chuẩn); ẩn nó lúc rig xong là sai — pose
+         sync tự nhận xương thật mới theo tên. */
       ArpSmart.saveSession();
       /* --- AUTO KHỚP (js/rig/arp-automatch.js): rig Smart có thể thiếu
          xương ngón (boneSet hy3d28 chỉ có Thumb1/Index1/Middle1, không

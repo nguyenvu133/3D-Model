@@ -13,6 +13,9 @@
   const App = {
     booted: false,
     _lastFrame: 0,
+    /* CLIPBIND-B: số frame của vòng lặp chính — truyền cho Animator.tick(dt, frame)
+       để guard chống tick 2 lần/frame. */
+    _frame: 0,
     _running: false
   };
 
@@ -27,11 +30,27 @@
 
       const dt = Math.min(0.1, (now - App._lastFrame) / 1000);
       App._lastFrame = now;
+      App._frame++; /* CLIPBIND-B: frame id cho Animator.tick guard */
 
       try {
         /* gameplay/animation updates */
         PixiStudio.Playback.update(dt);
         PixiStudio.Anim.update(dt);
+        /* CLIPBIND-B (bug b): Animator có mixer riêng (_mixer, tạo trong
+           arp-animator.js ensureMixer) nhưng trước đây KHÔNG AI gọi
+           Animator.tick() mỗi frame — play() tạo action rồi mixer kẹt ở
+           time 0, clip không bao giờ animate xương (probe B vòng Viewport:
+           sau play 1.5s _mixer.time=0, action time=0, animatorTime=0 trong
+           khi Anim.mixer tick nhưng có 0 action). Gọi tick ĐÚNG 1 LẦN/frame
+           tại đây (ngay sau Anim.update, trước render + trước
+           ArpConstraints.update để constraint vẫn ghi đè pose sau mixer).
+           tick tự early-return khi không phát / pause; guard frameId trong
+           tick() chặn tick 2 lần/frame. KHÔNG gộp vào Anim.mixer: Animator
+           có registry/layers/blend/root-motion/events riêng gắn _mixer, và
+           Anim.mixer bị setTarget() tạo lại mỗi lần load model. */
+        if (PixiStudio.ArpAnimator && typeof PixiStudio.ArpAnimator.tick === 'function') {
+          PixiStudio.ArpAnimator.tick(dt, App._frame);
+        }
         if (PixiStudio.RigAutoGen) PixiStudio.RigAutoGen.update(dt);
         if (PixiStudio.FbxRig) PixiStudio.FbxRig.update(dt);
         if (PixiStudio.Thandieu) PixiStudio.Thandieu.update(dt);
@@ -185,7 +204,7 @@
     }
 
     if (!window.THREE) {
-      document.getElementById('boot-status').textContent = '❌ Three.js chưa load — kiểm tra kết nối CDN (jsdelivr/unpkg) hoặc tải offline vào js/vendor/.';
+      document.getElementById('boot-status').textContent = '❌ Three.js chưa load — kiểm tra js/vendor/three.min.js (hoặc kết nối CDN jsdelivr).';
       return;
     }
 

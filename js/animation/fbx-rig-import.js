@@ -433,6 +433,7 @@
      AUTO-DETECT + AUTO-LOAD file FBX Meshy trong assets/models
      ============================================================ */
   FbxRig.autoLoad = function () {
+    if (location.protocol === 'file:') return Promise.resolve(null); /* file://: không có Node bridge server — bỏ qua hẳn, tránh request rác file:///api/fbx-list */
     return fetch('/api/fbx-list').then(function (r) { return r.json(); }).then(function (list) {
       if (!list.ok || !list.files || !list.files.length) return null;
       /* ưu tiên animated (Running) */

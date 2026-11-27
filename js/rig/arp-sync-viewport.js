@@ -762,10 +762,11 @@
       };
       AN.resume.__arpSyncViewportWrapped = true;
     }
-    AN.tick = function (dt) {
+    /* CLIPBIND-B: forward frameId cho guard chống double-update trong Animator.tick. */
+    AN.tick = function (dt, frameId) {
       /* poll trước: bắt play qua tab (nút Play nội bộ) ngay frame đầu. */
       try { pollPlaying(); } catch (e) {}
-      var r = orig.tick(dt);
+      var r = orig.tick(dt, frameId);
       /* Sync hooks KHÔNG được làm hỏng phát lại: mọi lỗi đã được
        * chặn trong reapply/refresh; ở đây chỉ chặn thêm 1 lớp. */
       try { afterTick(dt, r); } catch (e) { state.lastError = e && e.message; }

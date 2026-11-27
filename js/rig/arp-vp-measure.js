@@ -141,6 +141,16 @@
 
   function getTarget(target) {
     if (target) return target;
+    /* VÒNG ĐỒNG BỘ SKELETON (2026-11-27): 1 thứ tự resolve duy nhất
+       cho mọi module (ArpSharedSkeleton.resolveTarget). Measure vẫn đo
+       trên xương THẬT (công cụ đo model), chỉ đổi nguồn target. */
+    try {
+      var SH = PixiStudio.ArpSharedSkeleton;
+      if (SH && typeof SH.resolveTarget === 'function') {
+        var shared = SH.resolveTarget(null);
+        if (shared) return shared;
+      }
+    } catch (e) {}
     if (PixiStudio.State && PixiStudio.State.get) {
       var sel = PixiStudio.State.get('selection');
       if (sel) return sel;

@@ -452,7 +452,11 @@
   /* ---------- LOAD DEFAULT — auto-detect GLB trong assets/models qua /api/models ---------- */
   Manager.loadDefault = function () {
     /* ưu tiên: kiemhiep* → tripo_* → Meshy_* → file mới nhất bất kỳ */
-    return fetch('/api/models').then(function (r) { return r.json(); }).catch(function () { return { files: null }; }).then(function (list) {
+    /* file://: không có Node bridge server — bỏ qua /api/models, dùng model mặc định */
+    var listPromise = location.protocol === 'file:'
+      ? Promise.resolve({ files: null })
+      : fetch('/api/models').then(function (r) { return r.json(); }).catch(function () { return { files: null }; });
+    return listPromise.then(function (list) {
       let url = CONFIG.DEFAULT_MODEL_URL;
       let name = CONFIG.DEFAULT_MODEL_NAME;
       if (list && list.files && list.files.length) {

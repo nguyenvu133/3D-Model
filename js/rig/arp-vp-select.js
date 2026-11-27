@@ -176,6 +176,16 @@
 
   function resolveTarget(explicit) {
     if (explicit && explicit.traverse) return explicit;
+    /* VÒNG ĐỒNG BỘ SKELETON (2026-11-27): 1 thứ tự resolve duy nhất
+       cho mọi module (ArpSharedSkeleton.resolveTarget). Chỉ khi module
+       chia sẻ vắng mới rơi xuống chain cũ của module này. */
+    try {
+      var SHr = PS.ArpSharedSkeleton;
+      if (SHr && typeof SHr.resolveTarget === 'function') {
+        var shared = SHr.resolveTarget(null);
+        if (shared) return shared;
+      }
+    } catch (e) {}
     try {
       var QR = PS.ArpQuickRig;
       if (QR && QR.current && QR.current.target) return QR.current.target;
@@ -210,9 +220,18 @@
   function findBone(name) {
     if (!name) return null;
     if (name.isBone) return name;
+    if (name.userData && name.userData.isCanonicalJoint) return name;
     var want = stripName(name).toLowerCase();
     var entry = state.entries[stripName(name)] || state.entries[name];
     if (entry && entry.bone) return entry.bone;
+    /* VÒNG ĐỒNG BỘ: khớp chuẩn trước (cùng reference với VP skeleton). */
+    try {
+      var SHf = PS.ArpSharedSkeleton;
+      if (SHf && typeof SHf.getJoint === 'function') {
+        var cj = SHf.getJoint(name, state.target);
+        if (cj) return cj;
+      }
+    } catch (e) {}
     try {
       var QR = PS.ArpQuickRig;
       if (QR && QR.current && QR.current.bones) {
@@ -223,11 +242,27 @@
     if (state.target) {
       var found = null;
       state.target.traverse(function (o) {
-        if (!found && o.isBone && stripName(o.name).toLowerCase() === want) found = o;
+        if (!found && (o.isBone || (o.userData && o.userData.isCanonicalJoint)) && stripName(o.name).toLowerCase() === want) found = o;
       });
       if (found) return found;
     }
     return null;
+  }
+
+  /* VÒNG ĐỒNG BỘ: tập hiển thị của overlay = khớp chuẩn (canonical),
+     fallback xương thật khi module chia sẻ vắng. */
+  function _displayBones(target) {
+    try {
+      var SH = PS.ArpSharedSkeleton;
+      if (SH && typeof SH.ensureCanonicalJoints === 'function') {
+        var r = SH.ensureCanonicalJoints(target);
+        if (r && r.ok && r.joints) {
+          var names = Object.keys(r.joints);
+          if (names.length) return names.map(function (n) { return r.joints[n]; });
+        }
+      }
+    } catch (e) {}
+    return collectBones(target);
   }
 
   /* ---------------- overlay: khớp cầu + đoạn xương ---------------- */
@@ -317,7 +352,7 @@
     target = resolveTarget(target);
     if (!target || !target.traverse) return { ok: false, error: 'Chưa có model nào.' };
     if (!window.THREE) return { ok: false, error: 'THREE chưa sẵn sàng.' };
-    var bones = collectBones(target);
+    var bones = _displayBones(target);
     if (!bones.length) return { ok: false, error: 'Model chưa có skeleton — bấm chọn xương cần model đã rig.' };
     var prevSelected = VpSelect.selected;
     clearOverlay();
@@ -337,7 +372,9 @@
     state.group = group;
     var entries = {};
     bones.forEach(function (bone) {
-      var kids = bone.children.filter(function (c) { return c.isBone; });
+      /* VÒNG ĐỒNG BỘ: con của khớp chuẩn là Object3D thường
+         (userData.isCanonicalJoint) — chấp nhận cả 2 loại. */
+      var kids = bone.children.filter(function (c) { return c.isBone || (c.userData && c.userData.isCanonicalJoint); });
       var child = kids.length ? kids[0] : null;
       /* độ dài đoạn xương: khoảng cách tới xương con (world); lá = 3% chiều cao */
       var segLen = H * 0.03;
@@ -463,16 +500,17 @@
     if (!bone) return null;
     var stripped = stripName(bone.name);
     var entry = state.entries[stripped];
-    var parent = bone.parent && bone.parent.isBone ? stripName(bone.parent.name) : null;
+    /* VÒNG ĐỒNG BỘ: cha/con có thể là khớp chuẩn (Object3D thường). */
+    var parent = bone.parent && (bone.parent.isBone || (bone.parent.userData && bone.parent.userData.isCanonicalJoint)) ? stripName(bone.parent.name) : null;
     var children = [];
-    bone.children.forEach(function (c) { if (c.isBone) children.push(stripName(c.name)); });
+    bone.children.forEach(function (c) { if (c.isBone || (c.userData && c.userData.isCanonicalJoint)) children.push(stripName(c.name)); });
     var lengthM = null;
     if (entry) {
       if (!entry.isLeaf) {
         try {
           bone.updateWorldMatrix(true, false);
           var a = new window.THREE.Vector3().setFromMatrixPosition(bone.matrixWorld);
-          var kid = bone.children.filter(function (c) { return c.isBone; })[0];
+          var kid = bone.children.filter(function (c) { return c.isBone || (c.userData && c.userData.isCanonicalJoint); })[0];
           var b = new window.THREE.Vector3().setFromMatrixPosition(kid.matrixWorld);
           lengthM = a.distanceTo(b);
         } catch (e) { lengthM = entry.baseLength; }
@@ -1127,7 +1165,10 @@
     aimErrorOf: aimErrorOf,
     COLOR_DEFAULT: COLOR_DEFAULT,
     COLOR_SELECTED: COLOR_SELECTED,
-    SELECT_SCALE: SELECT_SCALE
+    SELECT_SCALE: SELECT_SCALE,
+    /* VÒNG ĐỒNG BỘ SKELETON (2026-11-27): expose state cho harness kiểm
+       tra overlay bám khớp chuẩn (cùng reference với VP skeleton). */
+    _test: { state: state, findBone: findBone, resolveTarget: resolveTarget, collectBones: collectBones }
   };
 
   PS.ArpVpSelect = VpSelect;

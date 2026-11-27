@@ -1043,10 +1043,14 @@
     var out = [], seen = {};
     var push = function (id, clip, source) {
       if (!clip || !clip.tracks || !clip.name) return;
-      var k = String(clip.name);
+      /* Dedupe bằng ID (syncId / animatorId), KHÔNG chỉ theo tên:
+         2 clip cùng tên khác id (vd mixamo 'Run' vs retarget 'Run')
+         đều phải hiện — trước đây dedupe theo tên nên clip sau bị
+         nuốt. Entry không có id thì rơi về tên như cũ. */
+      var k = String(id || clip.name);
       if (seen[k]) return;
       seen[k] = true;
-      out.push({ id: id || k, name: k, clip: clip, source: source || 'studio' });
+      out.push({ id: id || k, name: clip.name, clip: clip, source: source || 'studio' });
     };
     var pushEntries = function (entries, source) {
       if (!entries || !entries.forEach) return;
@@ -1070,6 +1074,36 @@
       if (mod.clips) pushEntries(mod.clips, ns);
       if (mod.animations) pushEntries(mod.animations, ns);
     });
+    /* Animator (đồng bộ qua ArpExportSync — vòng Export-sync): Keyframe /
+       trim / retime / reverse / mirror / retarget / autogen / user.
+       Chỉ lấy clip exportable (có THREE.AnimationClip); clip chỉ phát
+       (autogen chưa sinh clip) không vào danh sách xuất. Live Retarget
+       preview không có clip object nên cũng không có ở đây. Cùng 1 clip
+       object đã có từ nguồn khác (vd Coco, id = tên) thì nâng cấp entry
+       đó lên syncId thay vì thêm trùng. */
+    var ES = PixiStudio.ArpExportSync;
+    if (ES && typeof ES.listAnimatorClips === 'function') {
+      try {
+        ES.listAnimatorClips().forEach(function (e) {
+          if (!e || !e.exportable || !e.clip) return;
+          var dup = null;
+          out.forEach(function (o) { if (o.clip === e.clip) dup = o; });
+          if (dup) {
+            if (String(dup.id).indexOf(':') < 0) {
+              /* GIỮ id cũ trong seen: nguồn chạy SAU khối này
+                 (target.animations) mà push lại cùng clip dưới tên cũ
+                 sẽ bị chặn — xóa khỏi seen sẽ làm clip hiện 2 lần
+                 (vd 'Punch [model]' + 'mixamo:Punch'). */
+              dup.id = e.syncId;
+              dup.source = 'Animator/' + (e.source || 'user');
+              seen[e.syncId] = true;
+            }
+            return;
+          }
+          push(e.syncId, e.clip, 'Animator/' + (e.source || 'user'));
+        });
+      } catch (err) {}
+    }
     var tgt = target || getTarget();
     if (tgt && tgt.animations) pushEntries(tgt.animations, 'model');
     return out;
@@ -1968,10 +2002,20 @@
     return s;
   }
 
+  /* Trạng thái tab Export giữ qua các lần render lại (vòng Export-sync:
+     tab render lại khi Animator đổi clip để cập nhật danh sách — state
+     khai trong renderExportTab sẽ mất format / preset / checkbox đã
+     chọn). uncheckedClipIds: id clip user đã bỏ tick (clip mới mặc
+     định tick). */
+  var exportTabState = { format: 'fbx', preset: 'unity', busy: false, uncheckedClipIds: [] };
+  var _exportTabContainer = null;
+  var _exportSyncListenerOn = false;
+
   function renderExportTab(container) {
     if (!container) return;
     container.innerHTML = '';
-    var state = { format: 'fbx', preset: 'unity', busy: false };
+    var state = exportTabState;
+    state.busy = false;
 
     container.appendChild(el('div', { class: 'dim small', style: 'line-height:1.6;margin-bottom:8px;', text: 'Xuất model đã rig (Auto Rig Pro, 41 xương Mixamo). FBX luôn kèm file .py Blender; GLB không kèm .py. Texture mặc định nhúng trong file. Bấm "Kiểm tra trước" để xem preflight trước khi xuất.' }));
 
@@ -2125,14 +2169,29 @@
       clips.forEach(function (e) {
         var input = document.createElement('input');
         input.type = 'checkbox';
-        input.checked = true;
+        input.checked = exportTabState.uncheckedClipIds.indexOf(e.id) < 0;
         input.value = e.id;
+        input.addEventListener('change', function () {
+          var ui = exportTabState.uncheckedClipIds.indexOf(e.id);
+          if (!input.checked && ui < 0) exportTabState.uncheckedClipIds.push(e.id);
+          else if (input.checked && ui >= 0) exportTabState.uncheckedClipIds.splice(ui, 1);
+        });
         clipChecks.push(input);
         var lbl = el('label', { class: 'small', style: 'display:flex;gap:6px;align-items:center;cursor:pointer;' });
         lbl.appendChild(input);
         lbl.appendChild(document.createTextNode(e.name + ' (' + e.clip.duration.toFixed(2) + 's · ' + e.source + ')'));
         animBox.appendChild(lbl);
       });
+    }
+    /* Đồng bộ Animator (vòng Export-sync): số clip Animator biết, bao
+       nhiêu xuất được. Live Retarget preview không có clip nên không
+       xuất được — bake thành clip retarget trước (tab Remap). */
+    var ES0 = PixiStudio.ArpExportSync;
+    if (ES0 && typeof ES0.getStats === 'function') {
+      try {
+        var st0 = ES0.getStats();
+        animBox.appendChild(el('div', { class: 'dim small', text: 'Đồng bộ Animator: ' + st0.total + ' clip · ' + st0.exportable + ' xuất được' + (st0.playOnly ? ' · ' + st0.playOnly + ' chỉ phát (autogen chưa sinh clip)' : '') + '. Live Retarget preview không có clip nên không xuất được.' }));
+      } catch (err0) {}
     }
     var animRow = el('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;' });
     animRow.appendChild(el('span', { class: 'small', text: 'Bake:' }));
@@ -2316,6 +2375,22 @@
         renderPf(pf);
       }
     }));
+    /* Kết quả xuất dùng chung cho nút Xuất + nút Xuất từ Animator. */
+    var handleExportResult = function (r, fromAnimator) {
+      state.busy = false;
+      exportBtn.textContent = '⬇ Xuất';
+      renderPf(r.preflight || null);
+      if (!r.ok) { reportBox.textContent = '✕ Xuất thất bại: ' + (r.error || 'lỗi không rõ.'); return; }
+      var st = r.stats || {};
+      var fmtSize = (U && U.formatBytes) ? U.formatBytes(r.sizeBytes) : (r.sizeBytes + ' B');
+      reportBox.innerHTML = '';
+      reportBox.appendChild(el('div', { style: 'color:var(--success,#4c4);', html: '<b>✓ ' + r.filename + '</b> (' + fmtSize + ')' + (fromAnimator ? ' — từ Animator' : '') }));
+      reportBox.appendChild(el('div', { text: (st.meshes || 0) + ' mesh · ' + (st.tris || 0) + ' tris · ' + r.boneCount + ' xương · skin ' + (r.hasSkin ? 'có' : 'không') + ' · ' + (st.textures || 0) + ' texture nhúng' }));
+      if (r.format === 'fbx') reportBox.appendChild(el('div', { text: 'Kèm ' + r.pyFilename + ' — mở .py trong Blender để lưu ' + r.blendFilename + '.' }));
+      else reportBox.appendChild(el('div', { text: 'GLB không kèm file .py (script .py chỉ import FBX).' }));
+      if (r.lod && r.lod.bytes) reportBox.appendChild(el('div', { text: 'Kèm LOD: ' + r.lod.filename + ' (' + r.lod.tris + ' tris).' }));
+      renderHistory();
+    };
     var exportBtn = el('button', {
       class: 'btn primary', text: '⬇ Xuất',
       onclick: function () {
@@ -2328,24 +2403,28 @@
         exportBtn.textContent = 'Đang xuất…';
         reportBox.textContent = 'Đang xuất…';
         var opts = collectOpts();
-        exportFile(null, opts).then(function (r) {
-          state.busy = false;
-          exportBtn.textContent = '⬇ Xuất';
-          renderPf(r.preflight || null);
-          if (!r.ok) { reportBox.textContent = '✕ Xuất thất bại: ' + (r.error || 'lỗi không rõ.'); return; }
-          var st = r.stats || {};
-          var fmtSize = (U && U.formatBytes) ? U.formatBytes(r.sizeBytes) : (r.sizeBytes + ' B');
-          reportBox.innerHTML = '';
-          reportBox.appendChild(el('div', { style: 'color:var(--success,#4c4);', html: '<b>✓ ' + r.filename + '</b> (' + fmtSize + ')' }));
-          reportBox.appendChild(el('div', { text: (st.meshes || 0) + ' mesh · ' + (st.tris || 0) + ' tris · ' + r.boneCount + ' xương · skin ' + (r.hasSkin ? 'có' : 'không') + ' · ' + (st.textures || 0) + ' texture nhúng' }));
-          if (r.format === 'fbx') reportBox.appendChild(el('div', { text: 'Kèm ' + r.pyFilename + ' — mở .py trong Blender để lưu ' + r.blendFilename + '.' }));
-          else reportBox.appendChild(el('div', { text: 'GLB không kèm file .py (script .py chỉ import FBX).' }));
-          if (r.lod && r.lod.bytes) reportBox.appendChild(el('div', { text: 'Kèm LOD: ' + r.lod.filename + ' (' + r.lod.tris + ' tris).' }));
-          renderHistory();
-        });
+        exportFile(null, opts).then(function (r) { handleExportResult(r, false); });
       }
     });
     btnRow.appendChild(exportBtn);
+    /* Xuất từ Animator (vòng Export-sync): xuất clip Animator ĐANG
+       CHỌN qua đúng pipeline Export (preflight / preset / version /
+       texture / lịch sử) — không ghi FBX trực tiếp như Animator. */
+    btnRow.appendChild(el('button', {
+      class: 'btn', text: '⬇ Xuất từ Animator',
+      onclick: function () {
+        if (state.busy) return;
+        var ES2 = PixiStudio.ArpExportSync;
+        if (!ES2 || typeof ES2.exportCurrentAnimatorClip !== 'function') {
+          notify('warning', 'Export-sync', 'ArpExportSync chưa load — hard-refresh trang.');
+          return;
+        }
+        state.busy = true;
+        exportBtn.textContent = 'Đang xuất…';
+        reportBox.textContent = 'Đang xuất clip Animator…';
+        ES2.exportCurrentAnimatorClip(collectOpts()).then(function (r) { handleExportResult(r, true); });
+      }
+    }));
     btnRow.appendChild(el('button', {
       class: 'btn', text: '📦 Xuất hàng loạt (mọi model trong scene)',
       onclick: function () {
@@ -2392,6 +2471,22 @@
     };
     renderHistory();
     container.appendChild(histBox);
+
+    /* Đồng bộ live với Animator (vòng Export-sync): Animator thêm /
+       sửa / xóa clip → render lại tab Export (giữ format / preset /
+       checkbox nhờ exportTabState). Đăng ký 1 lần duy nhất. */
+    _exportTabContainer = container;
+    if (!_exportSyncListenerOn && PixiStudio.ArpExportSync && typeof PixiStudio.ArpExportSync.onChange === 'function') {
+      _exportSyncListenerOn = true;
+      PixiStudio.ArpExportSync.onChange(function () {
+        try {
+          var Panel = PixiStudio.ArpPanel;
+          if (Panel && typeof Panel.currentTab === 'function' && Panel.currentTab() === 'export' && _exportTabContainer) {
+            renderExportTab(_exportTabContainer);
+          }
+        } catch (e) {}
+      });
+    }
   }
   ArpExport.renderExportTab = renderExportTab;
 

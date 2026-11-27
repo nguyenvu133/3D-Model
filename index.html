@@ -16,6 +16,74 @@
 <link rel="stylesheet" href="css/arp-panel.css">
 <link rel="stylesheet" href="css/anim-graph.css">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%23713BFF'/%3E%3Cpath d='M12 5l7 4v6l-7 4-7-4V9l7-4z' fill='none' stroke='white' stroke-width='1.6'/%3E%3C/svg%3E">
+
+<!-- ============ BOOT WATCHDOG + VENDOR FALLBACK (inline, chạy TRƯỚC mọi
+     <script src> vendor — bắt buộc inline: nếu parser kẹt ở 1 script
+     vendor/CDN thì js/main.js không bao giờ chạy, chỉ watchdog này mới
+     báo được. js/main.js có watchdog thứ 2 phủ trường hợp main.js đã
+     load nhưng PixiStudio.App chưa có. Cả 2 chỉ ghi thông báo, KHÔNG
+     chặn retry/boot.) ============ -->
+<script>
+(function () {
+  'use strict';
+  var WATCHDOG_MS = 10000;
+  var MSG_WAIT = '⏳ Đang chờ script… (mạng/CDN chậm hoặc file vendor thiếu — kiểm tra js/vendor/, xem js/vendor/README.md)';
+  window.__bootWatchdogFired = false;
+
+  /* Fallback động cho thư viện vendor (thay document.write đã deprecated):
+     tầng 1 jsdelivr, tầng 2 unpkg, tầng 3 báo lỗi ra #boot-status.
+     Script inject có async=false để giữ thứ tự load giữa các fallback
+     với nhau. (Giới hạn còn lại: script inject động vẫn có thể chạy
+     sau 1 script parser-inserted đứng sau nó — chỉ ảnh hưởng khi file
+     local thiếu VÀ cần fallback; đường chính vendor-local không đụng.) */
+  window.__vendorFallback = function (el, cdnUrl, unpkgUrl, label) {
+    if (!el || el.__fbDone) return;
+    el.__fbDone = true;
+    el.onerror = null;
+    function fail(msg) {
+      try { console.error('[vendor-fallback] ' + msg); } catch (e) {}
+      var st = document.getElementById('boot-status');
+      if (st && !(window.PixiStudio && window.PixiStudio.App && window.PixiStudio.App.booted)) {
+        st.textContent = msg;
+      }
+    }
+    function inject(src, onErr) {
+      var s = document.createElement('script');
+      s.async = false;
+      s.src = src;
+      s.onerror = onErr;
+      document.head.appendChild(s);
+    }
+    inject(cdnUrl, function () {
+      if (unpkgUrl) {
+        inject(unpkgUrl, function () {
+          fail('❌ Không tải được ' + (label || el.src) + ' — kiểm tra js/vendor/ hoặc kết nối mạng (CDN jsdelivr/unpkg đều lỗi).');
+        });
+      } else {
+        fail('❌ Không tải được ' + (label || el.src) + ' — kiểm tra js/vendor/ hoặc kết nối mạng.');
+      }
+    });
+  };
+
+  function watchdogTick() {
+    try {
+      var booted = !!(window.PixiStudio && window.PixiStudio.App && window.PixiStudio.App.booted);
+      if (booted) return; /* boot xong: không làm phiền */
+      var st = document.getElementById('boot-status');
+      if (!st) return;
+      var cur = st.textContent || '';
+      /* Chỉ ghi đè khi splash vẫn ở text mặc định (nếu App.boot đã kịp
+         hiện 1 lỗi rõ ràng — vd ❌ Three.js chưa load — thì giữ nguyên). */
+      if (cur.indexOf('Initializing engine') !== -1 || cur.indexOf('Đang chờ script') !== -1) {
+        st.textContent = MSG_WAIT;
+        window.__bootWatchdogFired = true;
+      }
+    } catch (e) { /* watchdog không được tự throw */ }
+  }
+  setTimeout(watchdogTick, WATCHDOG_MS);
+  window.__bootWatchdogTick = watchdogTick;
+})();
+</script>
 </head>
 <body>
 
@@ -347,6 +415,9 @@
           <button class="btn sm primary" id="add-keyframe-btn" data-tooltip="Add keyframe (K)"><i data-ic="key"></i> Add Keyframe</button>
         </div>
 
+        <!-- ARP View toolbar mount (2026-11-27): dời xuống timeline để không che bảng Camera trong viewport -->
+        <div id="arp-vp-timeline-row"></div>
+
         <div class="playback-row">
           <button class="pb-btn" id="pb-start" data-tooltip="To start"><i data-ic="skip-start"></i></button>
           <button class="pb-btn" id="pb-prev" data-tooltip="Frame backward"><i data-ic="prev"></i></button>
@@ -479,38 +550,39 @@
 <input type="file" id="hidden-file-input" multiple class="hidden"
        accept=".glb,.gltf,.obj,.mtl,.stl,.fbx,.png,.jpg,.jpeg,.webp,.svg,.mp3,.wav,.ogg,.bin,.zip">
 
-<!-- ============ LIBRARIES (CDN + fallback) ============ -->
-<!-- Tải offline: đặt file vào js/vendor/ và đổi src. Xem README mục 3. -->
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"
-        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/build/three.min.js\x27\x3E\x3C/script\x3E')"></script>
-<script src="https://cdn.jsdelivr.net/npm/pixi.js@7.4.3/dist/pixi.min.js"
-        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/pixi.js@7.4.3/dist/pixi.min.js\x27\x3E\x3C/script\x3E')"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"
-        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js\x27\x3E\x3C/script\x3E')"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"
-        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/loaders/OBJLoader.js\x27\x3E\x3C/script\x3E')"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/MTLLoader.js"
-        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/loaders/MTLLoader.js\x27\x3E\x3C/script\x3E')"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"
-        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/loaders/STLLoader.js\x27\x3E\x3C/script\x3E')"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"
-        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js\x27\x3E\x3C/script\x3E')"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"
-        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/exporters/GLTFExporter.js\x27\x3E\x3C/script\x3E')"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/OBJExporter.js"
-        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/exporters/OBJExporter.js\x27\x3E\x3C/script\x3E')"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/STLExporter.js"
-        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/exporters/STLExporter.js\x27\x3E\x3C/script\x3E')"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/BufferGeometryUtils.js"
-        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/utils/BufferGeometryUtils.js\x27\x3E\x3C/script\x3E')"></script>
+<!-- ============ LIBRARIES (vendor-local chính, CDN dự phòng) ============ -->
+<!-- Chạy offline/file://: mọi thư viện đã có sẵn trong js/vendor/ (xem js/vendor/README.md).
+     CDN jsdelivr chỉ là fallback khi file local lỗi/thiếu. -->
+<script src="js/vendor/three.min.js"
+        onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js', 'https://unpkg.com/three@0.128.0/build/three.min.js', 'three.min.js')"></script>
+<script src="js/vendor/pixi-7.4.3.min.js"
+        onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/pixi.js@7.4.3/dist/pixi.min.js', 'https://unpkg.com/pixi.js@7.4.3/dist/pixi.min.js', 'pixi.min.js')"></script>
+<script src="js/vendor/GLTFLoader.js"
+        onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js', 'https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js', 'GLTFLoader.js')"></script>
+<script src="js/vendor/OBJLoader.js"
+        onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js', 'https://unpkg.com/three@0.128.0/examples/js/loaders/OBJLoader.js', 'OBJLoader.js')"></script>
+<script src="js/vendor/MTLLoader.js"
+        onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/MTLLoader.js', 'https://unpkg.com/three@0.128.0/examples/js/loaders/MTLLoader.js', 'MTLLoader.js')"></script>
+<script src="js/vendor/STLLoader.js"
+        onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js', 'https://unpkg.com/three@0.128.0/examples/js/loaders/STLLoader.js', 'STLLoader.js')"></script>
+<script src="js/vendor/TransformControls.js"
+        onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js', 'https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js', 'TransformControls.js')"></script>
+<script src="js/vendor/GLTFExporter.js"
+        onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js', 'https://unpkg.com/three@0.128.0/examples/js/exporters/GLTFExporter.js', 'GLTFExporter.js')"></script>
+<script src="js/vendor/OBJExporter.js"
+        onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/OBJExporter.js', 'https://unpkg.com/three@0.128.0/examples/js/exporters/OBJExporter.js', 'OBJExporter.js')"></script>
+<script src="js/vendor/STLExporter.js"
+        onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/STLExporter.js', 'https://unpkg.com/three@0.128.0/examples/js/exporters/STLExporter.js', 'STLExporter.js')"></script>
+<script src="js/vendor/BufferGeometryUtils.js"
+        onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/BufferGeometryUtils.js', 'https://unpkg.com/three@0.128.0/examples/js/utils/BufferGeometryUtils.js', 'BufferGeometryUtils.js')"></script>
 <!-- Meshopt decoder — cần cho kiemhiep.glb (Meshopt-compressed) -->
-<script src="https://cdn.jsdelivr.net/npm/meshoptimizer@0.18.1/meshopt_decoder.js"
-        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/meshoptimizer@0.18.1/meshopt_decoder.js\x27\x3E\x3C/script\x3E')"></script>
+<script src="js/vendor/meshopt_decoder.js"
+        onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/meshoptimizer@0.18.1/meshopt_decoder.js', 'https://unpkg.com/meshoptimizer@0.18.1/meshopt_decoder.js', 'meshopt_decoder.js')"></script>
 <!-- fflate + FBXLoader — đọc file FBX Meshy (skinning + animation) -->
-<script src="https://cdn.jsdelivr.net/npm/fflate@0.6.10/umd/index.js"
-        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/fflate@0.6.10/umd/index.js\x27\x3E\x3C/script\x3E')"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"
-        onerror="this.onerror=null;document.write('\x3Cscript src=\x27https://unpkg.com/three@0.128.0/examples/js/loaders/FBXLoader.js\x27\x3E\x3C/script\x3E')"></script>
+<script src="js/vendor/fflate.js"
+        onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/fflate@0.6.10/umd/index.js', 'https://unpkg.com/fflate@0.6.10/umd/index.js', 'index.js')"></script>
+<script src="js/vendor/FBXLoader.js"
+        onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js', 'https://unpkg.com/three@0.128.0/examples/js/loaders/FBXLoader.js', 'FBXLoader.js')"></script>
 
 <!-- ============ CORE ============ -->
 <script src="js/core/version.js"></script>
@@ -641,6 +713,7 @@
      thái ban đầu đúng. Core -> skeleton/labels/ik/select/trails/measure/
      presets -> toolbar. -->
 <script src="js/rig/arp-vp-core.js"></script>
+<script src="js/rig/arp-shared-skeleton.js"></script>
 <script src="js/rig/arp-vp-skeleton.js"></script>
 <script src="js/rig/arp-vp-labels.js"></script>
 <script src="js/rig/arp-vp-ik.js"></script>
@@ -649,6 +722,11 @@
 <script src="js/rig/arp-vp-measure.js"></script>
 <script src="js/rig/arp-vp-presets.js"></script>
 <script src="js/ui/arp-vp-toolbar.js"></script>
+<!-- ARP ClipBind (CLIPBIND-A, vòng clip-binding bug a): vá
+     THREE.PropertyBinding.findNode + chuẩn hóa tên track lúc bind
+     ('mixamorig:Hips' → 'mixamorigHips'). Load TRƯỚC arp-animator.js
+     để install() chạy trước mọi clipAction. -->
+<script src="js/rig/arp-clipbind.js"></script>
 <!-- ARP Animator (tab Animator): load sau arp-vp-toolbar để dùng lại các
      module hiển thị viewport (skeleton/IK/trails). -->
 <script src="js/rig/arp-animator.js"></script>
@@ -663,6 +741,10 @@
      clips → control → history → viewport (control bọc tick trước,
      viewport bọc sau để overlay refresh sau khi control đã áp). -->
 <script src="js/rig/arp-sync-clips.js"></script>
+<!-- ARP Export ↔ Animator sync (vòng Export-sync): load SAU arp-export.js
+     + arp-sync-clips.js — listAnimatorClips() tra ArpSyncClips,
+     exportAnimatorClip() delegate ArpExport.exportFile. -->
+<script src="js/rig/arp-export-sync.js"></script>
 <script src="js/rig/arp-sync-control.js"></script>
 <script src="js/rig/arp-sync-history.js"></script>
 <script src="js/rig/arp-sync-viewport.js"></script>
