@@ -418,6 +418,21 @@
         PixiStudio.SaveManager.save('fbx-mixamo');
       });
     }
+
+    /* Topbar "Xuất FBX chuẩn" → mở CỬA SỔ BẢNG chuẩn hóa Golden
+       (PixiStudio.Modals, cùng pattern Save Center): bảng 6 bước đo thật
+       từ model đang load, nút "Chuẩn hóa & Xuất FBX" chạy pipeline 5
+       bước rồi điền cột Sau + PASS/FAIL từng hàng, sau đó mới tải file
+       `<tên-gốc>-Standard.fbx` về. Logic ở js/exporter/
+       golden-standard-export.js — nút này chỉ MỞ cửa sổ, không xuất thẳng. */
+    const topGoldenStandard = document.getElementById('btn-golden-standard');
+    if (topGoldenStandard) {
+      topGoldenStandard.addEventListener('click', function () {
+        if (PixiStudio.GoldenStandardExport && PixiStudio.GoldenStandardExport.openDialog) PixiStudio.GoldenStandardExport.openDialog();
+        else bus.emit('notify', { type: 'error', title: 'Xuất FBX chuẩn', message: 'GoldenStandardExport chưa sẵn sàng.' });
+      });
+    }
+
     /* Topbar "Save Mixamo Rig" → FBX 2013 mesh-only Mixamo-safe
        (khung 65 xương vẫn giữ trong scene để làm animation, không
        xuất ra file). Ctrl+Shift+R cũng chạy. */

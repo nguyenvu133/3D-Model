@@ -155,6 +155,7 @@
       <select class="btn sm" id="opt-target-size" data-tooltip="Mức dung lượng mục tiêu cho nút Tối ưu FBX (mặc định <1MB; mức càng nhẹ thì tris càng ít nhưng texture vẫn ưu tiên giữ 512px trước)"><option value="1048576" selected>&lt;1MB</option><option value="716800">&lt;700KB</option><option value="512000">&lt;500KB</option><option value="307200">&lt;300KB</option></select>
       <button class="btn sm" id="btn-auto-rig-pro" data-tooltip="Auto Rig Pro Blend — tự đo landmark trên model chưa rig, dựng skeleton Mixamo 41 xương khớp đúng tỉ lệ model, skin tự động, xuất FBX rigged + script Blender (.py) để lưu thành .blend"><i data-ic="rig"></i><span class="lbl">Auto Rig Pro Blend</span></button>
       <button class="btn sm" id="btn-save-mixamo" data-tooltip="Save Mixamo — xuất FBX 2013 mesh-only (< 50k tris, tự giảm giữ UV khi cần) + texture nhúng (có màu), Mixamo tự auto-rig → upload mixamo.com"><i data-ic="wand"></i><span class="lbl">Save Mixamo</span></button>
+      <button class="btn sm" id="btn-golden-standard" data-tooltip="Xuất FBX chuẩn — mở bảng chuẩn hóa Golden (đo trục/pivot/ground/tris/texture/rig+clip từ model đang load, rồi chạy 5 bước: Y-up, pivot về đất giữa 2 bàn chân, clip chân chạm đất, ~15k tris, texture nhúng đúng byte gốc) — chuẩn 2 file Thiếu Lâm đã làm"><i data-ic="wand"></i><span class="lbl">Xuất FBX chuẩn</span></button>
       <button class="btn sm" id="btn-undo" data-tooltip="Undo (Ctrl+Z)" disabled><i data-ic="undo"></i><span class="lbl">Undo</span></button>
       <button class="btn sm" id="btn-redo" data-tooltip="Redo (Ctrl+Shift+Z / Ctrl+Y)" disabled><i data-ic="redo"></i><span class="lbl">Redo</span></button>
       <button class="btn sm" id="btn-history" data-tooltip="Lịch sử Undo/Redo — bấm 1 bước để nhảy tới"><i data-ic="history"></i><span class="lbl">Lịch sử</span></button>
@@ -838,6 +839,7 @@
 <script src="js/exporter/zip-writer.js?v=299eab3c"></script>
 <script src="js/workers/worker-bridge.js?v=299eab3c"></script>
 <script src="js/exporter/save-manager.js?v=299eab3c"></script>
+<script src="js/exporter/golden-standard-export.js?v=299eab3c"></script>
 <script src="js/exporter/export-presets.js?v=299eab3c"></script>
 <script src="js/performance/monitor.js?v=299eab3c"></script>
 
