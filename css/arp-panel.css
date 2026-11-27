@@ -1,36 +1,43 @@
 /* ============================================================
- * css/arp-panel.css — Panel Auto Rig Pro Blend (PHẦN A)
- * Modal overlay giữa màn hình + thanh tab 5 tab + tab Smart.
+ * css/arp-panel.css — Panel Auto Rig Pro Blend (PHẦN A + PHẦN 9)
+ * CỬA SỔ NỔI RIÊNG (.arp-window, #arp-window): thanh tiêu đề
+ * gradient tím nổi bật + viền đậm, kéo được, resize được,
+ * thu nhỏ / phóng to / đóng, nhớ vị trí (localStorage).
+ * Overlay KHÔNG còn chặn màn hình: trong suốt + pointer-events:none
+ * để user vẫn thấy + tương tác được viewport/model phía sau.
  * Dùng đúng design token của studio (css/main.css).
- * Mobile ≤767px: panel full-width, tab cuộn ngang.
+ * Mobile ≤767px: cửa sổ full-screen (.arp-window-mobile).
  * ============================================================ */
 
-/* --- Overlay --- */
+/* --- Overlay: chỉ là khung chứa, không chặn bấm --- */
 .arp-overlay {
   position: fixed;
   inset: 0;
   z-index: 9000;
   display: none;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.55);
-  padding: 16px;
+  pointer-events: none; /* bấm xuyên qua để tương tác viewport/model phía sau */
+  background: transparent;
 }
-.arp-overlay.open { display: flex; }
+.arp-overlay.open { display: block; }
 
-/* --- Panel --- */
-.arp-panel {
-  width: min(720px, 94vw);
-  max-height: 86vh;
+/* --- Cửa sổ nổi riêng --- */
+.arp-window {
+  position: absolute;
+  width: 720px;
+  height: 560px;
   display: flex;
   flex-direction: column;
+  pointer-events: auto;
   background: var(--panel, #1B1B24);
   color: var(--text, #FFFFFF);
-  border: 1px solid var(--border, #343443);
+  border: 2px solid var(--primary, #713BFF);
   border-radius: 12px;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(113, 59, 255, 0.35);
   overflow: hidden;
 }
+.arp-window.dragging { user-select: none; }
+
+/* --- Thanh tiêu đề riêng: gradient tím nổi bật, kéo để di chuyển --- */
 .arp-header {
   display: flex;
   align-items: center;
@@ -41,19 +48,88 @@
   border-bottom: 1px solid var(--border, #343443);
   flex: none;
 }
+.arp-window-header {
+  cursor: grab;
+  touch-action: none;
+  background: linear-gradient(90deg, #713BFF 0%, #9D4EDD 55%, #5B2EE5 100%);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.25);
+  padding: 8px 10px 8px 16px;
+}
+.arp-window-header:active { cursor: grabbing; }
 .arp-title { font-size: 16px; font-weight: 700; }
-.arp-close {
-  background: transparent;
-  color: var(--text-2, #B8B8C8);
-  border: 1px solid var(--border, #343443);
+.arp-window-header .arp-title { color: #FFFFFF; }
+.arp-window-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex: none;
+}
+.arp-win-btn {
+  background: rgba(255, 255, 255, 0.12);
+  color: #FFFFFF;
+  border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 8px;
   width: 32px;
   height: 32px;
   font-size: 14px;
+  line-height: 1;
   cursor: pointer;
   flex: none;
 }
-.arp-close:hover { background: var(--panel-3, #2C2C3A); color: var(--text, #FFFFFF); }
+.arp-win-btn:hover { background: rgba(255, 255, 255, 0.25); }
+.arp-close:hover { background: #E5484D; border-color: #E5484D; color: #FFFFFF; }
+
+/* --- Thu nhỏ: chỉ còn 1 thanh nhỏ ở góc dưới-trái, bấm để khôi phục --- */
+.arp-window.minimized {
+  left: 16px !important;
+  top: auto !important;
+  bottom: 16px;
+  width: 300px !important;
+  height: auto !important;
+  cursor: pointer;
+}
+.arp-window.minimized .arp-tabs,
+.arp-window.minimized .arp-tab-body,
+.arp-window.minimized .arp-resize-handle { display: none; }
+.arp-window.minimized .arp-window-header { cursor: pointer; border-bottom: none; }
+
+/* --- Phóng to: full màn hình --- */
+.arp-window.maximized {
+  left: 0 !important;
+  top: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  border-radius: 0;
+}
+.arp-window.maximized .arp-resize-handle { display: none; }
+
+/* --- Mobile ≤767px: full-screen, không resize bằng kéo góc --- */
+.arp-window.arp-window-mobile {
+  left: 0 !important;
+  top: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  border-radius: 0;
+}
+.arp-window.arp-window-mobile .arp-resize-handle { display: none; }
+
+/* --- Tay kéo đổi kích thước ở góc dưới-phải --- */
+.arp-resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 22px;
+  height: 22px;
+  cursor: nwse-resize;
+  touch-action: none;
+  z-index: 2;
+  background: linear-gradient(135deg,
+    transparent 55%, var(--primary, #713BFF) 55%, var(--primary, #713BFF) 65%,
+    transparent 65%, transparent 75%, var(--primary, #713BFF) 75%,
+    var(--primary, #713BFF) 85%, transparent 85%);
+  opacity: 0.9;
+}
+.arp-resize-handle:hover { opacity: 1; }
 
 /* --- Tab bar --- */
 .arp-tabs {
@@ -88,9 +164,10 @@
 
 /* --- Tab body --- */
 .arp-tab-body {
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 14px 16px 16px;
   overflow-y: auto;
-  min-height: 120px;
 }
 .arp-placeholder { color: var(--text-2, #B8B8C8); }
 .arp-placeholder h3 { color: var(--text, #FFFFFF); margin: 4px 0 8px; }
@@ -227,18 +304,16 @@
 }
 .arp-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
-/* --- Mobile ≤767px: panel full-width, tab cuộn ngang --- */
+/* --- Mobile ≤767px: cửa sổ full-screen (dự phòng khi class JS chưa kịp gắn), tab cuộn ngang --- */
 @media (max-width: 767px) {
-  .arp-overlay { padding: 0; align-items: stretch; }
-  .arp-panel {
-    width: 100vw;
-    max-width: 100vw;
-    max-height: 100dvh;
-    height: 100dvh;
+  .arp-window {
+    left: 0 !important;
+    top: 0 !important;
+    width: 100vw !important;
+    height: 100dvh !important;
     border-radius: 0;
-    border-left: none;
-    border-right: none;
   }
+  .arp-window .arp-resize-handle { display: none; }
   .arp-tabs { -webkit-overflow-scrolling: touch; }
   .arp-tab { padding: 10px 12px; }
   .arp-tab-body { padding: 12px; }

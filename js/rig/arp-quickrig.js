@@ -2208,6 +2208,7 @@
           agBar.style.width = '100%';
           agLog.textContent = (r.log || []).join('\n') + '\nXong: ' + r.mappedCount + '/41 xương · ' + r.controls + ' control · ' + r.poles + ' pole · ' + r.elapsedMs + 'ms.';
           renderMapTable(mapBox); refreshStatus();
+          histPush('Ban đầu');
         } else if (r && r.cancelled) {
           agBar.style.width = '0%';
           agLog.textContent = (r.log || []).join('\n');
@@ -2278,6 +2279,7 @@
         refreshMxBadge(r.detection); refreshMxClips(); renderMapTable(mapBox); refreshStatus();
         if (!r.ok && r.suggestSmartTab) refreshMxBadge(r.detection);
         if (!r.ok) notify('error', 'Quick Rig — Mixamo', (r.errors || []).join('; '));
+        if (r.ok) histPush('Ban đầu');
       });
     } }));
     mxBtnRow.appendChild(el('button', { class: 'btn sm', text: '🎭 Auto Gen Mixamo — Chuẩn hóa về rig studio', onclick: function () {
@@ -2285,6 +2287,7 @@
         refreshMxBadge(r.detection); refreshMxClips(); renderMapTable(mapBox); refreshStatus();
         if (!r.ok) notify('error', 'Quick Rig — Mixamo', (r.errors || []).join('; '));
         else if (r.renamed && r.renamed.length) notify('info', 'Quick Rig — Mixamo', 'Đã đổi tên ' + r.renamed.length + ' xương về mixamorig: + ' + r.tracksRenamed + ' track clip (skin/clip giữ nguyên).');
+        if (r.ok) histPush('Ban đầu');
       });
     } }));
     mxBox.appendChild(mxBtnRow);
@@ -2342,6 +2345,7 @@
           refreshStatus();
           refreshMxClips();
           if (!r.ok) notify('error', 'Quick Rig', (r.errors || []).join('; '));
+          else histPush('Ban đầu');
         }).catch(function (e) { notify('error', 'Quick Rig', 'Không đọc được file: ' + (e && e.message)); });
       };
       reader.readAsArrayBuffer(f);
@@ -2353,10 +2357,11 @@
       var r = convertToControlRig(getTarget());
       renderMapTable(mapBox); refreshStatus();
       if (!r.ok) notify('error', 'Quick Rig', (r.errors || []).join('; '));
+      else histPush('Ban đầu');
     } }));
     btnRow.appendChild(el('button', { class: 'btn sm', text: 'Áp dụng (map lại + đồng bộ control)', onclick: function () {
       var r = matchToSource();
-      if (!r.ok) notify('warning', 'Quick Rig', r.error); else renderMapTable(mapBox);
+      if (!r.ok) notify('warning', 'Quick Rig', r.error); else { renderMapTable(mapBox); histPush('Match to source'); }
     } }));
     wrap.appendChild(btnRow);
     var status = el('div', { class: 'arp-note', id: 'arp-qr-status', text: 'Chưa có control rig.' });
@@ -2378,7 +2383,7 @@
         row.appendChild(el('button', { class: 'btn sm', text: mode, onclick: function () {
           var r = setLimbMode(limb, mode);
           if (!r.ok) notify('warning', 'Quick Rig', r.error);
-          else notify('info', 'Quick Rig', limb + ' → ' + mode);
+          else { notify('info', 'Quick Rig', limb + ' → ' + mode); histPush(limb + ' → ' + mode); }
         } }));
       });
       row.appendChild(el('button', { class: 'btn sm', text: 'Cập nhật IK/FK', onclick: function () { updateLimb(limb); } }));
@@ -2394,6 +2399,8 @@
       var inp = el('input', { type: 'range', min: String(min), max: String(max), step: String(step), value: String(val), style: { flex: '1' } });
       var valEl = el('span', { text: String(val), style: { width: '36px' } });
       inp.addEventListener('input', function () { valEl.textContent = inp.value; oninput(parseFloat(inp.value)); });
+      /* Ghi history 1 lần khi thả slider (pose đã chốt) — không ghi từng input để khỏi ngập stack. */
+      inp.addEventListener('change', function () { histPush(label); });
       row.appendChild(inp); row.appendChild(valEl);
       return row;
     };
@@ -2409,21 +2416,57 @@
     wrap.appendChild(ctrlBox);
     /* Match / Bake / Preset / hiển thị */
     var actRow = el('div', { class: 'arp-btn-row', style: { display: 'flex', gap: '6px', flexWrap: 'wrap', margin: '6px 0' } });
-    actRow.appendChild(el('button', { class: 'btn sm', text: 'Match to source', onclick: function () { matchToSource(); } }));
-    actRow.appendChild(el('button', { class: 'btn sm', text: 'Bake to skeleton', onclick: function () { bakeToSkeleton(); } }));
+    actRow.appendChild(el('button', { class: 'btn sm', text: 'Match to source', onclick: function () { var r = matchToSource(); if (r && r.ok) histPush('Match to source'); } }));
+    actRow.appendChild(el('button', { class: 'btn sm', text: 'Bake to skeleton', onclick: function () { var r = bakeToSkeleton(); if (r && r.ok) histPush('Bake to skeleton'); } }));
     actRow.appendChild(el('button', { class: 'btn sm', text: 'Lưu preset', onclick: function () { savePreset(); } }));
-    actRow.appendChild(el('button', { class: 'btn sm', text: 'Load preset', onclick: function () { loadPreset(); } }));
+    actRow.appendChild(el('button', { class: 'btn sm', text: 'Load preset', onclick: function () { var r = loadPreset(); if (r && r.ok) histPush('Load preset'); } }));
     actRow.appendChild(el('button', { class: 'btn sm', text: 'Bật/tắt control', onclick: function () { toggleControls(); } }));
     actRow.appendChild(el('button', { class: 'btn sm', text: 'Gỡ control rig', onclick: function () { clearControlRig(); renderMapTable(mapBox); refreshStatus(); } }));
     wrap.appendChild(actRow);
     var mapBox = el('div', { class: 'arp-map-box' });
     wrap.appendChild(el('div', { html: '<b>Bảng map xương</b> — đổi dropdown để sửa map thủ công (áp dụng ngay).', style: { marginTop: '8px' } }));
     wrap.appendChild(mapBox);
+    /* ===== QR3 sections (vòng mở rộng 3) — Pose / Keyframe / IK nâng cao /
+       Gizmos / Facial / Prop / Undo-Layers / Live retarget ===== */
+    QuickRig.sections.forEach(function (s) {
+      try {
+        var sec = el('div', { class: 'arp-qr3-section', style: { borderTop: '1px solid #888', marginTop: '10px', paddingTop: '6px' } });
+        sec.setAttribute('data-qr3-section', s.key);
+        s.renderFn(sec);
+        wrap.appendChild(sec);
+      } catch (e) { /* section lỗi: tab chính vẫn chạy */ }
+    });
     container.appendChild(wrap);
     renderMapTable(mapBox);
     refreshStatus();
     refreshMxBadge();
     refreshMxClips();
+  }
+  /* ===== QR3 sections (vòng mở rộng 3, gộp 2026-11-27) =====
+     Các module arp-qr3-*.js đăng ký section của mình vào tab Quick Rig
+     qua registerSection(key, renderFn). Section render sau nội dung
+     Quick Rig gốc, theo thứ tự đăng ký; section lỗi thì tab chính
+     vẫn chạy (try/catch từng section trong renderQuickRigTab). */
+  QuickRig.sections = [];
+  QuickRig.registerSection = function (key, renderFn) {
+    if (!key || typeof renderFn !== 'function') return false;
+    var i;
+    for (i = 0; i < QuickRig.sections.length; i++) {
+      if (QuickRig.sections[i].key === key) { QuickRig.sections[i].renderFn = renderFn; return true; }
+    }
+    QuickRig.sections.push({ key: key, renderFn: renderFn });
+    return true;
+  };
+  /* Ghi trạng thái vào History (arp-qr3-history.js) nếu đã load — dùng
+     cho Undo/Redo tự động ở các thao tác trong tab. Không có History
+     thì bỏ qua êm. pushState chụp pose HIỆN TẠI nên gọi SAU khi đổi
+     pose xong (trừ Auto Gen/convert: push 'Ban đầu' sau khi rig mới
+     tạo xong, vì History reset khi đổi rig). */
+  function histPush(label) {
+    try {
+      var H = window.PixiStudio && PixiStudio.ArpQuickRig && PixiStudio.ArpQuickRig.History;
+      if (H && typeof H.pushState === 'function') H.pushState(label);
+    } catch (e) {}
   }
   QuickRig.renderTab = renderQuickRigTab;
 
