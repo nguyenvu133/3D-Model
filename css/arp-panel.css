@@ -500,3 +500,38 @@
   outline: none;
 }
 
+/* ============ Mixamo Rig plugin (arp-plugin-mixamorig.js) — chỉ append,
+   không sửa rule cũ. Prefix arp-mr- = Mixamo Rig. ============ */
+.arp-mr-wrap { display: flex; flex-direction: column; gap: 8px; }
+.arp-mr-title { font-weight: 700; font-size: 14px; }
+.arp-mr-h { font-weight: 700; margin-top: 6px; border-top: 1px solid #e5e5ef; padding-top: 8px; }
+.arp-mr-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.arp-mr-label { min-width: 140px; font-size: 13px; }
+.arp-mr-val { min-width: 34px; text-align: right; font-size: 13px; }
+.arp-mr-slider { flex: 1; min-width: 120px; accent-color: #713BFF; }
+.arp-mr-status { font-size: 13px; min-height: 18px; color: #333; }
+.arp-mr-warn {
+  border: 2px solid #c0392b; background: #fdecea; color: #922b21;
+  border-radius: 8px; padding: 10px 12px; font-size: 13px; line-height: 1.5;
+}
+
+/* ============ ARP ANIMATOR (tab Animator) ============ */
+.arp-anim-sec { margin-bottom: 14px; }
+.arp-anim-list { max-height: 180px; overflow-y: auto; border: 1px solid #3a3a4a; border-radius: 8px; padding: 4px; }
+.arp-anim-clip { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.arp-anim-clip:hover { background: #2a2a38; }
+.arp-anim-clip.active { background: #2e2148; border: 1px solid #713BFF; }
+.arp-anim-clip-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.arp-anim-clip-info span { font-size: 12px; color: #B8B8C8; }
+.arp-anim-search { width: 100%; margin-bottom: 6px; }
+.arp-anim-scrub { width: 100%; margin: 6px 0; }
+.arp-anim-readout { font-size: 13px; color: #E8E8F0; font-variant-numeric: tabular-nums; }
+.arp-anim-msg { font-size: 13px; min-height: 18px; color: #B8B8C8; margin-top: 8px; }
+.arp-anim-evlist { margin: 4px 0 8px 0; font-size: 13px; }
+/* Frame readout phủ lên viewport khi phát clip. */
+.arp-anim-readout-overlay, .arp-anim-readout {
+  position: absolute; left: 10px; bottom: 10px; z-index: 5;
+  background: rgba(20, 20, 30, 0.78); color: #FFFFFF;
+  font-size: 12px; padding: 4px 8px; border-radius: 6px;
+  pointer-events: none; font-variant-numeric: tabular-nums;
+}
