@@ -1,0 +1,430 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "E9D8Jc633jLY"
+      },
+      "source": [
+        "# UniRig trên Google Colab — Rig nhân vật 1 bằng AI\n",
+        "\n",
+        "**Trước khi chạy:** vào menu Colab **Runtime → Change runtime type → Hardware accelerator → T4 GPU** rồi bấm **Connect**. Không có GPU thì UniRig không chạy được (nó cần CUDA, VRAM tối thiểu 8 GB).\n",
+        "\n",
+        "Notebook này rig **nhân vật 1** (`tripo_convert_nhanvat1.glb`, Tripo, 50.000 tris, chưa có xương) đúng 3 bước của UniRig:\n",
+        "1. **Skeleton** — AI đoán xương cho nhân vật (`generate_skeleton.sh`)\n",
+        "2. **Skinning** — AI tính trọng số skin cho từng đỉnh (`generate_skin.sh`)\n",
+        "3. **Merge** — gộp xương + skin vào model gốc → file đã rig (`merge.sh`)\n",
+        "\n",
+        "Checkpoint tự tải từ Hugging Face `VAST-AI/UniRig` khi chạy. Lần chạy đầu cài đặt mất khoảng 10–20 phút.\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 92,
+      "metadata": {
+        "id": "Q2nH8C8T3jLc",
+        "outputId": "305c2b28-8f81-4cc3-e8aa-a68b628fb38a",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        }
+      },
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Sat Nov 28 09:36:36 2026       \n",
+            "+-----------------------------------------------------------------------------------------+\n",
+            "| NVIDIA-SMI 580.82.07              Driver Version: 580.82.07      CUDA Version: 13.0     |\n",
+            "+-----------------------------------------+------------------------+----------------------+\n",
+            "| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |\n",
+            "| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |\n",
+            "|                                         |                        |               MIG M. |\n",
+            "|=========================================+========================+======================|\n",
+            "|   0  Tesla T4                       Off |   00000000:00:04.0 Off |                    0 |\n",
+            "| N/A   37C    P8             13W /   70W |       3MiB /  15360MiB |      0%      Default |\n",
+            "|                                         |                        |                  N/A |\n",
+            "+-----------------------------------------+------------------------+----------------------+\n",
+            "\n",
+            "+-----------------------------------------------------------------------------------------+\n",
+            "| Processes:                                                                              |\n",
+            "|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |\n",
+            "|        ID   ID                                                               Usage      |\n",
+            "|=========================================================================================|\n",
+            "|  No running processes found                                                             |\n",
+            "+-----------------------------------------------------------------------------------------+\n",
+            "Python 3.13.16\n",
+            "torch: 2.14.1+cu130\n",
+            "CUDA available: True\n"
+          ]
+        }
+      ],
+      "source": [
+        "# 1. Kiểm tra GPU — phải thấy tên GPU (VD: Tesla T4) và CUDA, nếu không thì đổi runtime type\n",
+        "!nvidia-smi\n",
+        "!python3 --version\n",
+        "import torch\n",
+        "print('torch:', torch.__version__)\n",
+        "print('CUDA available:', torch.cuda.is_available())"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 93,
+      "metadata": {
+        "id": "TqqQwzwd3jLe",
+        "outputId": "0b4539f4-80e6-4e4f-f38e-9623ef32437e",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        }
+      },
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Cloning into 'UniRig'...\n",
+            "remote: Enumerating objects: 237, done.\u001b[K\n",
+            "remote: Counting objects: 100% (237/237), done.\u001b[K\n",
+            "remote: Compressing objects: 100% (230/230), done.\u001b[K\n",
+            "remote: Total 237 (delta 56), reused 0 (delta 0), pack-reused 0 (from 0)\u001b[K\n",
+            "Receiving objects: 100% (237/237), 40.97 MiB | 19.95 MiB/s, done.\n",
+            "Resolving deltas: 100% (56/56), done.\n",
+            "/content/UniRig/UniRig/UniRig/UniRig/UniRig/UniRig/UniRig/UniRig/UniRig/UniRig/UniRig/UniRig/UniRig/UniRig/UniRig/UniRig/UniRig/UniRig\n",
+            "\u001b[33ma327e31\u001b[m\u001b[33m (\u001b[m\u001b[1;36mHEAD\u001b[m\u001b[33m -> \u001b[m\u001b[1;32mmain\u001b[m\u001b[33m, \u001b[m\u001b[1;31morigin/main\u001b[m\u001b[33m, \u001b[m\u001b[1;31morigin/HEAD\u001b[m\u001b[33m)\u001b[m UniRig notebook: cell 5-7 dung --output_dir + kiem tra file sau moi buoc (cach --output cu fail am tham o ban Gemini); sua cell 8-9 theo duong dan moi\n",
+            "bird.glb  giraffe.glb  skeleton  tripo_carrot.glb  tripo_convert_nhanvat1.glb\n"
+          ]
+        }
+      ],
+      "source": [
+        "# 2. Lấy code UniRig (bản fork của bạn trên GitHub)\n",
+        "!git clone https://github.com/nguyenvu16592bb/UniRig.git\n",
+        "%cd UniRig\n",
+        "!git log --oneline -1\n",
+        "!ls examples/"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 94,
+      "metadata": {
+        "id": "xHNPtcXv3jLf",
+        "outputId": "a1ed1bc3-1811-425e-c09c-62a80f9c8c12",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        }
+      },
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "installing to /usr/local/bin\n",
+            "  uv\n",
+            "  uvx\n",
+            "everything's installed!\n",
+            "OK - torch 2.3.1+cu118 | cuda: True | bpy OK\n"
+          ]
+        },
+        {
+          "output_type": "stream",
+          "name": "stderr",
+          "text": [
+            "downloading uv 0.13.10 x86_64-unknown-linux-gnu\n",
+            "Python 3.11 is already installed\n",
+            "Using Python 3.11.18 environment at: /content/venv311\n",
+            "Checked 1 package in 45ms\n",
+            "Using Python 3.11.18 environment at: /content/venv311\n",
+            "Checked 1 package in 25ms\n",
+            "Using Python 3.11.18 environment at: /content/venv311\n",
+            "Checked 1 package in 5ms\n",
+            "Using Python 3.11.18 environment at: /content/venv311\n",
+            "Checked 3 packages in 10ms\n",
+            "Using Python 3.11.18 environment at: /content/venv311\n",
+            "Resolved 132 packages in 426ms\n",
+            "Uninstalled 1 package in 94ms\n",
+            "Installed 1 package in 97ms\n",
+            " ~ bpy==4.2.0\n"
+          ]
+        }
+      ],
+      "source": [
+        "%%bash\n",
+        "# 3. Cài thư viện — Colab hiện chạy Python 3.13 nhưng UniRig chỉ chạy được trên Python 3.11,\n",
+        "# nên cell này tự tạo môi trường Python 3.11 riêng rồi cài đúng bộ thư viện CUDA cho nó.\n",
+        "# Cell này chạy lại được nhiều lần: bước nào xong rồi sẽ bỏ qua, chỉ làm tiếp phần còn thiếu.\n",
+        "# Lần đầu mất khoảng 5–10 phút (không còn bước biên dịch).\n",
+        "# LƯU Ý: `uv venv` không tự tạo pip trong môi trường, nên mọi lệnh cài đều dùng\n",
+        "# `uv pip install --python ...` thay vì gọi pip trong venv.\n",
+        "# Cả bộ dùng CUDA 11.8 (không dùng 12.1) vì flash-attn 2.6.3 không có wheel cho torch 2.4 + cu121\n",
+        "# (chỉ có cu118/cu123), và spconv-cu121 không có bản 2.3.6 (chỉ có 2.3.7/2.3.8).\n",
+        "# Torch dùng 2.3.1. torch-scatter dùng WHEEL LÀM SẴN pt23 (cho torch 2.3.1+cu118):\n",
+        "# đã kiểm chứng import OK trong bản Gemini lưu ở 3D-Model (torch-scatter 2.1.2+pt23cu118).\n",
+        "# LƯU Ý QUAN TRỌNG: KHÔNG biên dịch torch-scatter từ source trên Colab nữa — nvcc 11.8\n",
+        "# không đọc được header glibc 2.39 của Ubuntu 24.04 (lỗi `__builtin_dynamic_object_size`\n",
+        "# và `_Float32 is undefined`, 100 errors ở scatter_cuda.cu); NVCC_FLAGS cũng không sửa được.\n",
+        "# Vì dùng wheel nên KHÔNG cần cài CUDA Toolkit / nvcc nữa — torch đã có sẵn thư viện CUDA.\n",
+        "# Chỉ wheel pt24 (torch 2.4.x) mới lỗi `undefined symbol: parseSchemaOrName` — đừng dùng.\n",
+        "set -e\n",
+        "export PATH=\"$HOME/.local/bin:$PATH\"\n",
+        "if [ ! -x \"$HOME/.local/bin/uv\" ]; then\n",
+        "  curl -LsSf https://astral.sh/uv/install.sh | sh\n",
+        "  export PATH=\"$HOME/.local/bin:$PATH\"\n",
+        "fi\n",
+        "uv python install 3.11\n",
+        "if [ ! -x /content/venv311/bin/python ]; then\n",
+        "  uv venv /content/venv311 --python 3.11\n",
+        "fi\n",
+        "V=/content/venv311/bin/python\n",
+        "uv pip install --python $V \"torch==2.3.1+cu118\" --index-url https://download.pytorch.org/whl/cu118\n",
+        "uv pip install --python $V spconv-cu118==2.3.8\n",
+        "uv pip install --python $V https://github.com/Dao-AILab/flash-attention/releases/download/v2.6.3/flash_attn-2.6.3+cu118torch2.3cxx11abiFALSE-cp311-cp311-linux_x86_64.whl\n",
+        "uv pip install --python $V setuptools wheel ninja\n",
+        "if ! $V -c \"import torch_scatter\" 2>/dev/null; then\n",
+        "  uv pip uninstall --python $V torch-scatter 2>/dev/null || true\n",
+        "  uv pip install --python $V torch-scatter -f https://data.pyg.org/whl/torch-2.3.1+cu118.html\n",
+        "fi\n",
+        "uv pip install --python $V -r requirements.txt\n",
+        "$V -c \"import torch, spconv, torch_scatter, flash_attn, bpy; print('OK - torch', torch.__version__, '| cuda:', torch.cuda.is_available(), '| bpy OK')\"\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 95,
+      "metadata": {
+        "id": "byYfq7xN3jLg",
+        "outputId": "64856f4f-0336-4650-e3aa-4207c39a90ec",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        }
+      },
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Dùng file nhân vật 1 có sẵn trong repo: examples/tripo_convert_nhanvat1.glb\n",
+            "Tên file xuất ra sẽ bắt đầu bằng: nhanvat1\n"
+          ]
+        }
+      ],
+      "source": [
+        "# Dùng môi trường Python 3.11 vừa cài ở cell 3 cho mọi lệnh sau này\n",
+        "import os\n",
+        "os.environ['PATH'] = '/content/venv311/bin:' + os.environ['PATH']\n",
+        "# 4. File nhân vật 1 — có sẵn trong repo sau khi clone, không cần up lại\n",
+        "INPUT = 'examples/tripo_convert_nhanvat1.glb'\n",
+        "NAME = 'nhanvat1'\n",
+        "if os.path.exists(INPUT):\n",
+        "    print('Dùng file nhân vật 1 có sẵn trong repo:', INPUT)\n",
+        "else:\n",
+        "    print('Không thấy file trong repo — up file .glb/.fbx/.obj của bạn ở ô hiện ra:')\n",
+        "    from google.colab import files\n",
+        "    uploaded = files.upload()\n",
+        "    INPUT = list(uploaded.keys())[0]\n",
+        "    NAME = INPUT.rsplit('.', 1)[0].replace(' ', '_')\n",
+        "    print('Input:', INPUT)\n",
+        "# Đưa INPUT/NAME sang biến môi trường để các cell bash (5-7) dùng được ($INPUT, $NAME)\n",
+        "os.environ['INPUT'] = INPUT\n",
+        "os.environ['NAME'] = NAME\n",
+        "print('Tên file xuất ra sẽ bắt đầu bằng:', NAME)\n",
+        "\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 96,
+      "metadata": {
+        "id": "667vgP8t3jLh",
+        "outputId": "0e824196-3687-4318-fe6f-b0a24c5c2736",
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 1000
+        }
+      },
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "=== Bước 1: Đoán xương ===\n",
+            "0 models processed\n",
+            "done\n",
+            "\u001b[92mload task config: configs/task/quick_inference_skeleton_articulationxl_ar_256.yaml\u001b[0m\n",
+            "\u001b[92mload data config: configs/data/quick_inference.yaml\u001b[0m\n",
+            "\u001b[92mload transform config: configs/transform/inference_ar_transform.yaml\u001b[0m\n",
+            "\u001b[92mload tokenizer config: configs/tokenizer/tokenizer_parts_articulationxl_256.yaml\u001b[0m\n",
+            "\u001b[92mload model config: configs/model/unirig_ar_350m_1024_81920_float32.yaml\u001b[0m\n",
+            "\u001b[92mload system config: configs/system/ar_inference_articulationxl.yaml\u001b[0m\n",
+            "\rPredicting: |          | 0/? [00:00<?, ?it/s]\rPredicting: |          | 0/? [00:00<?, ?it/s]\rPredicting DataLoader 0:   0%|          | 0/1 [00:00<?, ?it/s]FlashAttention only supports Ampere GPUs or newer.\n",
+            "\rPredicting DataLoader 0: 100%|██████████| 1/1 [00:00<00:00,  1.93it/s]\rPredicting DataLoader 0: 100%|██████████| 1/1 [00:00<00:00,  1.93it/s]\n",
+            "done\n",
+            "LỖI BƯỚC 1: không có results/nhanvat1/skeleton.fbx. Nội dung tmp/nhanvat1:\n",
+            "total 2.3M\n",
+            "-rw-r--r-- 1 root root 2.3M Nov 28 09:26 raw_data.npz\n"
+          ]
+        },
+        {
+          "output_type": "stream",
+          "name": "stderr",
+          "text": [
+            "\r0it [00:00, ?it/s]\r0it [00:00, ?it/s]\n",
+            "/content/venv311/lib/python3.11/site-packages/timm/models/layers/__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers\n",
+            "  warnings.warn(f\"Importing from {__name__} is deprecated, please import via timm.layers\", FutureWarning)\n",
+            "Seed set to 12345\n",
+            "Flash Attention 2.0 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in OPTForCausalLM is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `torch_dtype` argument. Example: `model = AutoModel.from_pretrained(\"openai/whisper-tiny\", attn_implementation=\"flash_attention_2\", torch_dtype=torch.float16)`\n",
+            "Using bfloat16 Automatic Mixed Precision (AMP)\n",
+            "GPU available: True (cuda), used: True\n",
+            "TPU available: False, using: 0 TPU cores\n",
+            "/content/venv311/lib/python3.11/site-packages/lightning/pytorch/trainer/connectors/logger_connector/logger_connector.py:76: Starting from v1.9.0, `tensorboardX` has been removed as a dependency of the `lightning.pytorch` package, due to potential conflicts with other packages in the ML ecosystem. For this reason, `logger=True` will use `CSVLogger` as the default logger, unless the `tensorboard` or `tensorboardX` packages are found. Please `pip install lightning[extra]` or one of them to enable TensorBoard support by default\n",
+            "💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.\n",
+            "💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.\n",
+            "Restoring states from the checkpoint path at /root/.cache/huggingface/hub/models--VAST-AI--UniRig/snapshots/36842e2b5947e9e60f89275b83208c8e74071c63/skeleton/articulation-xl_quantization_256/model.ckpt\n",
+            "LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]\n",
+            "Loaded model weights from the checkpoint at /root/.cache/huggingface/hub/models--VAST-AI--UniRig/snapshots/36842e2b5947e9e60f89275b83208c8e74071c63/skeleton/articulation-xl_quantization_256/model.ckpt\n",
+            "/content/venv311/lib/python3.11/site-packages/torch/backends/cuda/__init__.py:342: FutureWarning: torch.backends.cuda.sdp_kernel() is deprecated. In the future, this context manager will be removed. Please see, torch.nn.attention.sdpa_kernel() for the new context manager, with updated signature.\n",
+            "  warnings.warn(\n"
+          ]
+        },
+        {
+          "output_type": "error",
+          "ename": "CalledProcessError",
+          "evalue": "Command 'b'# 5. B\\xc6\\xb0\\xe1\\xbb\\x9bc 1 \\xe2\\x80\\x94 AI \\xc4\\x91o\\xc3\\xa1n x\\xc6\\xb0\\xc6\\xa1ng cho nh\\xc3\\xa2n v\\xe1\\xba\\xadt 1 (checkpoint t\\xe1\\xbb\\xb1 t\\xe1\\xba\\xa3i t\\xe1\\xbb\\xab Hugging Face l\\xe1\\xba\\xa7n \\xc4\\x91\\xe1\\xba\\xa7u)\\n# D\\xc3\\xb9ng --output_dir thay cho --output: file x\\xc6\\xb0\\xc6\\xa1ng s\\xe1\\xba\\xbd \\xe1\\xbb\\x9f results/$NAME/skeleton.fbx.\\n# (C\\xc3\\xa1ch --output c\\xc5\\xa9 kh\\xc3\\xb4ng sinh ra file m\\xc3\\xa0 c\\xc5\\xa9ng kh\\xc3\\xb4ng b\\xc3\\xa1o l\\xe1\\xbb\\x97i \\xe2\\x80\\x94 \\xc4\\x91\\xc3\\xa3 g\\xe1\\xba\\xb7p \\xe1\\xbb\\x9f b\\xe1\\xba\\xa3n Gemini.)\\nset -e\\nexport PATH=\"/content/venv311/bin:$PATH\"\\ncd /content/UniRig\\nif [ ! -f \"./$NAME.glb\" ]; then cp \"$INPUT\" \"./$NAME.glb\"; fi\\nmkdir -p results\\nSKEL=\"results/$NAME/skeleton.fbx\"\\nif [ ! -f \"$SKEL\" ]; then\\n  echo \"=== B\\xc6\\xb0\\xe1\\xbb\\x9bc 1: \\xc4\\x90o\\xc3\\xa1n x\\xc6\\xb0\\xc6\\xa1ng ===\"\\n  bash launch/inference/generate_skeleton.sh --input \"./$NAME.glb\" --output_dir results\\n  [ -f \"$SKEL\" ] || { echo \"L\\xe1\\xbb\\x96I B\\xc6\\xaf\\xe1\\xbb\\x9aC 1: kh\\xc3\\xb4ng c\\xc3\\xb3 $SKEL. N\\xe1\\xbb\\x99i dung tmp/$NAME:\"; ls -lh \"tmp/$NAME/\"; exit 1; }\\nelse\\n  echo \"B\\xc6\\xb0\\xe1\\xbb\\x9bc 1 \\xc4\\x91\\xc3\\xa3 c\\xc3\\xb3 s\\xe1\\xba\\xb5n: $SKEL\"\\nfi\\nls -lh \"$SKEL\"\\n\\n'' returned non-zero exit status 1.",
+          "traceback": [
+            "\u001b[0;31m---------------------------------------------------------------------------\u001b[0m",
+            "\u001b[0;31mCalledProcessError\u001b[0m                        Traceback (most recent call last)",
+            "\u001b[0;32m/tmp/ipykernel_1890/1542376387.py\u001b[0m in \u001b[0;36m<cell line: 0>\u001b[0;34m()\u001b[0m\n\u001b[0;32m----> 1\u001b[0;31m \u001b[0mget_ipython\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mrun_cell_magic\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m'bash'\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m''\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m'# 5. Bước 1 — AI đoán xương cho nhân vật 1 (checkpoint tự tải từ Hugging Face lần đầu)\\n# Dùng --output_dir thay cho --output: file xương sẽ ở results/$NAME/skeleton.fbx.\\n# (Cách --output cũ không sinh ra file mà cũng không báo lỗi — đã gặp ở bản Gemini.)\\nset -e\\nexport PATH=\"/content/venv311/bin:$PATH\"\\ncd /content/UniRig\\nif [ ! -f \"./$NAME.glb\" ]; then cp \"$INPUT\" \"./$NAME.glb\"; fi\\nmkdir -p results\\nSKEL=\"results/$NAME/skeleton.fbx\"\\nif [ ! -f \"$SKEL\" ]; then\\n  echo \"=== Bước 1: Đoán xương ===\"\\n  bash launch/inference/generate_skeleton.sh --input \"./$NAME.glb\" --output_dir results\\n  [ -f \"$SKEL\" ] || { echo \"LỖI BƯỚC 1: không có $SKEL. Nội dung tmp/$NAME:\"; ls -lh \"tmp/$NAME/\"; exit 1; }\\nelse\\n  echo \"Bước 1 đã có sẵn: $SKEL\"\\nfi\\nls -lh \"$SKEL\"\\n\\n'\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m",
+            "\u001b[0;32m/usr/local/lib/python3.13/dist-packages/google/colab/_shell.py\u001b[0m in \u001b[0;36mrun_cell_magic\u001b[0;34m(self, magic_name, line, cell)\u001b[0m\n\u001b[1;32m    221\u001b[0m     \u001b[0;32mif\u001b[0m \u001b[0mline\u001b[0m \u001b[0;32mand\u001b[0m \u001b[0;32mnot\u001b[0m \u001b[0mcell\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    222\u001b[0m       \u001b[0mcell\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0;34m' '\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 223\u001b[0;31m     \u001b[0;32mreturn\u001b[0m \u001b[0msuper\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mrun_cell_magic\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mmagic_name\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mline\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mcell\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    224\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    225\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py\u001b[0m in \u001b[0;36mrun_cell_magic\u001b[0;34m(self, magic_name, line, cell)\u001b[0m\n\u001b[1;32m   2471\u001b[0m             \u001b[0;32mwith\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mbuiltin_trap\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   2472\u001b[0m                 \u001b[0margs\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0;34m(\u001b[0m\u001b[0mmagic_arg_s\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mcell\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m-> 2473\u001b[0;31m                 \u001b[0mresult\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mfn\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m*\u001b[0m\u001b[0margs\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mkwargs\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m   2474\u001b[0m             \u001b[0;32mreturn\u001b[0m \u001b[0mresult\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   2475\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.13/dist-packages/IPython/core/magics/script.py\u001b[0m in \u001b[0;36mnamed_script_magic\u001b[0;34m(line, cell)\u001b[0m\n\u001b[1;32m    140\u001b[0m             \u001b[0;32melse\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    141\u001b[0m                 \u001b[0mline\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mscript\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 142\u001b[0;31m             \u001b[0;32mreturn\u001b[0m \u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mshebang\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mline\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mcell\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    143\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    144\u001b[0m         \u001b[0;31m# write a basic docstring:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m<decorator-gen-103>\u001b[0m in \u001b[0;36mshebang\u001b[0;34m(self, line, cell)\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.13/dist-packages/IPython/core/magic.py\u001b[0m in \u001b[0;36m<lambda>\u001b[0;34m(f, *a, **k)\u001b[0m\n\u001b[1;32m    185\u001b[0m     \u001b[0;31m# but it's overkill for just that one bit of state.\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    186\u001b[0m     \u001b[0;32mdef\u001b[0m \u001b[0mmagic_deco\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0marg\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 187\u001b[0;31m         \u001b[0mcall\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0;32mlambda\u001b[0m \u001b[0mf\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m*\u001b[0m\u001b[0ma\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mk\u001b[0m\u001b[0;34m:\u001b[0m \u001b[0mf\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m*\u001b[0m\u001b[0ma\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mk\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    188\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    189\u001b[0m         \u001b[0;32mif\u001b[0m \u001b[0mcallable\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0marg\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;32m/usr/local/lib/python3.13/dist-packages/IPython/core/magics/script.py\u001b[0m in \u001b[0;36mshebang\u001b[0;34m(self, line, cell)\u001b[0m\n\u001b[1;32m    243\u001b[0m             \u001b[0msys\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mstderr\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mflush\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    244\u001b[0m         \u001b[0;32mif\u001b[0m \u001b[0margs\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mraise_error\u001b[0m \u001b[0;32mand\u001b[0m \u001b[0mp\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mreturncode\u001b[0m\u001b[0;34m!=\u001b[0m\u001b[0;36m0\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 245\u001b[0;31m             \u001b[0;32mraise\u001b[0m \u001b[0mCalledProcessError\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mp\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mreturncode\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mcell\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0moutput\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0mout\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mstderr\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0merr\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    246\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    247\u001b[0m     \u001b[0;32mdef\u001b[0m \u001b[0m_run_script\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mp\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mcell\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mto_close\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+            "\u001b[0;31mCalledProcessError\u001b[0m: Command 'b'# 5. B\\xc6\\xb0\\xe1\\xbb\\x9bc 1 \\xe2\\x80\\x94 AI \\xc4\\x91o\\xc3\\xa1n x\\xc6\\xb0\\xc6\\xa1ng cho nh\\xc3\\xa2n v\\xe1\\xba\\xadt 1 (checkpoint t\\xe1\\xbb\\xb1 t\\xe1\\xba\\xa3i t\\xe1\\xbb\\xab Hugging Face l\\xe1\\xba\\xa7n \\xc4\\x91\\xe1\\xba\\xa7u)\\n# D\\xc3\\xb9ng --output_dir thay cho --output: file x\\xc6\\xb0\\xc6\\xa1ng s\\xe1\\xba\\xbd \\xe1\\xbb\\x9f results/$NAME/skeleton.fbx.\\n# (C\\xc3\\xa1ch --output c\\xc5\\xa9 kh\\xc3\\xb4ng sinh ra file m\\xc3\\xa0 c\\xc5\\xa9ng kh\\xc3\\xb4ng b\\xc3\\xa1o l\\xe1\\xbb\\x97i \\xe2\\x80\\x94 \\xc4\\x91\\xc3\\xa3 g\\xe1\\xba\\xb7p \\xe1\\xbb\\x9f b\\xe1\\xba\\xa3n Gemini.)\\nset -e\\nexport PATH=\"/content/venv311/bin:$PATH\"\\ncd /content/UniRig\\nif [ ! -f \"./$NAME.glb\" ]; then cp \"$INPUT\" \"./$NAME.glb\"; fi\\nmkdir -p results\\nSKEL=\"results/$NAME/skeleton.fbx\"\\nif [ ! -f \"$SKEL\" ]; then\\n  echo \"=== B\\xc6\\xb0\\xe1\\xbb\\x9bc 1: \\xc4\\x90o\\xc3\\xa1n x\\xc6\\xb0\\xc6\\xa1ng ===\"\\n  bash launch/inference/generate_skeleton.sh --input \"./$NAME.glb\" --output_dir results\\n  [ -f \"$SKEL\" ] || { echo \"L\\xe1\\xbb\\x96I B\\xc6\\xaf\\xe1\\xbb\\x9aC 1: kh\\xc3\\xb4ng c\\xc3\\xb3 $SKEL. N\\xe1\\xbb\\x99i dung tmp/$NAME:\"; ls -lh \"tmp/$NAME/\"; exit 1; }\\nelse\\n  echo \"B\\xc6\\xb0\\xe1\\xbb\\x9bc 1 \\xc4\\x91\\xc3\\xa3 c\\xc3\\xb3 s\\xe1\\xba\\xb5n: $SKEL\"\\nfi\\nls -lh \"$SKEL\"\\n\\n'' returned non-zero exit status 1."
+          ]
+        }
+      ],
+      "source": [
+        "%%bash\n",
+        "# 5. Bước 1 — AI đoán xương cho nhân vật 1 (checkpoint tự tải từ Hugging Face lần đầu)\n",
+        "# Dùng --output_dir thay cho --output: file xương sẽ ở results/$NAME/skeleton.fbx.\n",
+        "# (Cách --output cũ không sinh ra file mà cũng không báo lỗi — đã gặp ở bản Gemini.)\n",
+        "set -e\n",
+        "export PATH=\"/content/venv311/bin:$PATH\"\n",
+        "cd /content/UniRig\n",
+        "if [ ! -f \"./$NAME.glb\" ]; then cp \"$INPUT\" \"./$NAME.glb\"; fi\n",
+        "mkdir -p results\n",
+        "SKEL=\"results/$NAME/skeleton.fbx\"\n",
+        "if [ ! -f \"$SKEL\" ]; then\n",
+        "  echo \"=== Bước 1: Đoán xương ===\"\n",
+        "  bash launch/inference/generate_skeleton.sh --input \"./$NAME.glb\" --output_dir results\n",
+        "  [ -f \"$SKEL\" ] || { echo \"LỖI BƯỚC 1: không có $SKEL. Nội dung tmp/$NAME:\"; ls -lh \"tmp/$NAME/\"; exit 1; }\n",
+        "else\n",
+        "  echo \"Bước 1 đã có sẵn: $SKEL\"\n",
+        "fi\n",
+        "ls -lh \"$SKEL\"\n",
+        "\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "ABzaVqVj3jLi"
+      },
+      "outputs": [],
+      "source": [
+        "%%bash\n",
+        "# 6. Bước 2 — AI tính skinning cho nhân vật 1 (dựa trên xương vừa đoán; nếu xương sai thì sửa xương trước rồi mới chạy bước này)\n",
+        "set -e\n",
+        "export PATH=\"/content/venv311/bin:$PATH\"\n",
+        "cd /content/UniRig\n",
+        "SKIN=\"results/${NAME}_skin.fbx\"\n",
+        "if [ ! -f \"$SKIN\" ]; then\n",
+        "  echo \"=== Bước 2: Tính skinning ===\"\n",
+        "  bash launch/inference/generate_skin.sh --input \"results/$NAME/skeleton.fbx\" --output \"$SKIN\"\n",
+        "  [ -f \"$SKIN\" ] || { echo \"LỖI BƯỚC 2: không có $SKIN\"; ls -lh results/; exit 1; }\n",
+        "else\n",
+        "  echo \"Bước 2 đã có sẵn: $SKIN\"\n",
+        "fi\n",
+        "ls -lh \"$SKIN\"\n",
+        "\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "yH5gAAFZ3jLj"
+      },
+      "outputs": [],
+      "source": [
+        "%%bash\n",
+        "# 7. Bước 3 — Gộp xương + skin vào nhân vật 1 → file đã rig hoàn chỉnh\n",
+        "set -e\n",
+        "export PATH=\"/content/venv311/bin:$PATH\"\n",
+        "cd /content/UniRig\n",
+        "RIGGED=\"results/${NAME}_rigged.glb\"\n",
+        "if [ ! -f \"$RIGGED\" ]; then\n",
+        "  echo \"=== Bước 3: Gộp thành file rig ===\"\n",
+        "  bash launch/inference/merge.sh --source \"results/${NAME}_skin.fbx\" --target \"./$NAME.glb\" --output \"$RIGGED\"\n",
+        "  [ -f \"$RIGGED\" ] || { echo \"LỖI BƯỚC 3: không có $RIGGED\"; ls -lh results/; exit 1; }\n",
+        "else\n",
+        "  echo \"Bước 3 đã có sẵn: $RIGGED\"\n",
+        "fi\n",
+        "echo \"=== XONG ===\"\n",
+        "ls -lh results/\n",
+        "\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "DXzmIv4f3jLk"
+      },
+      "outputs": [],
+      "source": [
+        "# 8. Tải file nhân vật 1 đã rig về máy\n",
+        "from google.colab import files\n",
+        "files.download(f'results/{NAME}_rigged.glb')\n",
+        "files.download(f'results/{NAME}/skeleton.fbx')\n",
+        "\n"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "H13krQNb3jLk"
+      },
+      "source": [
+        "## Nếu gặp lỗi\n",
+        "\n",
+        "- **Cell 3 báo `bpy==4.2` không có bản phù hợp / `torch_scatter` / `flash_attn` build lỗi** → đó là vì Colab hiện chạy Python 3.13, UniRig chỉ chạy trên Python 3.11. Cell 3 bản mới tự tạo môi trường Python 3.11 riêng (uv) và cài torch 2.3.1+cu118 + wheel torch-scatter pt23 + spconv-cu118 2.3.8 + flash-attn 2.6.3 + bpy 4.2 — chạy lại cell 3 rồi chạy tiếp cell 4–8. Đừng cài thêm gì bằng pip ngoài cell 3. (Không biên dịch torch-scatter từ source: nvcc 11.8 không đọc được header glibc của Ubuntu 24.04.)\n",
+        "- **Không thấy GPU / CUDA available: False** → Runtime → Change runtime type → chọn T4 GPU, rồi chạy lại từ cell 1.\n",
+        "- **Một bước báo `LỖI BƯỚC 1/2/3: không có file...`** → dừng lại, đừng chạy tiếp: chụp ảnh toàn bộ output của cell đó gửi mình. File xương nằm ở `results/nhanvat1/skeleton.fbx`, file skin ở `results/nhanvat1_skin.fbx`, file rig ở `results/nhanvat1_rigged.glb`.\n",
+        "- **Hết VRAM (CUDA out of memory)** → model đầu vào quá nặng: giảm mặt model xuống dưới 50.000 tris trước khi đưa vào (UniRig tự decimate về 50.000 nhưng model gốc quá lớn vẫn có thể tràn).\n",
+        "- **Muốn rig model khác** → sửa `INPUT` ở cell 4 thành file bạn upload (hoặc xóa file nhân vật 1 khỏi repo rồi up file mới ở cell 4), rồi chạy lại cell 5–7 — tên file xuất ra đổi theo `NAME` tự động.\n",
+        "\n",
+        "Repo gốc: https://github.com/VAST-AI-Research/UniRig — Paper SIGGRAPH 2025.\n",
+        "\n"
+      ]
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "display_name": "Python 3",
+      "name": "python3"
+    },
+    "language_info": {
+      "name": "python"
+    },
+    "colab": {
+      "provenance": [],
+      "gpuType": "T4"
+    },
+    "accelerator": "GPU"
+  },
+  "nbformat": 4,
+  "nbformat_minor": 0
+}
