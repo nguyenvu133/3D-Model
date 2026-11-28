@@ -393,6 +393,21 @@
         else bus.emit('notify', { type: 'error', title: 'Tối ưu FBX', message: 'SaveManager chưa sẵn sàng.' });
       });
     }
+    /* Topbar "Tạo Skeleton + Skin" (user 2026-11-28 ~20:37) → 1 bấm tự
+       tạo skeleton Mixamo 41 xương + skin weights cho model đang load,
+       KHÔNG đặt marker tay, KHÔNG tải file: gọi AutoRigPro.run với
+       export:false (rig ở lại trong scene, skeleton tự hiện qua
+       arp:rig-complete → ArpVpSkeleton.autoShow; xuất sau qua Export
+       FBX hiện có). Model đã rig / chưa có model thì run() tự báo và
+       dừng, không ghi đè (guard hasRig/alreadyRigged). Khác nút
+       "Auto Rig Pro Blend" (mở panel + xuất FBX rigged + .py về máy). */
+    const topAutoSkeleton = document.getElementById('btn-auto-skeleton');
+    if (topAutoSkeleton) {
+      topAutoSkeleton.addEventListener('click', function () {
+        if (PixiStudio.AutoRigPro && PixiStudio.AutoRigPro.run) PixiStudio.AutoRigPro.run(null, { export: false });
+        else bus.emit('notify', { type: 'error', title: 'Tạo Skeleton + Skin', message: 'AutoRigPro chưa sẵn sàng.' });
+      });
+    }
     /* Topbar "Auto Rig Pro Blend" → đo landmark + dựng skeleton Mixamo
        41 xương + skin tự động trên model CHƯA rig, xuất FBX rigged +
        script Blender (.py) để lưu thành .blend. Model đã rig thì báo

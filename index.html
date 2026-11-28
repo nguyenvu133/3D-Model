@@ -94,21 +94,21 @@
      version.json (cache:'no-store'), khác bản đang chạy thì tự tải
      lại 1 lần với ?v=<bản mới>; đã reload 1 lần mà vẫn cũ (Pages
      chưa deploy xong) thì thôi, không lặp. ============ -->
-<script>window.__PIXISTUDIO_BUILD = '37017cbb';</script>
-<script src="js/core/version-check.js?v=37017cbb"></script>
+<script>window.__PIXISTUDIO_BUILD = 'd42dd9dc';</script>
+<script src="js/core/version-check.js?v=d42dd9dc"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="description" content="PixiJS Studio × Tripo3D AI Studio v21.0 — All-in-One 3D Game Creation Environment">
 <title>PixiJS Studio × Tripo3D AI Studio — v21.0</title>
 
-<link rel="stylesheet" href="css/main.css?v=37017cbb">
-<link rel="stylesheet" href="css/layout.css?v=37017cbb">
-<link rel="stylesheet" href="css/components.css?v=37017cbb">
-<link rel="stylesheet" href="css/panels.css?v=37017cbb">
-<link rel="stylesheet" href="css/physics-panel.css?v=37017cbb">
-<link rel="stylesheet" href="css/timeline.css?v=37017cbb">
-<link rel="stylesheet" href="css/responsive.css?v=37017cbb">
-<link rel="stylesheet" href="css/arp-panel.css?v=37017cbb">
-<link rel="stylesheet" href="css/anim-graph.css?v=37017cbb">
+<link rel="stylesheet" href="css/main.css?v=d42dd9dc">
+<link rel="stylesheet" href="css/layout.css?v=d42dd9dc">
+<link rel="stylesheet" href="css/components.css?v=d42dd9dc">
+<link rel="stylesheet" href="css/panels.css?v=d42dd9dc">
+<link rel="stylesheet" href="css/physics-panel.css?v=d42dd9dc">
+<link rel="stylesheet" href="css/timeline.css?v=d42dd9dc">
+<link rel="stylesheet" href="css/responsive.css?v=d42dd9dc">
+<link rel="stylesheet" href="css/arp-panel.css?v=d42dd9dc">
+<link rel="stylesheet" href="css/anim-graph.css?v=d42dd9dc">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%23713BFF'/%3E%3Cpath d='M12 5l7 4v6l-7 4-7-4V9l7-4z' fill='none' stroke='white' stroke-width='1.6'/%3E%3C/svg%3E">
 
 
@@ -167,6 +167,14 @@
       <div class="topbar-actions-scroll" id="topbar-actions-scroll">
       <button class="btn sm ghost drawer-toggle" id="drawer-left-toggle" data-tooltip="Asset panel" data-tooltip-side="left"><i data-ic="panel-left"></i></button>
       <button class="btn sm ghost drawer-toggle" id="drawer-right-toggle" data-tooltip="Inspector panel" data-tooltip-side="left"><i data-ic="panel-right"></i></button>
+      <!-- Nút Tạo Skeleton + Skin (user 2026-11-28 ~20:37): 1 bấm tự tạo
+           skeleton Mixamo 41 xương + skin weights cho model đang load —
+           KHÔNG đặt marker tay, KHÔNG tải file. Nút chính luôn hiện: không
+           class .tb-overflow/.tb-overflow-sm (không vào menu ⋯), đặt đầu
+           hàng cuộn (ngay sau 2 nút drawer) để nhìn thấy ngay ở cả mobile
+           360 (icon-only 32px) lẫn 1024×768. Bấm → AutoRigPro.run(export:false),
+           rig ở lại trong scene, xuất sau qua Export FBX hiện có. -->
+      <button class="btn sm" id="btn-auto-skeleton" data-tooltip="Tạo Skeleton + Skin — 1 bấm tự tạo skeleton Mixamo 41 xương + skin weights cho model đang load (không cần đặt marker tay, không tải file — rig xong xuất qua Export FBX như thường)"><i data-ic="rig"></i><span class="lbl">Tạo Skeleton + Skin</span></button>
       <a class="btn sm tb-overflow" id="btn-mesh2motion" href="mesh2motion.html" data-tooltip="Mở Mesh2Motion — 3D Animation Engine (326 motion CC0)"><i data-ic="animation"></i><span class="lbl">Mesh2Motion</span></a>
       <button class="btn sm tb-overflow" id="btn-map-editor" data-tooltip="Mở Map Editor 3D — sửa map/terrain, nối 2 chiều với Studio"><i data-ic="scene"></i><span class="lbl">Map Editor</span></button>
       <button class="btn sm tb-overflow" id="btn-import-shared" data-tooltip="Import file .shared-scene.json từ Map Editor (khi shared key không ghi được)"><i data-ic="import"></i><span class="lbl">Import Shared JSON</span></button>
@@ -593,293 +601,293 @@
 <!-- ============ LIBRARIES (vendor-local chính, CDN dự phòng) ============ -->
 <!-- Chạy offline/file://: mọi thư viện đã có sẵn trong js/vendor/ (xem js/vendor/README.md).
      CDN jsdelivr chỉ là fallback khi file local lỗi/thiếu. -->
-<script src="js/vendor/three.min.js?v=37017cbb"
+<script src="js/vendor/three.min.js?v=d42dd9dc"
         onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js', 'https://unpkg.com/three@0.128.0/build/three.min.js', 'three.min.js')"></script>
-<script src="js/vendor/pixi-7.4.3.min.js?v=37017cbb"
+<script src="js/vendor/pixi-7.4.3.min.js?v=d42dd9dc"
         onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/pixi.js@7.4.3/dist/pixi.min.js', 'https://unpkg.com/pixi.js@7.4.3/dist/pixi.min.js', 'pixi.min.js')"></script>
-<script src="js/vendor/GLTFLoader.js?v=37017cbb"
+<script src="js/vendor/GLTFLoader.js?v=d42dd9dc"
         onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js', 'https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js', 'GLTFLoader.js')"></script>
-<script src="js/vendor/OBJLoader.js?v=37017cbb"
+<script src="js/vendor/OBJLoader.js?v=d42dd9dc"
         onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js', 'https://unpkg.com/three@0.128.0/examples/js/loaders/OBJLoader.js', 'OBJLoader.js')"></script>
-<script src="js/vendor/MTLLoader.js?v=37017cbb"
+<script src="js/vendor/MTLLoader.js?v=d42dd9dc"
         onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/MTLLoader.js', 'https://unpkg.com/three@0.128.0/examples/js/loaders/MTLLoader.js', 'MTLLoader.js')"></script>
-<script src="js/vendor/STLLoader.js?v=37017cbb"
+<script src="js/vendor/STLLoader.js?v=d42dd9dc"
         onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js', 'https://unpkg.com/three@0.128.0/examples/js/loaders/STLLoader.js', 'STLLoader.js')"></script>
-<script src="js/vendor/TransformControls.js?v=37017cbb"
+<script src="js/vendor/TransformControls.js?v=d42dd9dc"
         onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js', 'https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js', 'TransformControls.js')"></script>
-<script src="js/vendor/GLTFExporter.js?v=37017cbb"
+<script src="js/vendor/GLTFExporter.js?v=d42dd9dc"
         onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js', 'https://unpkg.com/three@0.128.0/examples/js/exporters/GLTFExporter.js', 'GLTFExporter.js')"></script>
-<script src="js/vendor/OBJExporter.js?v=37017cbb"
+<script src="js/vendor/OBJExporter.js?v=d42dd9dc"
         onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/OBJExporter.js', 'https://unpkg.com/three@0.128.0/examples/js/exporters/OBJExporter.js', 'OBJExporter.js')"></script>
-<script src="js/vendor/STLExporter.js?v=37017cbb"
+<script src="js/vendor/STLExporter.js?v=d42dd9dc"
         onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/STLExporter.js', 'https://unpkg.com/three@0.128.0/examples/js/exporters/STLExporter.js', 'STLExporter.js')"></script>
-<script src="js/vendor/BufferGeometryUtils.js?v=37017cbb"
+<script src="js/vendor/BufferGeometryUtils.js?v=d42dd9dc"
         onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/BufferGeometryUtils.js', 'https://unpkg.com/three@0.128.0/examples/js/utils/BufferGeometryUtils.js', 'BufferGeometryUtils.js')"></script>
 <!-- Meshopt decoder — cần cho kiemhiep.glb (Meshopt-compressed) -->
-<script src="js/vendor/meshopt_decoder.js?v=37017cbb"
+<script src="js/vendor/meshopt_decoder.js?v=d42dd9dc"
         onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/meshoptimizer@0.18.1/meshopt_decoder.js', 'https://unpkg.com/meshoptimizer@0.18.1/meshopt_decoder.js', 'meshopt_decoder.js')"></script>
 <!-- fflate + FBXLoader — đọc file FBX Meshy (skinning + animation) -->
-<script src="js/vendor/fflate.js?v=37017cbb"
+<script src="js/vendor/fflate.js?v=d42dd9dc"
         onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/fflate@0.6.10/umd/index.js', 'https://unpkg.com/fflate@0.6.10/umd/index.js', 'index.js')"></script>
-<script src="js/vendor/FBXLoader.js?v=37017cbb"
+<script src="js/vendor/FBXLoader.js?v=d42dd9dc"
         onerror="window.__vendorFallback(this, 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js', 'https://unpkg.com/three@0.128.0/examples/js/loaders/FBXLoader.js', 'FBXLoader.js')"></script>
 
 <!-- ============ CORE ============ -->
-<script src="js/core/version.js?v=37017cbb"></script>
-<script src="js/core/utils.js?v=37017cbb"></script>
-<script src="js/core/events.js?v=37017cbb"></script>
-<script src="js/core/state.js?v=37017cbb"></script>
-<script src="js/core/storage.js?v=37017cbb"></script>
+<script src="js/core/version.js?v=d42dd9dc"></script>
+<script src="js/core/utils.js?v=d42dd9dc"></script>
+<script src="js/core/events.js?v=d42dd9dc"></script>
+<script src="js/core/state.js?v=d42dd9dc"></script>
+<script src="js/core/storage.js?v=d42dd9dc"></script>
 <!-- Map Editor shared modules (tái dùng cho cầu nối 2 chiều) -->
-<script src="js/mapeditor/core/SceneData.js?v=37017cbb"></script>
-<script src="js/mapeditor/link/SharedScene.js?v=37017cbb"></script>
-<script src="js/mapeditor/editor/Placement.js?v=37017cbb"></script>
-<script src="js/core/map-link.js?v=37017cbb"></script>
-<script src="js/core/history.js?v=37017cbb"></script>
-<script src="js/core/app.js?v=37017cbb"></script>
+<script src="js/mapeditor/core/SceneData.js?v=d42dd9dc"></script>
+<script src="js/mapeditor/link/SharedScene.js?v=d42dd9dc"></script>
+<script src="js/mapeditor/editor/Placement.js?v=d42dd9dc"></script>
+<script src="js/core/map-link.js?v=d42dd9dc"></script>
+<script src="js/core/history.js?v=d42dd9dc"></script>
+<script src="js/core/app.js?v=d42dd9dc"></script>
 
 <!-- ============ RENDERER ============ -->
-<script src="js/renderer/three-renderer.js?v=37017cbb"></script>
-<script src="js/renderer/pixi-renderer.js?v=37017cbb"></script>
-<script src="js/renderer/pixi-effects.js?v=37017cbb"></script>
-<script src="js/renderer/renderer-manager.js?v=37017cbb"></script>
-<script src="js/renderer/turntable.js?v=37017cbb"></script>
+<script src="js/renderer/three-renderer.js?v=d42dd9dc"></script>
+<script src="js/renderer/pixi-renderer.js?v=d42dd9dc"></script>
+<script src="js/renderer/pixi-effects.js?v=d42dd9dc"></script>
+<script src="js/renderer/renderer-manager.js?v=d42dd9dc"></script>
+<script src="js/renderer/turntable.js?v=d42dd9dc"></script>
 
 <!-- ============ VIEWPORT ============ -->
-<script src="js/viewport/camera.js?v=37017cbb"></script>
-<script src="js/viewport/grid.js?v=37017cbb"></script>
-<script src="js/viewport/lighting.js?v=37017cbb"></script>
-<script src="js/viewport/gizmo.js?v=37017cbb"></script>
-<script src="js/viewport/controls.js?v=37017cbb"></script>
-<script src="js/viewport/viewport.js?v=37017cbb"></script>
-<script src="js/viewport/interaction.js?v=37017cbb"></script>
-<script src="js/viewport/object-tools.js?v=37017cbb"></script>
+<script src="js/viewport/camera.js?v=d42dd9dc"></script>
+<script src="js/viewport/grid.js?v=d42dd9dc"></script>
+<script src="js/viewport/lighting.js?v=d42dd9dc"></script>
+<script src="js/viewport/gizmo.js?v=d42dd9dc"></script>
+<script src="js/viewport/controls.js?v=d42dd9dc"></script>
+<script src="js/viewport/viewport.js?v=d42dd9dc"></script>
+<script src="js/viewport/interaction.js?v=d42dd9dc"></script>
+<script src="js/viewport/object-tools.js?v=d42dd9dc"></script>
 
 <!-- ============ MODELS & ASSETS ============ -->
-<script src="js/models/sample-model.js?v=37017cbb"></script>
-<script src="js/models/obj-texture-core.js?v=37017cbb"></script>
-<script src="js/assets/fbx-import.js?v=37017cbb"></script>
-<script src="js/models/model-manager.js?v=37017cbb"></script>
-<script src="js/assets/importers.js?v=37017cbb"></script>
-<script src="js/assets/asset-library.js?v=37017cbb"></script>
-<script src="js/assets/asset-library-storage.js?v=37017cbb"></script>
+<script src="js/models/sample-model.js?v=d42dd9dc"></script>
+<script src="js/models/obj-texture-core.js?v=d42dd9dc"></script>
+<script src="js/assets/fbx-import.js?v=d42dd9dc"></script>
+<script src="js/models/model-manager.js?v=d42dd9dc"></script>
+<script src="js/assets/importers.js?v=d42dd9dc"></script>
+<script src="js/assets/asset-library.js?v=d42dd9dc"></script>
+<script src="js/assets/asset-library-storage.js?v=d42dd9dc"></script>
 <!-- Asset Library Preview (nhóm D — animation preview): WRAP
      Library._buildCard/_buildRow/showDetails lúc load, KHÔNG sửa
      asset-library.js. Load SAU asset-library.js. -->
-<script src="js/assets/asset-library-preview.js?v=37017cbb"></script>
-<script src="js/mesh/lod-generator.js?v=37017cbb"></script>
+<script src="js/assets/asset-library-preview.js?v=d42dd9dc"></script>
+<script src="js/mesh/lod-generator.js?v=d42dd9dc"></script>
 
 <!-- ============ RIGGING & ANIMATION ============ -->
-<script src="js/rigging/skeleton.js?v=37017cbb"></script>
-<script src="js/rigging/rig-manager.js?v=37017cbb"></script>
-<script src="js/rigging/bone-editor.js?v=37017cbb"></script>
-<script src="js/rigging/rig-auto-gen.js?v=37017cbb"></script>
-<script src="js/rigging/mixamo-skeleton-data.js?v=37017cbb"></script>
-<script src="js/rigging/mixamo-skeleton.js?v=37017cbb"></script>
-<script src="js/rigging/creature-rigs.js?v=37017cbb"></script>
-<script src="js/rigging/rig-oneclick.js?v=37017cbb"></script>
-<script src="js/rig/auto-rig-pro.js?v=37017cbb"></script>
-<script src="js/ui/arp-panel.js?v=37017cbb"></script>
+<script src="js/rigging/skeleton.js?v=d42dd9dc"></script>
+<script src="js/rigging/rig-manager.js?v=d42dd9dc"></script>
+<script src="js/rigging/bone-editor.js?v=d42dd9dc"></script>
+<script src="js/rigging/rig-auto-gen.js?v=d42dd9dc"></script>
+<script src="js/rigging/mixamo-skeleton-data.js?v=d42dd9dc"></script>
+<script src="js/rigging/mixamo-skeleton.js?v=d42dd9dc"></script>
+<script src="js/rigging/creature-rigs.js?v=d42dd9dc"></script>
+<script src="js/rigging/rig-oneclick.js?v=d42dd9dc"></script>
+<script src="js/rig/auto-rig-pro.js?v=d42dd9dc"></script>
+<script src="js/ui/arp-panel.js?v=d42dd9dc"></script>
 <!-- ARP Plugins: registry PHẢI load sau arp-panel.js và TRƯỚC các module
      tab ARP (arp-smart.js, ...) để sẵn sàng khi các tab/plugin đăng ký. -->
-<script src="js/rig/arp-plugins.js?v=37017cbb"></script>
-<script src="js/rig/arp-plugin-modelstats.js?v=37017cbb"></script>
+<script src="js/rig/arp-plugins.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-plugin-modelstats.js?v=d42dd9dc"></script>
 <!-- ARP AutoMatch: PHẢI load TRƯỚC arp-smart.js / arp-remap.js /
      arp-quickrig.js (3 module đều tra PixiStudio.ArpAutoMatch khi chạy). -->
-<script src="js/rig/arp-automatch.js?v=37017cbb"></script>
+<script src="js/rig/arp-automatch.js?v=d42dd9dc"></script>
 <!-- ARP RestPose + AnimMirror (NHÓM B, Animation): bù rest pose khi
      retarget + mirror clip đúng qua YZ. Load SAU arp-automatch.js và
      TRƯỚC arp-remap.js / arp-animator.js (2 module tra lười lúc chạy
      qua PixiStudio.ArpRestPose / ArpAnimMirror nên thứ tự không cứng,
      nhưng để trước cho tab Remap/Animator dùng ngay khi render). -->
-<script src="js/rig/arp-restpose.js?v=37017cbb"></script>
+<script src="js/rig/arp-restpose.js?v=d42dd9dc"></script>
 <!-- NHÓM 6 — Animal presets: PHẢI load TRƯỚC arp-smart.js /
      arp-quickrig.js (2 module đều tra PixiStudio.ArpAnimalPresets). -->
-<script src="js/rig/arp-animal-presets.js?v=37017cbb"></script>
-<script src="js/rig/arp-smart.js?v=37017cbb"></script>
+<script src="js/rig/arp-animal-presets.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-smart.js?v=d42dd9dc"></script>
 <!-- NHÓM 1 — Decimation + Shape analysis: load SAU arp-smart.js
      (arp-decimate.js tra PixiStudio.ArpSmart/AutoRigPro khi chạy,
      tab Smart gọi ArpDecimate.analyzeShape/decimate). -->
-<script src="js/rig/arp-decimate.js?v=37017cbb"></script>
-<script src="js/rig/arp-remap.js?v=37017cbb"></script>
+<script src="js/rig/arp-decimate.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-remap.js?v=d42dd9dc"></script>
 <!-- NHÓM 2 — Retarget scale-aware: load SAU arp-remap.js
      (arp-remap.js tra PixiStudio.ArpRetargetScale khi chạy). -->
-<script src="js/rig/arp-retarget-scale.js?v=37017cbb"></script>
-<script src="js/rig/arp-export.js?v=37017cbb"></script>
-<script src="js/rig/arp-quickrig.js?v=37017cbb"></script>
+<script src="js/rig/arp-retarget-scale.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-export.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-quickrig.js?v=d42dd9dc"></script>
 <!-- ARP Constraints (NHÓM 3): bone constraint system — load SAU
      arp-quickrig.js (đăng ký section 'constraints' vào tab Quick Rig).
      AdvIK được tra lười lúc chạy nên thứ tự với arp-qr3-advik.js
      không quan trọng. -->
-<script src="js/rig/arp-constraints.js?v=37017cbb"></script>
-<script src="js/rig/arp-qr3-pose.js?v=37017cbb"></script>
-<script src="js/rig/arp-qr3-keyframe.js?v=37017cbb"></script>
+<script src="js/rig/arp-constraints.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-qr3-pose.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-qr3-keyframe.js?v=d42dd9dc"></script>
 <!-- Animation Compression (nhóm D): nén clip khi xuất JSON
      (loại key thừa + quantize float16/mm). Load SAU keyframe và
      TRƯỚC animator (cả 2 dùng PS.ArpAnimCompression lúc export). -->
-<script src="js/rig/arp-anim-compression.js?v=37017cbb"></script>
-<script src="js/rig/arp-qr3-advik.js?v=37017cbb"></script>
-<script src="js/rig/arp-qr3-gizmo.js?v=37017cbb"></script>
-<script src="js/rig/arp-qr3-face.js?v=37017cbb"></script>
-<script src="js/rig/arp-qr3-prop.js?v=37017cbb"></script>
-<script src="js/rig/arp-qr3-history.js?v=37017cbb"></script>
-<script src="js/rig/arp-qr3-liveretarget.js?v=37017cbb"></script>
-<script src="js/rig/arp-boneshape.js?v=37017cbb"></script>
+<script src="js/rig/arp-anim-compression.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-qr3-advik.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-qr3-gizmo.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-qr3-face.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-qr3-prop.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-qr3-history.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-qr3-liveretarget.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-boneshape.js?v=d42dd9dc"></script>
 <!-- Auto Fix (C): "Chỉnh sửa auto" cho ARP — đăng ký plugin
      'auto-fix' vào ArpPlugins (tab riêng plugin:auto-fix). Section
      Quick Rig + tab 'autofix' chỉ là fallback khi không có registry
      (xem arp-autofix.js — đăng ký thêm sẽ trùng 2 tab). Load SAU
      arp-plugins.js (registry) và SAU arp-quickrig.js — cuối khối ARP. -->
-<script src="js/rig/arp-autofix.js?v=37017cbb"></script>
+<script src="js/rig/arp-autofix.js?v=d42dd9dc"></script>
 <!-- Mixamo Rig plugin: control rig kiểu Blender addon (tdw46) — đăng ký
      plugin 'mixamo-rig' vào ArpPlugins (tab riêng). Load SAU
      arp-autofix.js và SAU arp-qr3-advik.js (dùng lại blendIKFK). -->
-<script src="js/rig/arp-plugin-mixamorig.js?v=37017cbb"></script>
+<script src="js/rig/arp-plugin-mixamorig.js?v=d42dd9dc"></script>
 <!-- ARP Rig Layers + Validation (Nhóm 5, vòng Rig mở rộng): tách rig
      thành Deform/Control/Mechanism + kiểm chứng rig tự động (9 rule).
      Load SAU arp-quickrig.js (dùng BONE_DEFS khi có) và SAU
      arp-panel.js (đăng ký 2 tab 'riglayers' + 'validation'). -->
-<script src="js/rig/arp-riglayers.js?v=37017cbb"></script>
-<script src="js/rig/arp-validate.js?v=37017cbb"></script>
-<script src="js/rigging/meshy-rigging.js?v=37017cbb"></script>
-<script src="js/rigging/character-controller.js?v=37017cbb"></script>
-<script src="js/animation/presets.js?v=37017cbb"></script>
-<script src="js/animation/anim-library.js?v=37017cbb"></script>
-<script src="js/animation/animate-studio.js?v=37017cbb"></script>
-<script src="js/animation/m2m-motion.js?v=37017cbb"></script>
-<script src="js/animation/mesh2motion-studio.js?v=37017cbb"></script>
-<script src="js/animation/animation-manager.js?v=37017cbb"></script>
+<script src="js/rig/arp-riglayers.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-validate.js?v=d42dd9dc"></script>
+<script src="js/rigging/meshy-rigging.js?v=d42dd9dc"></script>
+<script src="js/rigging/character-controller.js?v=d42dd9dc"></script>
+<script src="js/animation/presets.js?v=d42dd9dc"></script>
+<script src="js/animation/anim-library.js?v=d42dd9dc"></script>
+<script src="js/animation/animate-studio.js?v=d42dd9dc"></script>
+<script src="js/animation/m2m-motion.js?v=d42dd9dc"></script>
+<script src="js/animation/mesh2motion-studio.js?v=d42dd9dc"></script>
+<script src="js/animation/animation-manager.js?v=d42dd9dc"></script>
 <!-- ============ ARP VIEWPORT (vòng Viewport): registry PHẢI load trước mọi
      module arp-vp-* khác; toolbar load cuối (sau Smart/QuickRig) để trạng
      thái ban đầu đúng. Core -> skeleton/labels/ik/select/trails/measure/
      presets -> toolbar. -->
-<script src="js/rig/arp-vp-core.js?v=37017cbb"></script>
-<script src="js/rig/arp-shared-skeleton.js?v=37017cbb"></script>
-<script src="js/rig/arp-vp-skeleton.js?v=37017cbb"></script>
-<script src="js/rig/arp-vp-labels.js?v=37017cbb"></script>
-<script src="js/rig/arp-vp-ik.js?v=37017cbb"></script>
-<script src="js/rig/arp-vp-select.js?v=37017cbb"></script>
-<script src="js/rig/arp-vp-trails.js?v=37017cbb"></script>
-<script src="js/rig/arp-vp-measure.js?v=37017cbb"></script>
-<script src="js/rig/arp-vp-presets.js?v=37017cbb"></script>
-<script src="js/ui/arp-vp-toolbar.js?v=37017cbb"></script>
+<script src="js/rig/arp-vp-core.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-shared-skeleton.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-vp-skeleton.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-vp-labels.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-vp-ik.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-vp-select.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-vp-trails.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-vp-measure.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-vp-presets.js?v=d42dd9dc"></script>
+<script src="js/ui/arp-vp-toolbar.js?v=d42dd9dc"></script>
 <!-- ARP ClipBind (CLIPBIND-A, vòng clip-binding bug a): vá
      THREE.PropertyBinding.findNode + chuẩn hóa tên track lúc bind
      ('mixamorig:Hips' → 'mixamorigHips'). Load TRƯỚC arp-animator.js
      để install() chạy trước mọi clipAction. -->
-<script src="js/rig/arp-clipbind.js?v=37017cbb"></script>
+<script src="js/rig/arp-clipbind.js?v=d42dd9dc"></script>
 <!-- ARP Animator (tab Animator): load sau arp-vp-toolbar để dùng lại các
      module hiển thị viewport (skeleton/IK/trails). -->
-<script src="js/rig/arp-animator.js?v=37017cbb"></script>
+<script src="js/rig/arp-animator.js?v=d42dd9dc"></script>
 <!-- ARP Mirror thật + Bone Roll Editor (Nhóm 4, vòng Rig mở rộng):
      load SAU arp-animator.js (mirrorCurrentAnimatorClip tra Animator
      lúc chạy; mirror/roll đều đăng ký section vào tab Quick Rig qua
      ArpQuickRig.registerSection — Quick Rig load trước đó). -->
-<script src="js/rig/arp-mirror.js?v=37017cbb"></script>
-<script src="js/rig/arp-roll.js?v=37017cbb"></script>
+<script src="js/rig/arp-mirror.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-roll.js?v=d42dd9dc"></script>
 <!-- ARP Sync Quick Rig ↔ Animator (vòng đồng bộ): load SAU animator.js
      (và sau keyframe/pose/liveretarget/remap/mixamorig/vp-*). Thứ tự:
      clips → control → history → viewport (control bọc tick trước,
      viewport bọc sau để overlay refresh sau khi control đã áp). -->
-<script src="js/rig/arp-sync-clips.js?v=37017cbb"></script>
+<script src="js/rig/arp-sync-clips.js?v=d42dd9dc"></script>
 <!-- ARP Export ↔ Animator sync (vòng Export-sync): load SAU arp-export.js
      + arp-sync-clips.js — listAnimatorClips() tra ArpSyncClips,
      exportAnimatorClip() delegate ArpExport.exportFile. -->
-<script src="js/rig/arp-export-sync.js?v=37017cbb"></script>
-<script src="js/rig/arp-sync-control.js?v=37017cbb"></script>
-<script src="js/rig/arp-sync-history.js?v=37017cbb"></script>
-<script src="js/rig/arp-sync-viewport.js?v=37017cbb"></script>
+<script src="js/rig/arp-export-sync.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-sync-control.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-sync-history.js?v=d42dd9dc"></script>
+<script src="js/rig/arp-sync-viewport.js?v=d42dd9dc"></script>
 <!-- ARP Video → Animation (nhóm E, stretch goal): load SAU sync-viewport
      (dùng Keyframe.importClip + Animator.registerClip khi có). Nạp
      MediaPipe bằng dynamic import() trong module (tasks-vision chỉ có
      bản ESM, không có UMD) — không thêm <script src> CDN ở đây. -->
-<script src="js/rig/arp-anim-video.js?v=37017cbb"></script>
-<script src="js/animation/anim-auto-gen.js?v=37017cbb"></script>
-<script src="js/animation/ik-solver.js?v=37017cbb"></script>
-<script src="js/animation/anim-blender.js?v=37017cbb"></script>
+<script src="js/rig/arp-anim-video.js?v=d42dd9dc"></script>
+<script src="js/animation/anim-auto-gen.js?v=d42dd9dc"></script>
+<script src="js/animation/ik-solver.js?v=d42dd9dc"></script>
+<script src="js/animation/anim-blender.js?v=d42dd9dc"></script>
 <!-- Animation Layers + Curve Editor (nhóm A, vòng Animation mở rộng):
      load SAU anim-blender.js (dùng AnimBlender) và TRƯỚC blendtree
      (blendtree dùng Animator API, không đụng 2 module này). -->
-<script src="js/animation/anim-layers.js?v=37017cbb"></script>
-<script src="js/animation/anim-curves.js?v=37017cbb"></script>
+<script src="js/animation/anim-layers.js?v=d42dd9dc"></script>
+<script src="js/animation/anim-curves.js?v=d42dd9dc"></script>
 <!-- Anim Graph: Blend Tree + State Machine + visual editor (vòng Anim Graph).
      Load SAU anim-blender.js (dùng AnimBlender) và SAU arp-sync-clips.js
      (clipList/resolveClip) + arp-animator.js (bus/tích hợp phát). -->
-<script src="js/animation/anim-blendtree.js?v=37017cbb"></script>
-<script src="js/animation/anim-statemachine.js?v=37017cbb"></script>
+<script src="js/animation/anim-blendtree.js?v=d42dd9dc"></script>
+<script src="js/animation/anim-statemachine.js?v=d42dd9dc"></script>
 <!-- Anim Graph store đa-graph + preview thumbnail (SM2, vòng Animation
      mở rộng): store TRƯỚC editor (editor dùng Store()), preview SAU
      editor (dùng Editor + AssetLibrary). -->
-<script src="js/animation/anim-graph-store.js?v=37017cbb"></script>
-<script src="js/animation/anim-graph-editor.js?v=37017cbb"></script>
-<script src="js/animation/anim-graph-asset-preview.js?v=37017cbb"></script>
-<script src="js/animation/pose-library.js?v=37017cbb"></script>
-<script src="js/animation/anim-queue.js?v=37017cbb"></script>
-<script src="js/animation/anim-prompt.js?v=37017cbb"></script>
-<script src="js/animation/motion-library.js?v=37017cbb"></script>
-<script src="js/animation/fbx-rig-import.js?v=37017cbb"></script>
-<script src="js/characters/thandieu.js?v=37017cbb"></script>
-<script src="js/characters/coco.js?v=37017cbb"></script>
-<script src="js/characters/hy3d.js?v=37017cbb"></script>
+<script src="js/animation/anim-graph-store.js?v=d42dd9dc"></script>
+<script src="js/animation/anim-graph-editor.js?v=d42dd9dc"></script>
+<script src="js/animation/anim-graph-asset-preview.js?v=d42dd9dc"></script>
+<script src="js/animation/pose-library.js?v=d42dd9dc"></script>
+<script src="js/animation/anim-queue.js?v=d42dd9dc"></script>
+<script src="js/animation/anim-prompt.js?v=d42dd9dc"></script>
+<script src="js/animation/motion-library.js?v=d42dd9dc"></script>
+<script src="js/animation/fbx-rig-import.js?v=d42dd9dc"></script>
+<script src="js/characters/thandieu.js?v=d42dd9dc"></script>
+<script src="js/characters/coco.js?v=d42dd9dc"></script>
+<script src="js/characters/hy3d.js?v=d42dd9dc"></script>
 
 <!-- ============ MATERIAL / TEXTURE / SCENE / PHYSICS ============ -->
-<script src="js/materials/material-manager.js?v=37017cbb"></script>
-<script src="js/textures/texture-manager.js?v=37017cbb"></script>
-<script src="js/scene/scene-manager.js?v=37017cbb"></script>
-<script src="js/scene/scene-prefab.js?v=37017cbb"></script>
-<script src="js/scene/scene-templates.js?v=37017cbb"></script>
-<script src="js/scene/scene-lightbake.js?v=37017cbb"></script>
-<script src="js/scene/scene-culling.js?v=37017cbb"></script>
-<script src="js/scene/scene-director.js?v=37017cbb"></script>
+<script src="js/materials/material-manager.js?v=d42dd9dc"></script>
+<script src="js/textures/texture-manager.js?v=d42dd9dc"></script>
+<script src="js/scene/scene-manager.js?v=d42dd9dc"></script>
+<script src="js/scene/scene-prefab.js?v=d42dd9dc"></script>
+<script src="js/scene/scene-templates.js?v=d42dd9dc"></script>
+<script src="js/scene/scene-lightbake.js?v=d42dd9dc"></script>
+<script src="js/scene/scene-culling.js?v=d42dd9dc"></script>
+<script src="js/scene/scene-director.js?v=d42dd9dc"></script>
 <!-- Scene Streaming + Diff/Merge + Validation (vòng Prefab + Scene System):
      load SAU scene-manager.js (dùng Scene.registry/serializeObjects) và
      SAU scene-director.js. Không sửa core scene-manager.js. -->
-<script src="js/scene/scene-streaming.js?v=37017cbb"></script>
-<script src="js/scene/scene-diff.js?v=37017cbb"></script>
-<script src="js/scene/scene-validate.js?v=37017cbb"></script>
-<script src="js/physics/physics-engine.js?v=37017cbb"></script>
-<script src="js/physics/physics-ragdoll.js?v=37017cbb"></script>
-<script src="js/physics/physics-manager.js?v=37017cbb"></script>
-<script src="js/physics/physics-panel.js?v=37017cbb"></script>
+<script src="js/scene/scene-streaming.js?v=d42dd9dc"></script>
+<script src="js/scene/scene-diff.js?v=d42dd9dc"></script>
+<script src="js/scene/scene-validate.js?v=d42dd9dc"></script>
+<script src="js/physics/physics-engine.js?v=d42dd9dc"></script>
+<script src="js/physics/physics-ragdoll.js?v=d42dd9dc"></script>
+<script src="js/physics/physics-manager.js?v=d42dd9dc"></script>
+<script src="js/physics/physics-panel.js?v=d42dd9dc"></script>
 
 <!-- ============ AI ============ -->
-<script src="js/ai/local-autogen.js?v=37017cbb"></script>
-<script src="js/ai/tripo-adapter.js?v=37017cbb"></script>
-<script src="js/ai/meshy-adapter.js?v=37017cbb"></script>
-<script src="js/ai/ai-panel.js?v=37017cbb"></script>
+<script src="js/ai/local-autogen.js?v=d42dd9dc"></script>
+<script src="js/ai/tripo-adapter.js?v=d42dd9dc"></script>
+<script src="js/ai/meshy-adapter.js?v=d42dd9dc"></script>
+<script src="js/ai/ai-panel.js?v=d42dd9dc"></script>
 
 <!-- ============ TIMELINE ============ -->
-<script src="js/timeline/keyframes.js?v=37017cbb"></script>
-<script src="js/timeline/playback.js?v=37017cbb"></script>
-<script src="js/timeline/timeline.js?v=37017cbb"></script>
+<script src="js/timeline/keyframes.js?v=d42dd9dc"></script>
+<script src="js/timeline/playback.js?v=d42dd9dc"></script>
+<script src="js/timeline/timeline.js?v=d42dd9dc"></script>
 
 <!-- ============ INSPECTOR / EXPORTER / PERFORMANCE ============ -->
-<script src="js/inspector/inspector.js?v=37017cbb"></script>
-<script src="js/exporter/exporter.js?v=37017cbb"></script>
-<script src="js/exporter/anim-glb-export.js?v=37017cbb"></script>
-<script src="js/vendor/meshopt_simplifier.js?v=37017cbb"></script>
-<script src="js/exporter/fbx-binary.js?v=37017cbb"></script>
-<script src="js/exporter/mixamo-validator.js?v=37017cbb"></script>
-<script src="js/exporter/mixamo-safe-export.js?v=37017cbb"></script>
-<script src="js/exporter/glb-writer.js?v=37017cbb"></script>
-<script src="js/exporter/zip-writer.js?v=37017cbb"></script>
-<script src="js/workers/worker-bridge.js?v=37017cbb"></script>
-<script src="js/exporter/save-manager.js?v=37017cbb"></script>
-<script src="js/exporter/golden-standard-export.js?v=37017cbb"></script>
-<script src="js/exporter/export-presets.js?v=37017cbb"></script>
-<script src="js/performance/monitor.js?v=37017cbb"></script>
+<script src="js/inspector/inspector.js?v=d42dd9dc"></script>
+<script src="js/exporter/exporter.js?v=d42dd9dc"></script>
+<script src="js/exporter/anim-glb-export.js?v=d42dd9dc"></script>
+<script src="js/vendor/meshopt_simplifier.js?v=d42dd9dc"></script>
+<script src="js/exporter/fbx-binary.js?v=d42dd9dc"></script>
+<script src="js/exporter/mixamo-validator.js?v=d42dd9dc"></script>
+<script src="js/exporter/mixamo-safe-export.js?v=d42dd9dc"></script>
+<script src="js/exporter/glb-writer.js?v=d42dd9dc"></script>
+<script src="js/exporter/zip-writer.js?v=d42dd9dc"></script>
+<script src="js/workers/worker-bridge.js?v=d42dd9dc"></script>
+<script src="js/exporter/save-manager.js?v=d42dd9dc"></script>
+<script src="js/exporter/golden-standard-export.js?v=d42dd9dc"></script>
+<script src="js/exporter/export-presets.js?v=d42dd9dc"></script>
+<script src="js/performance/monitor.js?v=d42dd9dc"></script>
 
 <!-- ============ UI ============ -->
-<script src="js/ui/notifications.js?v=37017cbb"></script>
-<script src="js/ui/modals.js?v=37017cbb"></script>
-<script src="js/ui/toolbar.js?v=37017cbb"></script>
-<script src="js/ui/smart-panel.js?v=37017cbb"></script>
-<script src="js/ui/topbar.js?v=37017cbb"></script>
-<script src="js/ui/history-panel.js?v=37017cbb"></script>
-<script src="js/ui/panels.js?v=37017cbb"></script>
-<script src="js/ui/shortcuts.js?v=37017cbb"></script>
+<script src="js/ui/notifications.js?v=d42dd9dc"></script>
+<script src="js/ui/modals.js?v=d42dd9dc"></script>
+<script src="js/ui/toolbar.js?v=d42dd9dc"></script>
+<script src="js/ui/smart-panel.js?v=d42dd9dc"></script>
+<script src="js/ui/topbar.js?v=d42dd9dc"></script>
+<script src="js/ui/history-panel.js?v=d42dd9dc"></script>
+<script src="js/ui/panels.js?v=d42dd9dc"></script>
+<script src="js/ui/shortcuts.js?v=d42dd9dc"></script>
 
 <!-- ============ BOOT ============ -->
-<script src="js/main.js?v=37017cbb"></script>
+<script src="js/main.js?v=d42dd9dc"></script>
 </body>
 </html>

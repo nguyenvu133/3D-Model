@@ -18,7 +18,7 @@
      bản mới (js/core/version-check.js) so version.json với marker
      __PIXISTUDIO_BUILD ở <head>; BUILD ở đây là cùng 1 giá trị, để
      console/About/FBX Creator dùng chung. */
-  window.PixiStudio.BUILD = '37017cbb';
+  window.PixiStudio.BUILD = 'd42dd9dc';
   window.PixiStudio.RELEASE = {
     version: '21.0.0',
     name: '21.0',
