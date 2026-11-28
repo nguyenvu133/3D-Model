@@ -8,19 +8,22 @@
   const bus = PixiStudio.bus;
   const U = PixiStudio.Utils;
 
+  /* overflow: class ẩn tab ở breakpoint hẹp (xem css/responsive.css mục
+     WORKSPACE-NAV) — tab không có overflow luôn hiện; DOM giữ nguyên thứ tự
+     WORKSPACES nên selectWorkspace theo chỉ số không đổi. */
   const WORKSPACES = [
     { id: 'studio', name: 'Studio', icon: 'assets', page: 'assets' },
     { id: 'model', name: 'Model', icon: 'model', page: 'model' },
     { id: 'rig', name: 'Rig', icon: 'rig', page: 'rig' },
-    { id: 'rigging', name: 'Rigging', icon: 'character', page: 'rigging' },
+    { id: 'rigging', name: 'Rigging', icon: 'character', page: 'rigging', overflow: 'ws-overflow-1280' },
     { id: 'animation', name: 'Animation', icon: 'animation', page: 'animation' },
-    { id: 'scene', name: 'Scene', icon: 'scene', page: 'scene' },
-    { id: 'material', name: 'Material', icon: 'material', page: 'material' },
-    { id: 'render', name: 'Render', icon: 'render', page: 'render' },
-    { id: 'game', name: 'Game', icon: 'game', page: 'export' },
-    { id: 'mapeditor', name: 'Map Editor', icon: 'scene', page: 'studio', action: 'mapeditor' },
-    { id: 'tools', name: 'Tools', icon: 'wand', page: 'ai' },
-    { id: 'settings', name: 'Settings', icon: 'settings', page: 'assets' }
+    { id: 'scene', name: 'Scene', icon: 'scene', page: 'scene', overflow: 'ws-overflow-1280' },
+    { id: 'material', name: 'Material', icon: 'material', page: 'material', overflow: 'ws-overflow-1920' },
+    { id: 'render', name: 'Render', icon: 'render', page: 'render', overflow: 'ws-overflow-1920' },
+    { id: 'game', name: 'Game', icon: 'game', page: 'export', overflow: 'ws-overflow-1920' },
+    { id: 'mapeditor', name: 'Map Editor', icon: 'scene', page: 'studio', action: 'mapeditor', overflow: 'ws-overflow-2560' },
+    { id: 'tools', name: 'Tools', icon: 'wand', page: 'ai', overflow: 'ws-overflow-2560' },
+    { id: 'settings', name: 'Settings', icon: 'settings', page: 'assets', overflow: 'ws-overflow-2560' }
   ];
 
   const Topbar = { active: 'studio' };
@@ -31,11 +34,21 @@
     nav.innerHTML = '';
     WORKSPACES.forEach(function (ws) {
       nav.appendChild(U.el('div', {
-        class: 'ws-tab' + (Topbar.active === ws.id ? ' active' : ''),
+        class: 'ws-tab' + (ws.overflow ? ' ' + ws.overflow : '') +
+          (Topbar.active === ws.id ? ' active ws-pinned' : ''),
         html: U.icon(ws.icon) + '<span>' + ws.name + '</span>',
         'data-tooltip': 'Workspace: ' + ws.name,
         onclick: function () { Topbar.selectWorkspace(ws.id); }
       }));
+    });
+  };
+
+  /* Tab active luôn hiện trên thanh (dù class ws-overflow-* đang ẩn nó ở
+     breakpoint hiện tại): CSS #workspace-nav .ws-tab.ws-pinned thắng rule ẩn.
+     Gọi sau mọi chỗ đổi .active (render/selectWorkspace/các nhánh fallback). */
+  Topbar._syncWsPin = function () {
+    U.$$('#workspace-nav .ws-tab').forEach(function (tab, i) {
+      tab.classList.toggle('ws-pinned', WORKSPACES[i] && WORKSPACES[i].id === Topbar.active);
     });
   };
 
@@ -45,6 +58,7 @@
     U.$$('#workspace-nav .ws-tab').forEach(function (tab, i) {
       tab.classList.toggle('active', WORKSPACES[i] && WORKSPACES[i].id === id);
     });
+    Topbar._syncWsPin();
     /* scroll active tab into view khi nav tràn */
     const activeEl = document.querySelector('#workspace-nav .ws-tab.active');
     if (activeEl && activeEl.scrollIntoView) activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
@@ -68,6 +82,7 @@
           U.$$('#workspace-nav .ws-tab').forEach(function (tab, i) {
             tab.classList.toggle('active', WORKSPACES[i] && WORKSPACES[i].id === 'studio');
           });
+          Topbar._syncWsPin();
         }
       } else {
         bus.emit('notify', { type: 'error', title: 'Map Editor', message: 'Module MapLink chưa load — kiểm tra script js/core/map-link.js trong index.html.' });
@@ -75,6 +90,7 @@
         U.$$('#workspace-nav .ws-tab').forEach(function (tab, i) {
           tab.classList.toggle('active', WORKSPACES[i] && WORKSPACES[i].id === 'studio');
         });
+        Topbar._syncWsPin();
       }
       return;
     }
@@ -110,6 +126,7 @@
       U.$$('#workspace-nav .ws-tab').forEach(function (tab, i) {
         tab.classList.toggle('active', WORKSPACES[i] && WORKSPACES[i].id === id);
       });
+      Topbar._syncWsPin();
       U.$$('#toolbar .tool-btn').forEach(function (btn) {
         btn.classList.remove('active');
       });
@@ -243,6 +260,187 @@
       const sb = document.getElementById('sb-autosave');
       if (sb) sb.innerHTML = 'Autosave: <b style="color:var(--success)">' + PixiStudio.Storage.autosaveLabel().replace('autosaved ', '') + '</b>';
     });
+
+    /* Nút "⋯ Thêm" — menu gom nút phụ khi màn hẹp (user 2026-11-28) */
+    Topbar.initTopbarMore();
+
+    /* Nút "⋯" workspace-nav — menu gom tab phụ khi màn hẹp (user 2026-11-28) */
+    Topbar.initWsNavMore();
+  };
+
+  /* ============ Nút "⋯ Thêm" — gom nút phụ vào menu dropdown ============
+     Ở màn hẹp (≤1600px) các nút .tb-overflow bị CSS ẩn khỏi thanh, và ở mobile
+     (≤767px) thêm .tb-overflow-sm; menu dựng lại từ CHÍNH các nút đó (label lấy
+     từ .lbl, icon từ data-ic) và bấm item = .click() lên nút thật → mọi handler
+     (panels.js/topbar.js) giữ nguyên, không đổi id/class/wiring. Select mức tối
+     ưu ở mobile không vào menu dạng nút được → item riêng để chuyển mức (cycle),
+     Optimize đọc sel.value lúc bấm nên vẫn đúng mức đã chọn. */
+  Topbar.initTopbarMore = function () {
+    var moreBtn = document.getElementById('btn-topbar-more');
+    var scroller = document.getElementById('topbar-actions-scroll');
+    if (!moreBtn || !PixiStudio.Panels || !PixiStudio.Panels.dropdown) return;
+    var mqMobile = window.matchMedia('(max-width: 767px)');
+    var mqNarrow = window.matchMedia('(max-width: 1600px)');
+
+    /* Chụp icon lúc init — Topbar.init chạy ở app.js:246, TRƯỚC khi
+       U.hydrateIcons (app.js:271) thay <i data-ic> bằng SVG không còn data-ic;
+       menu mở sau (lúc click) vẫn cần tên icon gốc để hiện đúng icon. */
+    var iconById = {};
+    Array.prototype.forEach.call(
+      document.querySelectorAll('#topbar-actions-scroll .tb-overflow, #topbar-actions-scroll .tb-overflow-sm'),
+      function (el) {
+        var ic = el.querySelector('[data-ic]');
+        if (el.id && ic) iconById[el.id] = ic.getAttribute('data-ic');
+      });
+
+    var btnLabel = function (el) {
+      var lbl = el.querySelector('.lbl');
+      if (lbl && lbl.textContent.trim()) return lbl.textContent.trim();
+      var tip = el.getAttribute('data-tooltip') || el.id || '';
+      return tip.split('—')[0].trim() || el.id;
+    };
+    var btnIcon = function (el) {
+      if (el.id && iconById[el.id]) return iconById[el.id];
+      var ic = el.querySelector('[data-ic]');
+      return (ic && ic.getAttribute('data-ic')) || 'dots';
+    };
+    var selText = function () {
+      var sel = document.getElementById('opt-target-size');
+      if (!sel || !sel.options || sel.selectedIndex < 0) return '';
+      return sel.options[sel.selectedIndex].text;
+    };
+    var cycleOptTarget = function () {
+      var sel = document.getElementById('opt-target-size');
+      if (!sel || !sel.options || !sel.options.length) return;
+      sel.selectedIndex = (sel.selectedIndex + 1) % sel.options.length;
+      if (typeof document.createEvent === 'function') {
+        var ev = document.createEvent('HTMLEvents');
+        ev.initEvent('change', true, false);
+        sel.dispatchEvent(ev);
+      }
+    };
+    var openMenu = function (anchor) {
+      var items = [{ title: 'Thêm — các nút khác' }];
+      var nodes = document.querySelectorAll('#topbar-actions-scroll .tb-overflow, #topbar-actions-scroll .tb-overflow-sm');
+      var isMobile = mqMobile.matches;
+      var isNarrow = mqNarrow.matches;
+      Array.prototype.forEach.call(nodes, function (el) {
+        if (el.tagName === 'SELECT' || el.disabled) return;
+        var hidden = false;
+        if (el.classList.contains('tb-overflow') && isNarrow) hidden = true;
+        if (el.classList.contains('tb-overflow-sm') && isMobile) hidden = true;
+        if (!hidden) return;
+        (function (btn) {
+          items.push({ label: btnLabel(btn), icon: btnIcon(btn), onClick: function () { btn.click(); } });
+        })(el);
+      });
+      /* mobile: select mức tối ưu không bấm trực tiếp trong menu → item cycle mức */
+      if (isMobile && document.getElementById('opt-target-size')) {
+        items.push({ sep: true });
+        items.push({
+          label: 'Mức tối ưu FBX', hint: selText(), icon: 'wand', onClick: function () {
+            cycleOptTarget();
+            setTimeout(function () { openMenu(anchor); }, 30);
+          }
+        });
+      }
+      if (items.length <= 1) return;
+      var rect = anchor.getBoundingClientRect();
+      PixiStudio.Panels.dropdown.open(items, rect.right - 220, rect.bottom + 6);
+    };
+
+    moreBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      openMenu(e.currentTarget);
+    });
+
+    /* vùng cuộn còn nút khuất → mờ mép phải để biết mà vuốt/cuộn */
+    var updateOverflow = function () {
+      if (!scroller) return;
+      scroller.classList.toggle('has-overflow', scroller.scrollWidth > scroller.clientWidth + 1);
+    };
+    if (scroller) {
+      /* lăn chuột dọc = cuộn ngang (giống #workspace-nav) */
+      scroller.addEventListener('wheel', function (e) {
+        if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+          scroller.scrollLeft += e.deltaY;
+          e.preventDefault();
+        }
+      }, { passive: false });
+      var scheduleUpdate = function () { setTimeout(updateOverflow, 60); };
+      window.addEventListener('resize', scheduleUpdate);
+      if (mqNarrow.addEventListener) {
+        mqNarrow.addEventListener('change', scheduleUpdate);
+        mqMobile.addEventListener('change', scheduleUpdate);
+      }
+      updateOverflow();
+      setTimeout(updateOverflow, 600);
+      setTimeout(updateOverflow, 2000);
+    }
+  };
+
+  /* ============ Nút "⋯" workspace-nav — gom tab phụ vào menu dropdown ============
+     Theo mẫu initTopbarMore: tab nào class ws-overflow-* đang bị CSS ẩn ở
+     breakpoint hiện tại thì vào menu (Panels.dropdown có sẵn); bấm item =
+     .click() lên tab thật (tab display:none vẫn nhận .click() qua JS) nên mọi
+     handler giữ nguyên. Tab active được ghim hiện trên thanh (.ws-pinned)
+     VÀ đánh dấu .selected (✓) trong menu. ≤1023px dùng dải tab riêng đủ 12
+     tab nên không mở menu. Icon lấy thẳng từ WORKSPACES (không cần chụp lúc
+     init như topbar-actions vì tên icon có sẵn trong mảng). */
+  Topbar.initWsNavMore = function () {
+    var moreBtn = document.getElementById('btn-wsnav-more');
+    var nav = document.getElementById('workspace-nav');
+    if (!moreBtn || !nav || !PixiStudio.Panels || !PixiStudio.Panels.dropdown) return;
+    var mqMobile = window.matchMedia('(max-width: 1023px)');
+    var mq1280 = window.matchMedia('(max-width: 1279px)');
+    var mq1920 = window.matchMedia('(max-width: 1919px)');
+    var mq2560 = window.matchMedia('(max-width: 2559px)');
+    var isHidden = function (ws) {
+      if (mqMobile.matches) return false; /* dải tab riêng: đủ 12 tab, không menu */
+      if (ws.overflow === 'ws-overflow-1280') return mq1280.matches;
+      if (ws.overflow === 'ws-overflow-1920') return mq1920.matches;
+      if (ws.overflow === 'ws-overflow-2560') return mq2560.matches;
+      return false;
+    };
+    var openMenu = function (anchor) {
+      var items = [{ title: 'Workspace — các tab khác' }];
+      var hiddenIdx = [];
+      WORKSPACES.forEach(function (ws, i) {
+        if (!isHidden(ws)) return;
+        hiddenIdx.push(i);
+        (function (w, idx) {
+          items.push({
+            label: w.name, icon: w.icon, onClick: function () {
+              var tab = nav.querySelectorAll('.ws-tab')[idx];
+              if (tab) tab.click();
+            }
+          });
+        })(ws, i);
+      });
+      if (items.length <= 1) return;
+      var rect = anchor.getBoundingClientRect();
+      PixiStudio.Panels.dropdown.open(items, rect.left, rect.bottom + 6);
+      /* đánh dấu ✓ tab đang active — dropdown.open() không nhận cờ selected */
+      var ddItems = document.querySelectorAll('#dropdown-root .dd-item');
+      hiddenIdx.forEach(function (idx, j) {
+        if (WORKSPACES[idx].id === Topbar.active && ddItems[j]) ddItems[j].classList.add('selected');
+      });
+    };
+
+    moreBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      openMenu(e.currentTarget);
+    });
+
+    /* nav còn tab cuộn khuất (dải mobile + tab active ghim tràn) → mờ mép phải */
+    var updateOverflow = function () {
+      if (!nav) return;
+      nav.classList.toggle('has-overflow', nav.scrollWidth > nav.clientWidth + 1);
+    };
+    window.addEventListener('resize', function () { setTimeout(updateOverflow, 60); });
+    updateOverflow();
+    setTimeout(updateOverflow, 600);
+    setTimeout(updateOverflow, 2000);
   };
 
   Topbar._showLocalMenu = function (anchor) {

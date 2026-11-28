@@ -27,7 +27,7 @@
 @media (min-width: 1280px) and (max-width: 1599px) {
   :root { --left-w: 260px; --right-w: 290px; --bottom-h: 204px; }
   .tagline { display: none; }
-  .ws-tab { padding: 6px 8px; }
+  .ws-tab { padding: 6px 7px; }
   .ws-tab .ic { width: 13px; height: 13px; }
   #bottom-row { grid-template-columns: 1fr 240px 216px; }
   .tripo-card { width: 208px; }
@@ -39,7 +39,11 @@
   :root { --left-w: 224px; --right-w: 262px; --bottom-h: 190px; }
   .tagline { display: none; }
   .brand-name span { display: none; }
-  .ws-tab { padding: 6px 8px; font-size: 11.5px; }
+  /* badge v21.0 trang trí: ẩn ở 1024–1279 để nav đủ chỗ cho 4 tab
+     (đo sau sửa lần 1: 4 tab cần 292px mà nav chỉ có 282px, thiếu 10px;
+     ẩn badge giải phóng ~55px). Phiên bản vẫn xem được ở modal What's New. */
+  .brand-cluster .badge { display: none; }
+  .ws-tab { padding: 6px 7px; font-size: 11.5px; }
   .ws-tab .ic { width: 12px; height: 12px; }
   #bottom-row { grid-template-columns: 1fr 226px; }
   #bottom-right-2 { display: none; }   /* Game Ready card gộp vào modal khi hẹp */
@@ -87,7 +91,6 @@
   .drawer-toggle { display: inline-flex !important; }
 
   .tagline, .brand-name span { display: none; }
-  #workspace-nav { max-width: 40vw; }
   #bottom-row { grid-template-columns: 1fr; }
   #bottom-right-1, #bottom-right-2 { display: none; }
 
@@ -103,7 +106,6 @@
 
   .brand-cluster b { font-size: 12px; }
   .badge.pro, .tagline { display: none; }
-  #workspace-nav { max-width: 34vw; margin: 0 4px; }
   .ws-tab { padding: 6px 8px; font-size: 11.5px; gap: 4px; }
   .ws-tab .ic { display: none; }
   .topbar-actions .btn { padding: 0 9px; font-size: 11.5px; }
@@ -153,7 +155,6 @@
   .brand-name b { font-size: 11px; }
   .badge { display: none; }
   .win-controls { display: none; }
-  #workspace-nav { max-width: 30vw; }
   .ws-tab { padding: 6px 6px; font-size: 10.5px; }
 
   #asset-grid { grid-template-columns: repeat(2, 1fr); gap: 6px; }
@@ -260,4 +261,142 @@
 /* ============ Reduce motion (a11y) ============ */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+/* ============================================================
+   TOPBAR-ACTIONS LÀM LẠI (user 2026-11-28: mobile 360px + web 1024x768 bị khuất)
+   Số đo trước sửa (probe ~/workspace/.shot-topbar/measure-before.json):
+   - 1024x768: .topbar-actions flex:none không co lại → bóp #workspace-nav còn
+     8px (12 tab mất hút) và nút win-close lòi 14px ra ngoài viewport; 242px
+     nút nằm sau thanh cuộn ngang 4px khó thấy.
+   - Mobile 360px: .topbar-actions phình 812px, tràn khỏi màn hình mà KHÔNG
+     cuộn được (scrollWidth == clientWidth) → 16 nút gồm Export/Save/Undo
+     không với tới được bằng cách nào.
+   Cách sửa:
+   (1) .topbar-actions co lại được (flex:1 1 auto) + vùng cuộn riêng
+       .topbar-actions-scroll (overflow-x:auto); nút ⋯ và win-controls đứng
+       NGOÀI vùng cuộn nên không bao giờ bị cuộn mất.
+       SỬA LẦN 2 (sau đo thực tế): flex phải là "1 0 auto" (shrink: 0) — nút
+       32px không co được, chỉ #workspace-nav (tab co/wrap/cuộn nội bộ được)
+       mới được co; để shrink:1 thì nav (flex-basis ~904px theo tab dài nhất)
+       thắng trận co và bóp scroller còn 147px ở 1024. Xem components.css:
+       tooltip [data-tooltip]::before cũng đã sửa content:none khi không hover
+       (box tooltip dài white-space:nowrap làm phình scrollWidth của scroller
+       357→823px, vuốt được 466px vào khoảng trống).
+   (2) Nút phụ gom vào menu "⋯ Thêm" (Panels.dropdown có sẵn): class
+       .tb-overflow ẩn ≤1600px, .tb-overflow-sm ẩn thêm ≤767px; JS ở
+       ui/topbar.js dựng menu từ chính các nút đó (.click() giữ nguyên handler).
+   (3) #workspace-nav KHÔNG ẩn ≤1023px nữa (làm lại 2026-11-28, xem mục
+       WORKSPACE-NAV bên dưới): thành dải tab 1 hàng riêng dưới hàng topbar,
+       --topbar-h tăng theo; chuyển workspace bằng dải đó thay cho toolbar.
+       Tagline (chữ trang trí) ẩn ≤1920px để 1701–1920 đủ chỗ cho 9 tab nav;
+       badge v21.0 ẩn ở 1024–1279 để nav đủ chỗ cho 4 tab.
+   ============================================================ */
+.topbar-actions { flex: 1 0 auto; min-width: 0; overflow: visible; }
+.topbar-actions-scroll {
+  display: flex; align-items: center; gap: 7px;
+  flex: 1 0 auto; min-width: 0;
+  overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: thin; scrollbar-color: #4a4a5e transparent;
+  -webkit-overflow-scrolling: touch;
+}
+.topbar-actions-scroll::-webkit-scrollbar { height: 4px; }
+.topbar-actions-scroll::-webkit-scrollbar-thumb { background: #3a3a4c; border-radius: 4px; }
+/* còn nút bị cuộn khuất → mờ dần mép phải để user biết mà vuốt/cuộn (JS gắn class) */
+.topbar-actions-scroll.has-overflow {
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 30px), transparent 100%);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 30px), transparent 100%);
+}
+/* nút ⋯ mặc định ẩn (màn rộng đủ chỗ cho mọi nút); win-controls không co lại */
+#btn-topbar-more { display: none; flex: none; }
+.win-controls { flex: none; }
+/* select mức tối ưu: rule ≤1920px ở layout.css ép .btn còn 32px (chữ "<1MB"
+   bị cắt mất) → cho lại 84px để đọc được */
+@media (max-width: 1920px) {
+  #opt-target-size { width: 84px; padding: 0 6px; }
+}
+/* tagline trang trí: ẩn sớm hơn (≤1920 thay vì ≤1700) để 1701–1920 đủ chỗ
+   cho 9 tab nav — đo sau sửa lần 1: tagline hiện lại ở 1920 chiếm ~230px,
+   nav còn 449px, 4/9 tab bị khuất sau cuộn. */
+@media (max-width: 1920px) { .tagline { display: none; } }
+
+@media (max-width: 1600px) {
+  /* nút phụ vào menu ⋯ */
+  .topbar-actions .tb-overflow { display: none; }
+  #btn-topbar-more { display: inline-flex; }
+}
+
+@media (max-width: 1023px) {
+  /* win-controls (min/max/close) chỉ có nghĩa trên desktop */
+  .win-controls { display: none; }
+  .topbar-actions-scroll { gap: 5px; }
+}
+
+@media (max-width: 767px) {
+  /* mobile: chỉ giữ drawer + Undo + Save + Export + ⋯ trên thanh;
+     Optimize/Auto Rig/Golden/Redo + select mức tối ưu vào menu ⋯ */
+  .topbar-actions .tb-overflow-sm { display: none; }
+  .topbar-actions-scroll .btn { width: 30px; }
+  #btn-topbar-more { width: 30px; }
+}
+
+/* ============================================================
+   WORKSPACE-NAV LÀM LẠI (user 2026-11-28, theo mẫu topbar-actions)
+   Số đo trước sửa (probe ~/workspace/.shot-wsnav/measure-before.json):
+   - 1024x768: nav 320px, 12 tab bị bóp còn 21–27px, nhãn nát/chồng nhau
+     ("Map Editor" xuống 2 dòng, cao 38px trong khi tab khác 25px).
+   - 1680/1920: vẫn bóp (tab 31–46px): "Animation" chồng "Scene",
+     "Settings" bị cắt — vì tab flex:0 1 auto + white-space:normal.
+   - Mobile 360: nav display:none, hàng topbar chỉ còn -10px trống
+     (brand 69 + actions 257 > 360) → không nhét được tab nào vào hàng 1.
+   Chiều rộng tự nhiên 12 tab (probe-natural, padding 6x7 sau sửa lần 2):
+   ~844px @1024 (11.5px), ~924px @1680/1920 (12px). Chỗ cho nav:
+   ~340px @1024, ~507px @1280, ~517px @1680, ~757px @1920.
+   Cách sửa (giống topbar-actions: chia theo mức quan trọng + menu ⋯
+   tái dùng Panels.dropdown.open, bấm item = .click() lên tab thật):
+   (1) Tab flex:none + white-space:nowrap (css/layout.css) — không bao giờ
+       bóp nhãn/chồng chữ/xuống 2 dòng nữa; tab tràn gom vào menu ⋯.
+   (2) Luôn hiện: Studio, Model, Rig, Animation (4 tab ≈ 264px, vừa 1024).
+       .ws-overflow-1280 (Rigging, Scene): hiện từ 1280 (6 tab ≈ 413px).
+       .ws-overflow-1920 (Material, Render, Game): hiện từ 1920
+       (9 tab ≈ 673px). .ws-overflow-2560 (Map Editor, Tools, Settings):
+       hiện từ 2560 (đủ 12 tab ≈ 948px). Rule ẩn giới hạn min-width:1024px
+       để ≤1023 dải tab riêng hiện đủ 12 tab.
+       Đánh đổi đã biết: ở 1600 (actions còn gọn, chỗ nav ~827px) chỉ hiện
+       6 tab dù đủ chỗ cho 10 — vì 1601 actions hiện đủ nút, chỗ nav tụt
+       còn ~517px; tránh hiện/ẩn nhấp nháy theo 1px thì chấp nhận thưa ở 1600.
+   (3) Tab active luôn nhận biết được: JS gắn .ws-pinned lên tab active
+       (rule dưới thắng rule ẩn, đứng sau) + item tương ứng trong menu ⋯
+       được gắn class .selected (dấu ✓, CSS đã có ở components.css).
+   (4) Mobile ≤1023px: dải tab 1 hàng RIÊNG dưới hàng topbar (header
+       flex-wrap, wrapper chiếm 100% hàng 2, nav cuộn ngang, đủ 12 tab,
+       không dùng menu ⋯ ở đây). CHI PHÍ: --topbar-h 48px → 80px (≤767:
+       46px → 78px) — viewport mất ~32px chiều cao; đo thực tế sau sửa
+       rồi chỉnh con số này cho khớp chiều cao header thật.
+   ============================================================ */
+@media (min-width: 1024px) and (max-width: 1279px) {
+  #workspace-nav .ws-tab.ws-overflow-1280 { display: none; }
+}
+@media (min-width: 1024px) and (max-width: 1919px) {
+  #workspace-nav .ws-tab.ws-overflow-1920 { display: none; }
+}
+@media (min-width: 1024px) and (max-width: 2559px) {
+  #workspace-nav .ws-tab.ws-overflow-2560 { display: none; }
+}
+/* tab active ghim luôn hiện — đứng SAU các rule ẩn nên thắng khi cùng specificity */
+#workspace-nav .ws-tab.ws-pinned { display: flex; }
+/* nút ⋯ nav chỉ hiện khi có tab trong menu (1024–2559) */
+@media (min-width: 2560px) {
+  #btn-wsnav-more { display: none; }
+}
+
+@media (max-width: 1023px) {
+  /* dải tab 1 hàng riêng: header xuống 2 hàng, wrapper chiếm 100% hàng 2 */
+  :root { --topbar-h: 80px; }
+  #topbar { flex-wrap: wrap; }
+  #workspace-nav-wrap { flex: 1 1 100%; order: 3; margin: 0; }
+  #btn-wsnav-more { display: none; }
+}
+@media (max-width: 767px) {
+  :root { --topbar-h: 78px; }
 }
