@@ -2,6 +2,13 @@
  * assets/asset-library-storage.js — AUTO SAVE / LOAD Asset Library
  * (nhóm B, 2026-11-27)
  *
+ * TẮT (user 2026-11-28, "không lưu asset library nữa để không lỗi loading"):
+ *   Store.enabled = false — KHÔNG auto-save (saveMeta/saveFile no-op),
+ *   KHÔNG auto-restore (restore/init no-op), KHÔNG đọc localStorage/
+ *   IndexedDB lúc boot. Dữ liệu đã lưu trước đây KHÔNG bị xóa (clearAll
+ *   vẫn chạy khi user bấm nút "Xóa toàn bộ dữ liệu library").
+ *   Muốn bật lại: đổi Store.enabled thành true.
+ *
  * METADATA  → localStorage key `pixistudio.asset-library-v1`
  *             { version: 1, savedAt, assets: [...] }
  * FILE THẬT → IndexedDB `pixistudio-assets`, store `files`
@@ -63,6 +70,7 @@
   };
 
   var Store = {
+    enabled: false, /* TẮT lưu asset library (user 2026-11-28) — đổi true để bật lại */
     _dbPromise: null,
     _memFiles: null,      /* fallback khi trình duyệt không có indexedDB */
     _restoring: false,
@@ -212,6 +220,7 @@
   };
 
   Store.saveMeta = function (metaArray) {
+    if (!Store.enabled) return false; /* lưu trữ đã tắt */
     var assets = Array.isArray(metaArray) ? metaArray : Store.collectMeta();
     var payload = { version: 1, savedAt: new Date().toISOString(), assets: assets };
     try {
@@ -243,6 +252,7 @@
   /* Xóa hẳn 1 asset khỏi meta + file (nhóm C gọi khi user xóa asset).
      Sau đó nhóm C gọi Library._persist() như thường lệ. */
   Store.removeMeta = function (id) {
+    if (!Store.enabled) return false; /* lưu trữ đã tắt */
     if (Store._metaCache) Store._metaCache = Store._metaCache.filter(function (a) { return a.id !== id; });
     Store.deleteFile(id);
     return Store.saveMeta(Store._metaCache || []);
@@ -326,6 +336,7 @@
 
   /* ---------- FILE (IndexedDB) ---------- */
   Store.saveFile = function (id, data, fileName) {
+    if (!Store.enabled) return Promise.resolve(false); /* lưu trữ đã tắt */
     var blob;
     try {
       if (isBlobLike(data)) blob = data;
@@ -355,6 +366,7 @@
   };
 
   Store.deleteFile = function (id) {
+    if (!Store.enabled) return Promise.resolve(false); /* lưu trữ đã tắt */
     return Store._idbOp('readwrite', function (store) { return store.delete(id); })
       .then(function () { Store.updateUsageUI(); return true; })
       .catch(function () { return false; });
@@ -406,6 +418,7 @@
 
   /* ---------- RESTORE (auto load khi boot) ---------- */
   Store.restore = function () {
+    if (!Store.enabled) return Promise.resolve({ restored: 0, missing: 0, skipped: 0 }); /* lưu trữ đã tắt */
     if (Store._restored || Store._restoring) return Promise.resolve({ restored: 0, missing: 0, skipped: 0 });
     Store._restoring = true;
     var t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
@@ -531,6 +544,7 @@
 
   /* ---------- IMPORT STASH → LƯU FILE ---------- */
   Store._onImported = function (d) {
+    if (!Store.enabled) return; /* lưu trữ đã tắt */
     if (!d || !d.name) return;
     var Imp = PixiStudio.Importers;
     var stash = Imp && Imp._fileBuffers ? Imp._fileBuffers[d.name] : null;
@@ -645,6 +659,7 @@
   };
 
   Store.updateUsageUI = function () {
+    if (!Store.enabled) return; /* lưu trữ đã tắt */
     if (typeof document === 'undefined') return;
     var el = document.getElementById('asset-storage-usage');
     if (!el) return;
@@ -657,6 +672,7 @@
   };
 
   Store.init = function () {
+    if (!Store.enabled) return; /* lưu trữ đã tắt — không subscribe asset:imported, không đọc storage */
     if (Store._inited) return;
     Store._inited = true;
     if (typeof document !== 'undefined') {

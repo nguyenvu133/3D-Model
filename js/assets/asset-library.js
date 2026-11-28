@@ -139,7 +139,11 @@
   Library._persist = function () {
     try {
       var Store = window.PixiStudio && PixiStudio.AssetLibraryStore;
-      if (Store && typeof Store.saveMeta === 'function') {
+      /* Lưu trữ đã tắt (user 2026-11-28): chặn ngay ở đây vì collectMeta()
+         đọc localStorage ngay cả khi saveMeta đã no-op. Store không có cờ
+         enabled (bản cũ/store giả trong test) thì giữ hành vi cũ. */
+      if (!Store || Store.enabled === false) return;
+      if (typeof Store.saveMeta === 'function') {
         var meta = (typeof Store.collectMeta === 'function')
           ? Store.collectMeta()
           : Library.assets.map(function (a) { return Library._sanitizeAsset(a); });
@@ -1395,7 +1399,14 @@
       ])
     ]);
     host.appendChild(block);
-    if (PixiStudio.AssetLibraryStore) PixiStudio.AssetLibraryStore.updateUsageUI();
+    if (PixiStudio.AssetLibraryStore) {
+      if (PixiStudio.AssetLibraryStore.enabled === false) {
+        /* Lưu trữ đã tắt (user 2026-11-28): không đo dung lượng (đo phải đọc
+           localStorage), chỉ để lại nút xóa dữ liệu cũ bên trên. */
+        var usageEl = document.getElementById('asset-storage-usage');
+        if (usageEl) usageEl.textContent = 'Lưu trữ đã tắt — library không tự lưu/khôi phục nữa. Dữ liệu cũ vẫn còn, bấm nút dưới để xóa nếu muốn.';
+      } else PixiStudio.AssetLibraryStore.updateUsageUI();
+    }
   };
 
   /* Xoá thumbnail cache để vẽ lại (model đổi rig/mesh) */
@@ -1435,7 +1446,9 @@
     Library.renderStorageBlock(); /* nhóm B: block dung lượng + xóa dữ liệu */
 
     /* AUTO LOAD (nhóm B): khôi phục library đã lưu — chạy async song song
-       với loadDefault ở app.js, store tự guard chống chạy 2 lần. */
+       với loadDefault ở app.js, store tự guard chống chạy 2 lần.
+       ĐÃ TẮT (user 2026-11-28): Store.enabled=false nên init()/restore()
+       đều no-op — giữ nguyên lời gọi để bật lại chỉ cần đổi cờ. */
     if (PixiStudio.AssetLibraryStore) {
       PixiStudio.AssetLibraryStore.init();
       PixiStudio.AssetLibraryStore.restore();
